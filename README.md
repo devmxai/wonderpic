@@ -29,13 +29,13 @@ Implemented and working:
 - Pencil drawing tool (active only when pencil tool is selected).
 - Clone Stamp tool for image layers with source picking and brush settings.
 - Clone performance pipeline for high-resolution images (preview + deferred full-res commit).
+- Undo/redo history system with snapshot stacks and circular controls in the Layers bottom sheet.
 
 Not implemented yet (planned/incomplete):
 - Save/export pipeline.
 - Search/Home actions.
 - Full vector/mask editing pipeline.
 - General transform controls for non-text foreground layers (future layer types).
-- Undo/redo history.
 
 ---
 
@@ -162,6 +162,7 @@ Coordinate systems:
 Layer list UI:
 - Open via bottom `Layers` button.
 - Bottom sheet lists all layers from top-most to bottom-most.
+- Top-right actions: circular `Undo` and `Redo` buttons.
 - Each row supports:
   - select layer
   - visibility toggle
@@ -304,6 +305,28 @@ To handle high-resolution images smoothly:
 - After stroke end, a queued full-resolution replay commits changes back to full image.
 
 This design is key for reducing lag on large images.
+
+---
+
+### 13.6 Undo / Redo history
+
+History model:
+- Snapshot-based history stored in-memory.
+- Each snapshot stores: `layers`, `selectedLayerId`, `activeTool`, `nextLayerId`, clone-source armed state, and text locale.
+- Two stacks are used: `undoStack` and `redoStack` (with size cap).
+
+Recorded operations:
+- Add/replace background image.
+- Add solid background preset.
+- Add/delete/toggle layer visibility.
+- Text content/style updates.
+- Text transform gestures (move/resize/rotate), grouped at gesture start/end.
+- Image updates from clone commits.
+
+Behavior:
+- Any new edit clears `redoStack`.
+- Buttons disable automatically when no step is available.
+- Applying undo/redo restores full editor snapshot and re-syncs text input context.
 
 ---
 

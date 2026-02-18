@@ -272,6 +272,24 @@ class _SolidProjectPreset {
   final String subtitle;
 }
 
+class _EditorSnapshot {
+  const _EditorSnapshot({
+    required this.layers,
+    required this.selectedLayerId,
+    required this.activeTool,
+    required this.nextLayerId,
+    required this.isCloneSourceArmed,
+    required this.textFontLocale,
+  });
+
+  final List<EditorLayer> layers;
+  final String? selectedLayerId;
+  final EditorTool activeTool;
+  final int nextLayerId;
+  final bool isCloneSourceArmed;
+  final _TextFontLocale textFontLocale;
+}
+
 const List<Color> _kPencilPalette = <Color>[
   Color(0xFF111827),
   Color(0xFF1F2937),
@@ -637,6 +655,7 @@ const List<Color> _kTextPalette = <Color>[
 ];
 
 class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
+  static const int _historyLimit = 120;
   final ImagePicker _picker = ImagePicker();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final TextEditingController _textInputController = TextEditingController();
@@ -651,16 +670,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isCloneSourceArmed = false;
   _TextFontLocale _textFontLocale = _TextFontLocale.english;
   bool _isSyncingTextInput = false;
+  final List<_EditorSnapshot> _undoStack = <_EditorSnapshot>[];
+  final List<_EditorSnapshot> _redoStack = <_EditorSnapshot>[];
+  bool _isTransformHistoryCaptured = false;
+  bool _isTextEditHistoryCaptured = false;
 
   @override
   void initState() {
     super.initState();
     _textInputController.addListener(_onTextInputChanged);
+    _textInputFocusNode.addListener(_onTextFocusChanged);
   }
 
   @override
   void dispose() {
     _textInputController.removeListener(_onTextInputChanged);
+    _textInputFocusNode.removeListener(_onTextFocusChanged);
     _textInputController.dispose();
     _textInputFocusNode.dispose();
     super.dispose();
@@ -792,6 +817,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       onCloneSourcePicked: _onCloneSourcePicked,
       onCanvasMessage: _showToolMessage,
       onTextLayerDoubleTap: _onTextLayerDoubleTap,
+      onTransformInteractionStart: _onTransformInteractionStart,
+      onTransformInteractionEnd: _onTransformInteractionEnd,
     );
   }
 
@@ -930,6 +957,96 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           message: 'No settings available for current context.',
         );
     }
+  }
+
+  bool get _canUndo => _undoStack.isNotEmpty;
+  bool get _canRedo => _redoStack.isNotEmpty;
+
+  _EditorSnapshot _captureSnapshot() {
+    return _EditorSnapshot(
+      layers: List<EditorLayer>.from(_layers),
+      selectedLayerId: _selectedLayerId,
+      activeTool: _activeTool,
+      nextLayerId: _nextLayerId,
+      isCloneSourceArmed: _isCloneSourceArmed,
+      textFontLocale: _textFontLocale,
+    );
+  }
+
+  bool _snapshotsEqual(_EditorSnapshot a, _EditorSnapshot b) {
+    if (a.selectedLayerId != b.selectedLayerId) return false;
+    if (a.activeTool != b.activeTool) return false;
+    if (a.nextLayerId != b.nextLayerId) return false;
+    if (a.isCloneSourceArmed != b.isCloneSourceArmed) return false;
+    if (a.textFontLocale != b.textFontLocale) return false;
+    if (a.layers.length != b.layers.length) return false;
+    for (int i = 0; i < a.layers.length; i++) {
+      if (!identical(a.layers[i], b.layers[i])) return false;
+    }
+    return true;
+  }
+
+  void _pushUndoSnapshot() {
+    final _EditorSnapshot snapshot = _captureSnapshot();
+    if (_undoStack.isNotEmpty && _snapshotsEqual(_undoStack.last, snapshot)) {
+      return;
+    }
+    _undoStack.add(snapshot);
+    if (_undoStack.length > _historyLimit) {
+      _undoStack.removeAt(0);
+    }
+    _redoStack.clear();
+  }
+
+  void _applySnapshot(_EditorSnapshot snapshot) {
+    setState(() {
+      _layers = List<EditorLayer>.from(snapshot.layers);
+      _selectedLayerId = snapshot.selectedLayerId;
+      _activeTool = snapshot.activeTool;
+      _nextLayerId = snapshot.nextLayerId;
+      _isCloneSourceArmed = snapshot.isCloneSourceArmed;
+      _textFontLocale = snapshot.textFontLocale;
+      _isTransformHistoryCaptured = false;
+      _isTextEditHistoryCaptured = false;
+    });
+    _syncTextInputFromSelectedLayer();
+  }
+
+  void _undo() {
+    if (!_canUndo) return;
+    final _EditorSnapshot current = _captureSnapshot();
+    final _EditorSnapshot target = _undoStack.removeLast();
+    _redoStack.add(current);
+    if (_redoStack.length > _historyLimit) {
+      _redoStack.removeAt(0);
+    }
+    _applySnapshot(target);
+  }
+
+  void _redo() {
+    if (!_canRedo) return;
+    final _EditorSnapshot current = _captureSnapshot();
+    final _EditorSnapshot target = _redoStack.removeLast();
+    _undoStack.add(current);
+    if (_undoStack.length > _historyLimit) {
+      _undoStack.removeAt(0);
+    }
+    _applySnapshot(target);
+  }
+
+  void _onTransformInteractionStart() {
+    if (_isTransformHistoryCaptured) return;
+    _pushUndoSnapshot();
+    _isTransformHistoryCaptured = true;
+  }
+
+  void _onTransformInteractionEnd() {
+    _isTransformHistoryCaptured = false;
+  }
+
+  void _onTextFocusChanged() {
+    if (_textInputFocusNode.hasFocus) return;
+    _isTextEditHistoryCaptured = false;
   }
 
   Widget _buildPencilSettingsPanel() {
@@ -1127,9 +1244,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (_isSyncingTextInput) return;
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
+    if (!_isTextEditHistoryCaptured) {
+      _pushUndoSnapshot();
+      _isTextEditHistoryCaptured = true;
+    }
     _updateTextLayer(
       selectedTextLayer.id,
       textValue: _textInputController.text,
+      recordHistory: false,
     );
   }
 
@@ -1186,17 +1308,38 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     String? textFontFamily,
     int? textFontWeight,
     Color? textColor,
+    bool recordHistory = true,
   }) {
     final int index = _layers.indexWhere((layer) => layer.id == layerId);
     if (index < 0) return;
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final EditorLayer current = nextLayers[index];
-    nextLayers[index] = current.copyWith(
+    final String nextTextValue = textValue ?? current.textValue ?? '';
+    final String currentTextValue = current.textValue ?? '';
+    final String nextFontFamily =
+        textFontFamily ?? current.textFontFamily ?? '';
+    final String currentFontFamily = current.textFontFamily ?? '';
+    final int nextFontWeight = textFontWeight ?? current.textFontWeight ?? 400;
+    final int currentFontWeight = current.textFontWeight ?? 400;
+    final Color nextTextColor =
+        textColor ?? current.textColor ?? const Color(0xFF1F2937);
+    final Color currentTextColor = current.textColor ?? const Color(0xFF1F2937);
+    if (nextTextValue == currentTextValue &&
+        nextFontFamily == currentFontFamily &&
+        nextFontWeight == currentFontWeight &&
+        nextTextColor == currentTextColor) {
+      return;
+    }
+    final EditorLayer next = current.copyWith(
       textValue: textValue,
       textFontFamily: textFontFamily,
       textFontWeight: textFontWeight,
       textColor: textColor,
     );
+    nextLayers[index] = next;
+    if (recordHistory) {
+      _pushUndoSnapshot();
+    }
     setState(() {
       _layers = nextLayers;
     });
@@ -1253,11 +1396,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       layerRotation: 0.0,
     );
 
+    _pushUndoSnapshot();
     setState(() {
       _layers = <EditorLayer>[..._layers, textLayer];
       _selectedLayerId = id;
       _activeTool = EditorTool.text;
       _isCloneSourceArmed = false;
+      _isTextEditHistoryCaptured = false;
+      _isTransformHistoryCaptured = false;
     });
     return id;
   }
@@ -1803,6 +1949,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (index < 0) return;
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final EditorLayer current = nextLayers[index];
+    _pushUndoSnapshot();
     nextLayers[index] = current.copyWith(
       image: image,
       solidSize: _imageSourceSize(image),
@@ -1814,6 +1961,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   void _onLayerSelected(String? layerId) {
     if (_selectedLayerId == layerId) return;
+    _isTransformHistoryCaptured = false;
+    _isTextEditHistoryCaptured = false;
     setState(() {
       _selectedLayerId = layerId;
       final EditorLayer? selected = _selectedLayer();
@@ -1865,6 +2014,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final ui.Image image = await _decodeUiImage(bytes);
       if (!mounted) return;
 
+      _pushUndoSnapshot();
       setState(() {
         _upsertBackgroundLayer(
           image: image,
@@ -2146,6 +2296,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
 
     if (selected == null) return;
+    _pushUndoSnapshot();
     setState(() {
       _upsertSolidBackground(
         solidSize: selected.size,
@@ -2194,16 +2345,39 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Layers',
-                        style: TextStyle(
-                          color: Color(0xFF2F3743),
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'Layers',
+                              style: TextStyle(
+                                color: Color(0xFF2F3743),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        _HistorySheetActionButton(
+                          icon: Icons.undo_rounded,
+                          enabled: _canUndo,
+                          onTap: () {
+                            _undo();
+                            setSheetState(() {});
+                          },
+                        ),
+                        const SizedBox(width: 8),
+                        _HistorySheetActionButton(
+                          icon: Icons.redo_rounded,
+                          enabled: _canRedo,
+                          onTap: () {
+                            _redo();
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 10),
                     if (_layers.isEmpty)
@@ -2243,15 +2417,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                 setSheetState(() {});
                               },
                               onToggleVisibility: () {
-                                setState(() {
-                                  _toggleLayerVisibility(layer.id);
-                                });
+                                _toggleLayerVisibility(layer.id);
                                 setSheetState(() {});
                               },
                               onDelete: () {
-                                setState(() {
-                                  _deleteLayer(layer.id);
-                                });
+                                _deleteLayer(layer.id);
                                 setSheetState(() {});
                               },
                             );
@@ -2272,19 +2442,25 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final int index = nextLayers.indexWhere((layer) => layer.id == layerId);
     if (index < 0) return;
+    _pushUndoSnapshot();
     final EditorLayer layer = nextLayers[index];
     nextLayers[index] = layer.copyWith(isVisible: !layer.isVisible);
-    _layers = nextLayers;
-    if (!nextLayers[index].isVisible && _selectedLayerId == layerId) {
-      _selectedLayerId = null;
-    }
+    setState(() {
+      _layers = nextLayers;
+      if (!nextLayers[index].isVisible && _selectedLayerId == layerId) {
+        _selectedLayerId = null;
+      }
+    });
   }
 
   void _deleteLayer(String layerId) {
-    _layers = _layers.where((layer) => layer.id != layerId).toList();
-    if (_selectedLayerId == layerId) {
-      _selectedLayerId = null;
-    }
+    _pushUndoSnapshot();
+    setState(() {
+      _layers = _layers.where((layer) => layer.id != layerId).toList();
+      if (_selectedLayerId == layerId) {
+        _selectedLayerId = null;
+      }
+    });
   }
 
   Widget _buildBottomNav() {
@@ -2366,6 +2542,46 @@ class _NavItem extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: content,
+      ),
+    );
+  }
+}
+
+class _HistorySheetActionButton extends StatelessWidget {
+  const _HistorySheetActionButton({
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.45,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFFFFFFFF),
+              border: Border.all(color: const Color(0xFFD5DAE1), width: 1.2),
+            ),
+            child: Icon(
+              icon,
+              size: 18,
+              color: const Color(0xFF4C5562),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2701,6 +2917,8 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.onCloneSourcePicked,
     required this.onCanvasMessage,
     required this.onTextLayerDoubleTap,
+    required this.onTransformInteractionStart,
+    required this.onTransformInteractionEnd,
   });
 
   final List<EditorLayer> layers;
@@ -2715,6 +2933,8 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final VoidCallback onCloneSourcePicked;
   final ValueChanged<String> onCanvasMessage;
   final ValueChanged<String> onTextLayerDoubleTap;
+  final VoidCallback onTransformInteractionStart;
+  final VoidCallback onTransformInteractionEnd;
 
   @override
   State<_SkiaEditorCanvas> createState() => _SkiaEditorCanvasState();
@@ -2823,6 +3043,23 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       _primeSelectedCloneLayerBitmap();
     }
     _cleanupCloneCaches();
+
+    final Map<String, EditorLayer> oldById = <String, EditorLayer>{
+      for (final EditorLayer layer in oldWidget.layers) layer.id: layer,
+    };
+    for (final EditorLayer layer in widget.layers) {
+      if (layer.type != EditorLayerType.image || layer.image == null) {
+        continue;
+      }
+      final EditorLayer? oldLayer = oldById[layer.id];
+      final bool imageChanged = oldLayer == null ||
+          oldLayer.type != EditorLayerType.image ||
+          !identical(oldLayer.image, layer.image);
+      if (!imageChanged) continue;
+      _editableImages.remove(layer.id);
+      _bitmapLoadInFlight.remove(layer.id);
+    }
+
     if (oldBackground?.id != newBackground?.id ||
         oldBackground?.thumbnailBytes != newBackground?.thumbnailBytes ||
         oldSize != newSize ||
@@ -2933,6 +3170,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         _interaction = _CanvasInteraction.rotatingLayer;
         _gestureLayerId = selectedData.layerId;
         _layerStartRotation = selectedLayer!.layerRotation;
+        widget.onTransformInteractionStart();
         _rotateStartAngle = math.atan2(scenePoint.dy - selectedData.center.dy,
             scenePoint.dx - selectedData.center.dx);
         return;
@@ -2943,6 +3181,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
           _interaction = _CanvasInteraction.resizingLayer;
           _gestureLayerId = selectedData.layerId;
           _layerStartScale = selectedLayer!.layerScale;
+          widget.onTransformInteractionStart();
           _resizeStartDistance = (scenePoint - selectedData.center).distance;
           if (_resizeStartDistance < 1) _resizeStartDistance = 1;
           return;
@@ -2958,6 +3197,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         _gestureLayerId = selectedData.layerId;
         _layerStartPosition = selectedLayer!.position ??
             Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+        widget.onTransformInteractionStart();
         _layerStartScenePoint = scenePoint;
         return;
       }
@@ -2987,6 +3227,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
             _interaction = _CanvasInteraction.rotatingLayer;
             _gestureLayerId = selectedData.layerId;
             _layerStartRotation = selectedLayer!.layerRotation;
+            widget.onTransformInteractionStart();
             _rotateStartAngle = math.atan2(
               scenePoint.dy - selectedData.center.dy,
               scenePoint.dx - selectedData.center.dx,
@@ -2996,6 +3237,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
           _interaction = _CanvasInteraction.resizingLayer;
           _gestureLayerId = selectedData.layerId;
           _layerStartScale = selectedLayer!.layerScale;
+          widget.onTransformInteractionStart();
           _resizeStartDistance = (scenePoint - selectedData.center).distance;
           if (_resizeStartDistance < 1) _resizeStartDistance = 1;
           return;
@@ -3016,6 +3258,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       _gestureLayerId = hitLayer.id;
       _layerStartPosition = hitLayer.position ??
           Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+      widget.onTransformInteractionStart();
       _layerStartScenePoint = scenePoint;
       return;
     }
@@ -3037,11 +3280,18 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
   void _onScaleUpdate(ScaleUpdateDetails details, Size canvasSize) {
     if (details.pointerCount > 1) {
+      final bool wasTransforming =
+          _interaction == _CanvasInteraction.movingLayer ||
+              _interaction == _CanvasInteraction.resizingLayer ||
+              _interaction == _CanvasInteraction.rotatingLayer;
       _activeStroke = null;
       _cancelClonePreviewTimer(clearLayerId: false);
       _interaction = _CanvasInteraction.none;
       _gestureLayerId = null;
       _activeCloneStroke = null;
+      if (wasTransforming) {
+        widget.onTransformInteractionEnd();
+      }
       final double nextScale =
           (_startScale * details.scale).clamp(_minScale, _maxScale);
       final Offset nextPan = _clampPan(
@@ -3132,6 +3382,10 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
   }
 
   void _onScaleEnd(ScaleEndDetails details) {
+    final bool endedTransform =
+        _interaction == _CanvasInteraction.movingLayer ||
+            _interaction == _CanvasInteraction.resizingLayer ||
+            _interaction == _CanvasInteraction.rotatingLayer;
     _cancelClonePreviewTimer(clearLayerId: false);
     if (_interaction == _CanvasInteraction.cloning && _cloneChangedLayer) {
       final String? layerId = _gestureLayerId;
@@ -3158,6 +3412,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     _cloneOffsetUv = null;
     _lastCloneDestUv = null;
     _cloneChangedLayer = false;
+    if (endedTransform) {
+      widget.onTransformInteractionEnd();
+    }
   }
 
   void _onDoubleTapDown(TapDownDetails details, Size canvasSize) {
