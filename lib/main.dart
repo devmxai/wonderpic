@@ -2917,9 +2917,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
           );
 
     if (selectedData != null) {
-      // Keep transform handles precise so taps inside text prefer move.
-      final double rotateHandleRadius = (13 / _scale).clamp(9, 15);
-      final double cornerHandleRadius = (10 / _scale).clamp(7, 12);
+      // Keep move dominant inside text, but make rotate handle capture reliable.
+      final double rotateHandleRadius = (20 / _scale).clamp(14, 28);
+      final double cornerHandleRadius = (12 / _scale).clamp(8, 16);
       final double moveHitPadding = (3 / _scale).clamp(1, 4);
       if ((scenePoint - selectedData.rotateHandle).distance <=
           rotateHandleRadius) {
@@ -2956,13 +2956,13 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       }
 
       // Do not drop selection when tapping close to transform controls.
-      final double controlsPadding = (3 / _scale).clamp(1, 4);
+      final double controlsPadding = (8 / _scale).clamp(4, 10);
       if (_pointNearTextTransformControls(
         scenePoint: scenePoint,
         data: selectedData,
         rotateHandleRadius: rotateHandleRadius + controlsPadding,
         cornerHandleRadius: cornerHandleRadius + controlsPadding,
-        rotateLineDistance: (3 + controlsPadding * 0.4).clamp(3, 6),
+        rotateLineDistance: (8 / _scale).clamp(4, 10),
       )) {
         _interaction = _CanvasInteraction.none;
         return;
