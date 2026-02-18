@@ -74,7 +74,37 @@ extension EditorLayerTypeUi on EditorLayerType {
   }
 }
 
-enum EditorTool { move, pencil, text, clone, crop }
+enum EditorTool { move, pencil, text, clone, marquee }
+
+enum MarqueeSelectionMode { rectangular, elliptical, freehand, object }
+
+extension MarqueeSelectionModeUi on MarqueeSelectionMode {
+  String get label {
+    switch (this) {
+      case MarqueeSelectionMode.rectangular:
+        return 'Rectangle';
+      case MarqueeSelectionMode.elliptical:
+        return 'Ellipse';
+      case MarqueeSelectionMode.freehand:
+        return 'Free';
+      case MarqueeSelectionMode.object:
+        return 'Object';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case MarqueeSelectionMode.rectangular:
+        return Icons.crop_din_rounded;
+      case MarqueeSelectionMode.elliptical:
+        return Icons.circle_outlined;
+      case MarqueeSelectionMode.freehand:
+        return Icons.gesture_rounded;
+      case MarqueeSelectionMode.object:
+        return Icons.select_all_rounded;
+    }
+  }
+}
 
 enum _AddAction { image, solid }
 
@@ -164,6 +194,89 @@ class CloneStampSettings {
       opacity: opacity ?? this.opacity,
     );
   }
+}
+
+class MarqueeSelection {
+  const MarqueeSelection({
+    required this.layerId,
+    required this.mode,
+    required this.boundsUv,
+    this.freePathUv = const <Offset>[],
+  });
+
+  final String layerId;
+  final MarqueeSelectionMode mode;
+  final Rect boundsUv;
+  final List<Offset> freePathUv;
+
+  bool get hasUsableArea {
+    if (boundsUv.width <= 0 || boundsUv.height <= 0) return false;
+    if (mode == MarqueeSelectionMode.freehand) {
+      return freePathUv.length >= 3;
+    }
+    return true;
+  }
+
+  MarqueeSelection copyWith({
+    String? layerId,
+    MarqueeSelectionMode? mode,
+    Rect? boundsUv,
+    List<Offset>? freePathUv,
+  }) {
+    return MarqueeSelection(
+      layerId: layerId ?? this.layerId,
+      mode: mode ?? this.mode,
+      boundsUv: boundsUv ?? this.boundsUv,
+      freePathUv: freePathUv ?? this.freePathUv,
+    );
+  }
+}
+
+class _MarqueeClipboard {
+  const _MarqueeClipboard({
+    required this.pixels,
+    required this.width,
+    required this.height,
+    required this.sourceBoundsUv,
+  });
+
+  final Uint8List pixels;
+  final int width;
+  final int height;
+  final Rect sourceBoundsUv;
+}
+
+class _SelectionPixelBounds {
+  const _SelectionPixelBounds({
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+  });
+
+  final int left;
+  final int top;
+  final int right;
+  final int bottom;
+
+  int get width => right - left;
+  int get height => bottom - top;
+}
+
+class _SelectionRaster {
+  const _SelectionRaster({
+    required this.pixels,
+    required this.width,
+    required this.height,
+    required this.bounds,
+    required this.hasVisiblePixels,
+  });
+
+  final Uint8List pixels;
+  final int width;
+  final int height;
+  final _SelectionPixelBounds bounds;
+  final bool hasVisiblePixels;
 }
 
 class EditorLayer {
@@ -280,6 +393,8 @@ class _EditorSnapshot {
     required this.nextLayerId,
     required this.isCloneSourceArmed,
     required this.textFontLocale,
+    required this.marqueeMode,
+    required this.marqueeSelection,
   });
 
   final List<EditorLayer> layers;
@@ -288,6 +403,8 @@ class _EditorSnapshot {
   final int nextLayerId;
   final bool isCloneSourceArmed;
   final _TextFontLocale textFontLocale;
+  final MarqueeSelectionMode marqueeMode;
+  final MarqueeSelection? marqueeSelection;
 }
 
 const List<Color> _kPencilPalette = <Color>[
@@ -669,6 +786,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   CloneStampSettings _cloneSettings = const CloneStampSettings();
   bool _isCloneSourceArmed = false;
   _TextFontLocale _textFontLocale = _TextFontLocale.english;
+  MarqueeSelectionMode _marqueeMode = MarqueeSelectionMode.rectangular;
+  MarqueeSelection? _marqueeSelection;
+  _MarqueeClipboard? _marqueeClipboard;
+  bool _isMarqueeActionInProgress = false;
   bool _isSyncingTextInput = false;
   final List<_EditorSnapshot> _undoStack = <_EditorSnapshot>[];
   final List<_EditorSnapshot> _redoStack = <_EditorSnapshot>[];
@@ -751,9 +872,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                   const SizedBox(width: 8),
                   _toolButton(
-                    icon: Icons.crop_rounded,
-                    filled: _activeTool == EditorTool.crop,
-                    onTap: () => _setActiveTool(EditorTool.crop),
+                    icon: Icons.crop_din_rounded,
+                    filled: _activeTool == EditorTool.marquee,
+                    onTap: () => _setActiveTool(EditorTool.marquee),
                   ),
                   const SizedBox(width: 8),
                   _toolButton(
@@ -827,11 +948,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       activeTool: _activeTool,
       pencilSettings: _pencilSettings,
       cloneSettings: _cloneSettings,
+      marqueeMode: _marqueeMode,
+      marqueeSelection: _marqueeSelection,
       isCloneSourceArmed: _isCloneSourceArmed,
       selectedLayerId: _selectedLayerId,
       onLayerSelected: _onLayerSelected,
       onLayerTransformChanged: _onLayerTransformChanged,
       onLayerImageChanged: _onLayerImageChanged,
+      onMarqueeSelectionChanged: _onMarqueeSelectionChanged,
       onCloneSourcePicked: _onCloneSourcePicked,
       onCanvasMessage: _showToolMessage,
       onTextLayerDoubleTap: _onTextLayerDoubleTap,
@@ -846,6 +970,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _activeTool = tool;
       if (tool != EditorTool.clone) {
         _isCloneSourceArmed = false;
+      }
+      if (tool != EditorTool.marquee && _marqueeSelection != null) {
+        _marqueeSelection = null;
       }
     });
   }
@@ -929,8 +1056,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return 'Text Tool Settings';
       case EditorTool.clone:
         return 'Clone Tool Settings';
-      case EditorTool.crop:
-        return 'Crop Tool Settings';
+      case EditorTool.marquee:
+        return 'Selection Tool Settings';
       case null:
         final EditorLayer? selectedLayer = _selectedLayer();
         if (_activeTool == EditorTool.move) {
@@ -956,12 +1083,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return _buildTextSettingsPanel();
       case EditorTool.clone:
         return _buildCloneSettingsPanel();
-      case EditorTool.crop:
-        return const _ToolHintCard(
-          title: 'Crop Tool',
-          message:
-              'Crop UI is placed in the top toolbar. Cropping behavior can be wired in the next phase.',
-        );
+      case EditorTool.marquee:
+        return _buildMarqueeSettingsPanel();
       case null:
         final EditorLayer? selectedLayer = _selectedLayer();
         if (_activeTool == EditorTool.move) {
@@ -996,6 +1119,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       nextLayerId: _nextLayerId,
       isCloneSourceArmed: _isCloneSourceArmed,
       textFontLocale: _textFontLocale,
+      marqueeMode: _marqueeMode,
+      marqueeSelection: _marqueeSelection,
     );
   }
 
@@ -1005,6 +1130,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (a.nextLayerId != b.nextLayerId) return false;
     if (a.isCloneSourceArmed != b.isCloneSourceArmed) return false;
     if (a.textFontLocale != b.textFontLocale) return false;
+    if (a.marqueeMode != b.marqueeMode) return false;
+    if (!_marqueeSelectionsEqual(a.marqueeSelection, b.marqueeSelection)) {
+      return false;
+    }
     if (a.layers.length != b.layers.length) return false;
     for (int i = 0; i < a.layers.length; i++) {
       if (!identical(a.layers[i], b.layers[i])) return false;
@@ -1032,6 +1161,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _nextLayerId = snapshot.nextLayerId;
       _isCloneSourceArmed = snapshot.isCloneSourceArmed;
       _textFontLocale = snapshot.textFontLocale;
+      _marqueeMode = snapshot.marqueeMode;
+      _marqueeSelection = snapshot.marqueeSelection;
       _isTransformHistoryCaptured = false;
       _isTextEditHistoryCaptured = false;
     });
@@ -1068,6 +1199,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   void _onTransformInteractionEnd() {
     _isTransformHistoryCaptured = false;
+  }
+
+  bool _marqueeSelectionsEqual(MarqueeSelection? a, MarqueeSelection? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return false;
+    if (a.layerId != b.layerId) return false;
+    if (a.mode != b.mode) return false;
+    if (a.boundsUv != b.boundsUv) return false;
+    if (a.freePathUv.length != b.freePathUv.length) return false;
+    for (int i = 0; i < a.freePathUv.length; i++) {
+      if (a.freePathUv[i] != b.freePathUv[i]) return false;
+    }
+    return true;
+  }
+
+  void _onMarqueeSelectionChanged(MarqueeSelection? selection) {
+    final MarqueeSelection? sanitized =
+        selection != null && selection.hasUsableArea ? selection : null;
+    if (_marqueeSelectionsEqual(_marqueeSelection, sanitized)) return;
+    setState(() {
+      _marqueeSelection = sanitized;
+    });
   }
 
   void _onTextFocusChanged() {
@@ -1954,6 +2107,622 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
   }
 
+  Widget _buildMarqueeSettingsPanel() {
+    final EditorLayer? selectedImageLayer = _selectedImageLayer();
+    final bool imageReady = selectedImageLayer != null;
+    final bool hasSelection = _marqueeSelection != null &&
+        _marqueeSelection!.hasUsableArea &&
+        _marqueeSelection!.layerId == selectedImageLayer?.id;
+    final bool canPaste = imageReady && _marqueeClipboard != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F5F7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD5DAE1)),
+          ),
+          child: Text(
+            imageReady
+                ? (hasSelection
+                    ? 'Selection active on Image Layer. Use actions below.'
+                    : 'Drag on the image to create selection.')
+                : 'Select an Image Layer first. Selection tool works on image pixels only.',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF6B7482),
+              height: 1.35,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF4F5F7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD5DAE1)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Selection Type',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2F3743),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: MarqueeSelectionMode.values.map((mode) {
+                  final bool selected = _marqueeMode == mode;
+                  return ChoiceChip(
+                    selected: selected,
+                    onSelected: (_) {
+                      setState(() {
+                        _marqueeMode = mode;
+                        _marqueeSelection = null;
+                      });
+                    },
+                    avatar: Icon(
+                      mode.icon,
+                      size: 16,
+                      color: selected
+                          ? const Color(0xFF2F3743)
+                          : const Color(0xFF6B7482),
+                    ),
+                    label: Text(
+                      mode.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: selected
+                            ? const Color(0xFF2F3743)
+                            : const Color(0xFF6B7482),
+                      ),
+                    ),
+                    backgroundColor: const Color(0xFFFFFFFF),
+                    selectedColor: const Color(0xFFE0E7F1),
+                    side: BorderSide(
+                      color: selected
+                          ? const Color(0xFF6F8BFF)
+                          : const Color(0xFFD5DAE1),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        IgnorePointer(
+          ignoring: _isMarqueeActionInProgress,
+          child: Opacity(
+            opacity: _isMarqueeActionInProgress ? 0.65 : 1,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final double tileWidth = (constraints.maxWidth - 8) / 2;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.copy_rounded,
+                      label: 'Copy',
+                      enabled: hasSelection,
+                      onTap: () => _runMarqueeAction(_copyMarqueeSelection),
+                    ),
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.content_cut_rounded,
+                      label: 'Cut',
+                      enabled: hasSelection,
+                      onTap: () => _runMarqueeAction(_cutMarqueeSelection),
+                    ),
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.paste_rounded,
+                      label: 'Paste',
+                      enabled: canPaste,
+                      onTap: () => _runMarqueeAction(_pasteMarqueeClipboard),
+                    ),
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.delete_outline_rounded,
+                      label: 'Delete',
+                      enabled: hasSelection,
+                      onTap: () => _runMarqueeAction(_deleteMarqueeSelection),
+                    ),
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.layers_outlined,
+                      label: 'New Layer',
+                      enabled: hasSelection,
+                      onTap: () =>
+                          _runMarqueeAction(_createLayerFromMarqueeSelection),
+                    ),
+                    _MarqueeActionTile(
+                      width: tileWidth,
+                      icon: Icons.crop_rounded,
+                      label: 'Crop',
+                      enabled: hasSelection,
+                      onTap: () => _runMarqueeAction(_cropToMarqueeSelection),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _runMarqueeAction(Future<void> Function() action) async {
+    if (_isMarqueeActionInProgress) return;
+    setState(() {
+      _isMarqueeActionInProgress = true;
+    });
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarqueeActionInProgress = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _copyMarqueeSelection() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final MarqueeSelection? selection = _marqueeSelection;
+    if (layer == null || selection == null || selection.layerId != layer.id) {
+      return;
+    }
+    final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
+    if (sourcePixels == null) return;
+    final _SelectionRaster? raster = _rasterizeSelection(
+      sourcePixels: sourcePixels,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+      selection: selection,
+    );
+    if (raster == null || !raster.hasVisiblePixels) return;
+    if (!mounted) return;
+    setState(() {
+      _marqueeClipboard = _MarqueeClipboard(
+        pixels: raster.pixels,
+        width: raster.width,
+        height: raster.height,
+        sourceBoundsUv: selection.boundsUv,
+      );
+    });
+  }
+
+  Future<void> _cutMarqueeSelection() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final MarqueeSelection? selection = _marqueeSelection;
+    if (layer == null || selection == null || selection.layerId != layer.id) {
+      return;
+    }
+    final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
+    if (sourcePixels == null) return;
+    final _SelectionRaster? raster = _rasterizeSelection(
+      sourcePixels: sourcePixels,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+      selection: selection,
+    );
+    if (raster == null || !raster.hasVisiblePixels) return;
+
+    final Uint8List nextPixels = Uint8List.fromList(sourcePixels);
+    _eraseSelectionFromPixels(
+      pixels: nextPixels,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+      selection: selection,
+      bounds: raster.bounds,
+    );
+    final ui.Image nextImage = await _buildUiImageFromRgba(
+      pixels: nextPixels,
+      width: layer.image!.width,
+      height: layer.image!.height,
+    );
+    if (!mounted) return;
+
+    _pushUndoSnapshot();
+    setState(() {
+      _replaceLayerImage(layer.id, nextImage);
+      _marqueeClipboard = _MarqueeClipboard(
+        pixels: raster.pixels,
+        width: raster.width,
+        height: raster.height,
+        sourceBoundsUv: selection.boundsUv,
+      );
+    });
+  }
+
+  Future<void> _deleteMarqueeSelection() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final MarqueeSelection? selection = _marqueeSelection;
+    if (layer == null || selection == null || selection.layerId != layer.id) {
+      return;
+    }
+    final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
+    if (sourcePixels == null) return;
+    final _SelectionPixelBounds? bounds = _selectionPixelBounds(
+      selection: selection,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+    );
+    if (bounds == null) return;
+
+    final Uint8List nextPixels = Uint8List.fromList(sourcePixels);
+    _eraseSelectionFromPixels(
+      pixels: nextPixels,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+      selection: selection,
+      bounds: bounds,
+    );
+    final ui.Image nextImage = await _buildUiImageFromRgba(
+      pixels: nextPixels,
+      width: layer.image!.width,
+      height: layer.image!.height,
+    );
+    if (!mounted) return;
+
+    _pushUndoSnapshot();
+    setState(() {
+      _replaceLayerImage(layer.id, nextImage);
+    });
+  }
+
+  Future<void> _createLayerFromMarqueeSelection() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final MarqueeSelection? selection = _marqueeSelection;
+    if (layer == null || selection == null || selection.layerId != layer.id) {
+      return;
+    }
+    final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
+    if (sourcePixels == null) return;
+    final _SelectionPixelBounds? bounds = _selectionPixelBounds(
+      selection: selection,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+    );
+    if (bounds == null) return;
+
+    final Uint8List extractedPixels =
+        Uint8List(layer.image!.width * layer.image!.height * 4);
+    bool hasPixels = false;
+    for (int y = bounds.top; y < bounds.bottom; y++) {
+      for (int x = bounds.left; x < bounds.right; x++) {
+        final Offset uv = Offset(
+          (x + 0.5) / layer.image!.width,
+          (y + 0.5) / layer.image!.height,
+        );
+        if (!_selectionContainsUv(selection, uv)) continue;
+        final int sourceIndex = ((y * layer.image!.width) + x) * 4;
+        final int destIndex = sourceIndex;
+        extractedPixels[destIndex] = sourcePixels[sourceIndex];
+        extractedPixels[destIndex + 1] = sourcePixels[sourceIndex + 1];
+        extractedPixels[destIndex + 2] = sourcePixels[sourceIndex + 2];
+        extractedPixels[destIndex + 3] = sourcePixels[sourceIndex + 3];
+        if (extractedPixels[destIndex + 3] > 0) {
+          hasPixels = true;
+        }
+      }
+    }
+    if (!hasPixels) return;
+
+    final ui.Image extractedImage = await _buildUiImageFromRgba(
+      pixels: extractedPixels,
+      width: layer.image!.width,
+      height: layer.image!.height,
+    );
+    if (!mounted) return;
+
+    _pushUndoSnapshot();
+    setState(() {
+      final int overlayImageCount = _layers
+          .where((entry) =>
+              entry.type == EditorLayerType.image && !entry.isBackground)
+          .length;
+      final String newId = 'layer_${_nextLayerId++}';
+      final EditorLayer extractedLayer = EditorLayer(
+        id: newId,
+        name: overlayImageCount == 0
+            ? 'Selection Layer'
+            : 'Selection Layer ${overlayImageCount + 1}',
+        type: EditorLayerType.image,
+        isVisible: true,
+        image: extractedImage,
+        solidSize: _imageSourceSize(extractedImage),
+      );
+      _layers = <EditorLayer>[..._layers, extractedLayer];
+      _selectedLayerId = newId;
+      _marqueeSelection = selection.copyWith(layerId: newId);
+    });
+  }
+
+  Future<void> _pasteMarqueeClipboard() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final _MarqueeClipboard? clipboard = _marqueeClipboard;
+    if (layer == null || clipboard == null) return;
+    final Rect targetBoundsUv = (_marqueeSelection != null &&
+            _marqueeSelection!.layerId == layer.id &&
+            _marqueeSelection!.hasUsableArea)
+        ? _marqueeSelection!.boundsUv
+        : clipboard.sourceBoundsUv;
+    final MarqueeSelection targetSelection = MarqueeSelection(
+      layerId: layer.id,
+      mode: MarqueeSelectionMode.rectangular,
+      boundsUv: targetBoundsUv,
+    );
+    final _SelectionPixelBounds? targetBounds = _selectionPixelBounds(
+      selection: targetSelection,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+    );
+    if (targetBounds == null) return;
+
+    final Uint8List pastedPixels =
+        Uint8List(layer.image!.width * layer.image!.height * 4);
+    for (int y = 0; y < targetBounds.height; y++) {
+      final int dstY = targetBounds.top + y;
+      if (dstY < 0 || dstY >= layer.image!.height) continue;
+      final int srcY = ((y * clipboard.height) / targetBounds.height)
+          .floor()
+          .clamp(0, clipboard.height - 1);
+      for (int x = 0; x < targetBounds.width; x++) {
+        final int dstX = targetBounds.left + x;
+        if (dstX < 0 || dstX >= layer.image!.width) continue;
+        final int srcX = ((x * clipboard.width) / targetBounds.width)
+            .floor()
+            .clamp(0, clipboard.width - 1);
+        final int sourceIndex = ((srcY * clipboard.width) + srcX) * 4;
+        final int destIndex = ((dstY * layer.image!.width) + dstX) * 4;
+        pastedPixels[destIndex] = clipboard.pixels[sourceIndex];
+        pastedPixels[destIndex + 1] = clipboard.pixels[sourceIndex + 1];
+        pastedPixels[destIndex + 2] = clipboard.pixels[sourceIndex + 2];
+        pastedPixels[destIndex + 3] = clipboard.pixels[sourceIndex + 3];
+      }
+    }
+    final ui.Image pastedImage = await _buildUiImageFromRgba(
+      pixels: pastedPixels,
+      width: layer.image!.width,
+      height: layer.image!.height,
+    );
+    if (!mounted) return;
+
+    _pushUndoSnapshot();
+    setState(() {
+      final int overlayImageCount = _layers
+          .where((entry) =>
+              entry.type == EditorLayerType.image && !entry.isBackground)
+          .length;
+      final String newId = 'layer_${_nextLayerId++}';
+      final EditorLayer pastedLayer = EditorLayer(
+        id: newId,
+        name: overlayImageCount == 0
+            ? 'Pasted Layer'
+            : 'Pasted Layer ${overlayImageCount + 1}',
+        type: EditorLayerType.image,
+        isVisible: true,
+        image: pastedImage,
+        solidSize: _imageSourceSize(pastedImage),
+      );
+      _layers = <EditorLayer>[..._layers, pastedLayer];
+      _selectedLayerId = newId;
+      _marqueeSelection = MarqueeSelection(
+        layerId: newId,
+        mode: MarqueeSelectionMode.rectangular,
+        boundsUv: targetBoundsUv,
+      );
+    });
+  }
+
+  Future<void> _cropToMarqueeSelection() async {
+    final EditorLayer? layer = _selectedImageLayer();
+    final MarqueeSelection? selection = _marqueeSelection;
+    if (layer == null || selection == null || selection.layerId != layer.id) {
+      return;
+    }
+    final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
+    if (sourcePixels == null) return;
+    final _SelectionRaster? raster = _rasterizeSelection(
+      sourcePixels: sourcePixels,
+      imageWidth: layer.image!.width,
+      imageHeight: layer.image!.height,
+      selection: selection,
+    );
+    if (raster == null || !raster.hasVisiblePixels) return;
+
+    final ui.Image croppedImage = await _buildUiImageFromRgba(
+      pixels: raster.pixels,
+      width: raster.width,
+      height: raster.height,
+    );
+    if (!mounted) return;
+
+    _pushUndoSnapshot();
+    setState(() {
+      _replaceLayerImage(layer.id, croppedImage);
+      _marqueeSelection = null;
+    });
+  }
+
+  Future<Uint8List?> _readImagePixels(ui.Image image) async {
+    final ByteData? data =
+        await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return null;
+    return Uint8List.fromList(data.buffer.asUint8List(0, data.lengthInBytes));
+  }
+
+  Future<ui.Image> _buildUiImageFromRgba({
+    required Uint8List pixels,
+    required int width,
+    required int height,
+  }) {
+    final Completer<ui.Image> completer = Completer<ui.Image>();
+    ui.decodeImageFromPixels(
+      pixels,
+      width,
+      height,
+      ui.PixelFormat.rgba8888,
+      (ui.Image image) => completer.complete(image),
+    );
+    return completer.future;
+  }
+
+  _SelectionRaster? _rasterizeSelection({
+    required Uint8List sourcePixels,
+    required int imageWidth,
+    required int imageHeight,
+    required MarqueeSelection selection,
+  }) {
+    final _SelectionPixelBounds? bounds = _selectionPixelBounds(
+      selection: selection,
+      imageWidth: imageWidth,
+      imageHeight: imageHeight,
+    );
+    if (bounds == null) return null;
+
+    final Uint8List outPixels = Uint8List(bounds.width * bounds.height * 4);
+    bool hasVisiblePixels = false;
+    for (int y = bounds.top; y < bounds.bottom; y++) {
+      for (int x = bounds.left; x < bounds.right; x++) {
+        final Offset uv = Offset(
+          (x + 0.5) / imageWidth,
+          (y + 0.5) / imageHeight,
+        );
+        if (!_selectionContainsUv(selection, uv)) continue;
+        final int sourceIndex = ((y * imageWidth) + x) * 4;
+        final int destIndex =
+            (((y - bounds.top) * bounds.width) + (x - bounds.left)) * 4;
+        outPixels[destIndex] = sourcePixels[sourceIndex];
+        outPixels[destIndex + 1] = sourcePixels[sourceIndex + 1];
+        outPixels[destIndex + 2] = sourcePixels[sourceIndex + 2];
+        outPixels[destIndex + 3] = sourcePixels[sourceIndex + 3];
+        if (outPixels[destIndex + 3] > 0) {
+          hasVisiblePixels = true;
+        }
+      }
+    }
+    return _SelectionRaster(
+      pixels: outPixels,
+      width: bounds.width,
+      height: bounds.height,
+      bounds: bounds,
+      hasVisiblePixels: hasVisiblePixels,
+    );
+  }
+
+  _SelectionPixelBounds? _selectionPixelBounds({
+    required MarqueeSelection selection,
+    required int imageWidth,
+    required int imageHeight,
+  }) {
+    final int left =
+        (selection.boundsUv.left * imageWidth).floor().clamp(0, imageWidth - 1);
+    final int top = (selection.boundsUv.top * imageHeight)
+        .floor()
+        .clamp(0, imageHeight - 1);
+    final int right =
+        (selection.boundsUv.right * imageWidth).ceil().clamp(1, imageWidth);
+    final int bottom =
+        (selection.boundsUv.bottom * imageHeight).ceil().clamp(1, imageHeight);
+    if (right <= left || bottom <= top) return null;
+    return _SelectionPixelBounds(
+      left: left,
+      top: top,
+      right: right,
+      bottom: bottom,
+    );
+  }
+
+  bool _selectionContainsUv(MarqueeSelection selection, Offset uv) {
+    switch (selection.mode) {
+      case MarqueeSelectionMode.rectangular:
+      case MarqueeSelectionMode.object:
+        return selection.boundsUv.contains(uv);
+      case MarqueeSelectionMode.elliptical:
+        final Rect bounds = selection.boundsUv;
+        if (bounds.width <= 0 || bounds.height <= 0) return false;
+        final double dx = (uv.dx - bounds.center.dx) / (bounds.width / 2);
+        final double dy = (uv.dy - bounds.center.dy) / (bounds.height / 2);
+        return (dx * dx) + (dy * dy) <= 1;
+      case MarqueeSelectionMode.freehand:
+        if (selection.freePathUv.length < 3) return false;
+        return _pointInPolygon(uv, selection.freePathUv);
+    }
+  }
+
+  bool _pointInPolygon(Offset point, List<Offset> polygon) {
+    bool inside = false;
+    for (int i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      final Offset a = polygon[i];
+      final Offset b = polygon[j];
+      final bool intersect = ((a.dy > point.dy) != (b.dy > point.dy)) &&
+          (point.dx <
+              ((b.dx - a.dx) * (point.dy - a.dy) / (b.dy - a.dy + 0.0000001)) +
+                  a.dx);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  void _eraseSelectionFromPixels({
+    required Uint8List pixels,
+    required int imageWidth,
+    required int imageHeight,
+    required MarqueeSelection selection,
+    required _SelectionPixelBounds bounds,
+  }) {
+    for (int y = bounds.top; y < bounds.bottom; y++) {
+      for (int x = bounds.left; x < bounds.right; x++) {
+        final Offset uv = Offset(
+          (x + 0.5) / imageWidth,
+          (y + 0.5) / imageHeight,
+        );
+        if (!_selectionContainsUv(selection, uv)) continue;
+        final int index = ((y * imageWidth) + x) * 4;
+        pixels[index] = 0;
+        pixels[index + 1] = 0;
+        pixels[index + 2] = 0;
+        pixels[index + 3] = 0;
+      }
+    }
+  }
+
+  void _replaceLayerImage(String layerId, ui.Image image) {
+    final int layerIndex = _layers.indexWhere((entry) => entry.id == layerId);
+    if (layerIndex < 0) return;
+    final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+    final EditorLayer current = nextLayers[layerIndex];
+    nextLayers[layerIndex] = current.copyWith(
+      image: image,
+      solidSize: _imageSourceSize(image),
+      thumbnailBytes: null,
+    );
+    _layers = nextLayers;
+  }
+
   void _armCloneSourceSelection() {
     setState(() {
       _isCloneSourceArmed = true;
@@ -1982,6 +2751,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
     setState(() {
       _layers = nextLayers;
+      if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+        _marqueeSelection = null;
+      }
     });
   }
 
@@ -1994,6 +2766,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final EditorLayer? selected = _selectedLayer();
       if (selected == null || selected.type != EditorLayerType.image) {
         _isCloneSourceArmed = false;
+      }
+      if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+        _marqueeSelection = null;
       }
       if (selected?.type == EditorLayerType.text) {
         _syncTextLocaleFromFamily(selected?.textFontFamily);
@@ -2096,12 +2871,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       nextLayers[existingIndex] = background;
       _layers = nextLayers;
       _selectedLayerId = layerId;
+      if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+        _marqueeSelection = null;
+      }
       return;
     }
 
     nextLayers.insert(0, background);
     _layers = nextLayers;
     _selectedLayerId = layerId;
+    if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+      _marqueeSelection = null;
+    }
   }
 
   void _upsertSolidBackground({
@@ -2129,12 +2910,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       nextLayers[existingIndex] = background;
       _layers = nextLayers;
       _selectedLayerId = layerId;
+      if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+        _marqueeSelection = null;
+      }
       return;
     }
 
     nextLayers.insert(0, background);
     _layers = nextLayers;
     _selectedLayerId = layerId;
+    if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
+      _marqueeSelection = null;
+    }
   }
 
   Future<void> _openAddBottomSheet() async {
@@ -2476,6 +3263,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       if (!nextLayers[index].isVisible && _selectedLayerId == layerId) {
         _selectedLayerId = null;
       }
+      if (!nextLayers[index].isVisible &&
+          _marqueeSelection != null &&
+          _marqueeSelection!.layerId == layerId) {
+        _marqueeSelection = null;
+      }
     });
   }
 
@@ -2485,6 +3277,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _layers = _layers.where((layer) => layer.id != layerId).toList();
       if (_selectedLayerId == layerId) {
         _selectedLayerId = null;
+      }
+      if (_marqueeSelection != null && _marqueeSelection!.layerId == layerId) {
+        _marqueeSelection = null;
       }
     });
   }
@@ -2605,6 +3400,69 @@ class _HistorySheetActionButton extends StatelessWidget {
               icon,
               size: 18,
               color: const Color(0xFF4C5562),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MarqueeActionTile extends StatelessWidget {
+  const _MarqueeActionTile({
+    required this.width,
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final double width;
+  final IconData icon;
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color borderColor =
+        enabled ? const Color(0xFFD5DAE1) : const Color(0xFFE3E6EB);
+    final Color iconColor =
+        enabled ? const Color(0xFF4C5562) : const Color(0xFF9AA3B0);
+    final Color textColor =
+        enabled ? const Color(0xFF2F3743) : const Color(0xFF9AA3B0);
+    final Color fillColor =
+        enabled ? const Color(0xFFFFFFFF) : const Color(0xFFF0F2F6);
+
+    return SizedBox(
+      width: width,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(11),
+          onTap: enabled ? onTap : null,
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: fillColor,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 16, color: iconColor),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -2924,6 +3782,7 @@ enum _CanvasInteraction {
   none,
   drawing,
   cloning,
+  marqueeSelecting,
   movingLayer,
   resizingLayer,
   rotatingLayer,
@@ -2935,11 +3794,14 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.activeTool,
     required this.pencilSettings,
     required this.cloneSettings,
+    required this.marqueeMode,
+    required this.marqueeSelection,
     required this.isCloneSourceArmed,
     required this.selectedLayerId,
     required this.onLayerSelected,
     required this.onLayerTransformChanged,
     required this.onLayerImageChanged,
+    required this.onMarqueeSelectionChanged,
     required this.onCloneSourcePicked,
     required this.onCanvasMessage,
     required this.onTextLayerDoubleTap,
@@ -2951,11 +3813,14 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final EditorTool activeTool;
   final PencilSettings pencilSettings;
   final CloneStampSettings cloneSettings;
+  final MarqueeSelectionMode marqueeMode;
+  final MarqueeSelection? marqueeSelection;
   final bool isCloneSourceArmed;
   final String? selectedLayerId;
   final ValueChanged<String?> onLayerSelected;
   final LayerTransformChanged onLayerTransformChanged;
   final LayerImageChanged onLayerImageChanged;
+  final ValueChanged<MarqueeSelection?> onMarqueeSelectionChanged;
   final VoidCallback onCloneSourcePicked;
   final ValueChanged<String> onCanvasMessage;
   final ValueChanged<String> onTextLayerDoubleTap;
@@ -2998,6 +3863,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
   double _layerStartRotation = 0.0;
   double _resizeStartDistance = 1.0;
   double _rotateStartAngle = 0.0;
+  Offset? _marqueeStartUv;
+  final List<Offset> _freeMarqueePointsUv = <Offset>[];
 
   static const double _minScale = 0.6;
   static const double _maxScale = 3.5;
@@ -3027,6 +3894,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
               activeTool: widget.activeTool,
               imageOverrides: _currentImageOverrides(),
               cloneSourcePointerUv: _activeClonePointerUv(),
+              marqueeSelection: widget.marqueeSelection,
             ),
             child: const SizedBox.expand(),
           ),
@@ -3064,6 +3932,13 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       _cloneOffsetUv = null;
       _lastCloneDestUv = null;
       _cloneChangedLayer = false;
+    }
+    if (widget.activeTool != EditorTool.marquee &&
+        _interaction == _CanvasInteraction.marqueeSelecting) {
+      _interaction = _CanvasInteraction.none;
+      _gestureLayerId = null;
+      _marqueeStartUv = null;
+      _freeMarqueePointsUv.clear();
     }
     if (widget.activeTool == EditorTool.clone) {
       _primeSelectedCloneLayerBitmap();
@@ -3161,6 +4036,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     if (widget.activeTool == EditorTool.clone) {
       _activeStroke = null;
       _startCloneGesture(scenePoint: scenePoint, artboard: artboard);
+      return;
+    }
+
+    if (widget.activeTool == EditorTool.marquee) {
+      _activeStroke = null;
+      _startMarqueeGesture(scenePoint: scenePoint, artboard: artboard);
       return;
     }
 
@@ -3310,6 +4191,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
           _interaction == _CanvasInteraction.movingLayer ||
               _interaction == _CanvasInteraction.resizingLayer ||
               _interaction == _CanvasInteraction.rotatingLayer;
+      if (_interaction == _CanvasInteraction.marqueeSelecting) {
+        _finalizeMarqueeSelection();
+      }
       _activeStroke = null;
       _cancelClonePreviewTimer(clearLayerId: false);
       _interaction = _CanvasInteraction.none;
@@ -3358,6 +4242,11 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
     if (_interaction == _CanvasInteraction.cloning) {
       _updateCloneGesture(scenePoint: scenePoint, artboard: artboard);
+      return;
+    }
+
+    if (_interaction == _CanvasInteraction.marqueeSelecting) {
+      _updateMarqueeGesture(scenePoint: scenePoint, artboard: artboard);
       return;
     }
 
@@ -3431,6 +4320,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         }
       }
     }
+    if (_interaction == _CanvasInteraction.marqueeSelecting) {
+      _finalizeMarqueeSelection();
+    }
     _activeStroke = null;
     _interaction = _CanvasInteraction.none;
     _gestureLayerId = null;
@@ -3438,6 +4330,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     _cloneOffsetUv = null;
     _lastCloneDestUv = null;
     _cloneChangedLayer = false;
+    _marqueeStartUv = null;
+    _freeMarqueePointsUv.clear();
     if (endedTransform) {
       widget.onTransformInteractionEnd();
     }
@@ -3636,6 +4530,119 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     _queueEditableImageRefresh(layer.id);
 
     _cloneChangedLayer = true;
+  }
+
+  void _startMarqueeGesture({
+    required Offset scenePoint,
+    required Rect artboard,
+  }) {
+    final EditorLayer? selectedImage = _selectedImageLayerForClone();
+    if (selectedImage == null) {
+      widget.onMarqueeSelectionChanged(null);
+      return;
+    }
+    if (!artboard.contains(scenePoint)) return;
+
+    final Offset startUv = _toUv(scenePoint, artboard);
+    _interaction = _CanvasInteraction.marqueeSelecting;
+    _gestureLayerId = selectedImage.id;
+    _marqueeStartUv = startUv;
+    _freeMarqueePointsUv.clear();
+
+    if (widget.marqueeMode == MarqueeSelectionMode.freehand) {
+      _freeMarqueePointsUv.add(startUv);
+      widget.onMarqueeSelectionChanged(
+        _buildFreehandSelection(selectedImage.id),
+      );
+      return;
+    }
+    widget.onMarqueeSelectionChanged(
+      _buildBoundsSelection(
+        layerId: selectedImage.id,
+        startUv: startUv,
+        endUv: startUv,
+      ),
+    );
+  }
+
+  void _updateMarqueeGesture({
+    required Offset scenePoint,
+    required Rect artboard,
+  }) {
+    final String? layerId = _gestureLayerId;
+    if (layerId == null) return;
+    if (!artboard.contains(scenePoint)) return;
+    final Offset currentUv = _toUv(scenePoint, artboard);
+
+    if (widget.marqueeMode == MarqueeSelectionMode.freehand) {
+      if (_freeMarqueePointsUv.isEmpty ||
+          (_freeMarqueePointsUv.last - currentUv).distance > 0.002) {
+        _freeMarqueePointsUv.add(currentUv);
+        widget.onMarqueeSelectionChanged(_buildFreehandSelection(layerId));
+      }
+      return;
+    }
+
+    final Offset? startUv = _marqueeStartUv;
+    if (startUv == null) return;
+    widget.onMarqueeSelectionChanged(
+      _buildBoundsSelection(
+        layerId: layerId,
+        startUv: startUv,
+        endUv: currentUv,
+      ),
+    );
+  }
+
+  void _finalizeMarqueeSelection() {
+    final MarqueeSelection? selection = widget.marqueeSelection;
+    if (selection != null && !selection.hasUsableArea) {
+      widget.onMarqueeSelectionChanged(null);
+    }
+  }
+
+  MarqueeSelection _buildBoundsSelection({
+    required String layerId,
+    required Offset startUv,
+    required Offset endUv,
+  }) {
+    final Rect bounds = Rect.fromLTRB(
+      math.min(startUv.dx, endUv.dx),
+      math.min(startUv.dy, endUv.dy),
+      math.max(startUv.dx, endUv.dx),
+      math.max(startUv.dy, endUv.dy),
+    );
+    return MarqueeSelection(
+      layerId: layerId,
+      mode: widget.marqueeMode,
+      boundsUv: bounds,
+    );
+  }
+
+  MarqueeSelection _buildFreehandSelection(String layerId) {
+    if (_freeMarqueePointsUv.isEmpty) {
+      return MarqueeSelection(
+        layerId: layerId,
+        mode: MarqueeSelectionMode.freehand,
+        boundsUv: Rect.zero,
+      );
+    }
+    double minX = _freeMarqueePointsUv.first.dx;
+    double minY = _freeMarqueePointsUv.first.dy;
+    double maxX = _freeMarqueePointsUv.first.dx;
+    double maxY = _freeMarqueePointsUv.first.dy;
+    for (final Offset point in _freeMarqueePointsUv) {
+      if (point.dx < minX) minX = point.dx;
+      if (point.dy < minY) minY = point.dy;
+      if (point.dx > maxX) maxX = point.dx;
+      if (point.dy > maxY) maxY = point.dy;
+    }
+    return MarqueeSelection(
+      layerId: layerId,
+      mode: MarqueeSelectionMode.freehand,
+      boundsUv: Rect.fromLTRB(minX, minY, maxX, maxY),
+      freePathUv: List<Offset>.from(_freeMarqueePointsUv),
+    );
   }
 
   void _updateCloneGesture({
@@ -4410,6 +5417,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     required this.activeTool,
     required this.imageOverrides,
     required this.cloneSourcePointerUv,
+    required this.marqueeSelection,
   });
 
   final List<_BrushStroke> strokes;
@@ -4420,6 +5428,7 @@ class _SkiaCanvasPainter extends CustomPainter {
   final EditorTool activeTool;
   final Map<String, ui.Image> imageOverrides;
   final Offset? cloneSourcePointerUv;
+  final MarqueeSelection? marqueeSelection;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -4461,6 +5470,9 @@ class _SkiaCanvasPainter extends CustomPainter {
       workspaceSize: workspaceSize,
     );
     _drawStrokes(canvas, artboard);
+    if (marqueeSelection != null && activeTool == EditorTool.marquee) {
+      _drawMarqueeSelection(canvas, artboard, marqueeSelection!);
+    }
     if (selectedTextLayer != null && activeTool == EditorTool.move) {
       _drawSelectionControls(canvas, selectedTextLayer);
     }
@@ -4688,6 +5700,101 @@ class _SkiaCanvasPainter extends CustomPainter {
     );
   }
 
+  void _drawMarqueeSelection(
+    Canvas canvas,
+    Rect artboard,
+    MarqueeSelection selection,
+  ) {
+    final Path path = _buildMarqueePath(artboard, selection);
+    if (path.computeMetrics().isEmpty) return;
+
+    final Paint darkStroke = Paint()
+      ..color = const Color(0xFF1F2430)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1
+      ..isAntiAlias = true;
+    final Paint lightStroke = Paint()
+      ..color = const Color(0xFFEFF3FA)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1
+      ..isAntiAlias = true;
+    _drawDashedPath(
+      canvas: canvas,
+      source: path,
+      paint: darkStroke,
+      dashLength: 7,
+      gapLength: 5,
+      phase: 0,
+    );
+    _drawDashedPath(
+      canvas: canvas,
+      source: path,
+      paint: lightStroke,
+      dashLength: 7,
+      gapLength: 5,
+      phase: 7,
+    );
+  }
+
+  Path _buildMarqueePath(Rect artboard, MarqueeSelection selection) {
+    final Path path = Path();
+    final Rect sceneBounds = Rect.fromLTRB(
+      artboard.left + (selection.boundsUv.left * artboard.width),
+      artboard.top + (selection.boundsUv.top * artboard.height),
+      artboard.left + (selection.boundsUv.right * artboard.width),
+      artboard.top + (selection.boundsUv.bottom * artboard.height),
+    );
+    switch (selection.mode) {
+      case MarqueeSelectionMode.rectangular:
+      case MarqueeSelectionMode.object:
+        path.addRect(sceneBounds);
+        return path;
+      case MarqueeSelectionMode.elliptical:
+        path.addOval(sceneBounds);
+        return path;
+      case MarqueeSelectionMode.freehand:
+        if (selection.freePathUv.length < 2) return path;
+        final Offset first = selection.freePathUv.first;
+        path.moveTo(
+          artboard.left + (first.dx * artboard.width),
+          artboard.top + (first.dy * artboard.height),
+        );
+        for (int i = 1; i < selection.freePathUv.length; i++) {
+          final Offset point = selection.freePathUv[i];
+          path.lineTo(
+            artboard.left + (point.dx * artboard.width),
+            artboard.top + (point.dy * artboard.height),
+          );
+        }
+        path.close();
+        return path;
+    }
+  }
+
+  void _drawDashedPath({
+    required Canvas canvas,
+    required Path source,
+    required Paint paint,
+    required double dashLength,
+    required double gapLength,
+    required double phase,
+  }) {
+    final double dashCycle = dashLength + gapLength;
+    for (final ui.PathMetric metric in source.computeMetrics()) {
+      final double total = metric.length;
+      if (total <= 0) continue;
+      double distance = -phase;
+      while (distance < total) {
+        final double from = distance < 0 ? 0 : distance;
+        final double to = math.min(from + dashLength, total);
+        if (to > from) {
+          canvas.drawPath(metric.extractPath(from, to), paint);
+        }
+        distance += dashCycle;
+      }
+    }
+  }
+
   @override
   bool shouldRepaint(covariant _SkiaCanvasPainter oldDelegate) {
     return oldDelegate.strokes != strokes ||
@@ -4697,7 +5804,8 @@ class _SkiaCanvasPainter extends CustomPainter {
         oldDelegate.selectedLayerId != selectedLayerId ||
         oldDelegate.activeTool != activeTool ||
         oldDelegate.imageOverrides != imageOverrides ||
-        oldDelegate.cloneSourcePointerUv != cloneSourcePointerUv;
+        oldDelegate.cloneSourcePointerUv != cloneSourcePointerUv ||
+        oldDelegate.marqueeSelection != marqueeSelection;
   }
 
   EditorLayer? _backgroundLayer(List<EditorLayer> layers) {

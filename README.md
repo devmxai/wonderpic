@@ -28,6 +28,8 @@ Implemented and working:
 - Resize-handle capture was also reinforced (larger scale-aware corner hit area + deselect guard near selected text bounds) to keep selection stable while interacting with corner handles.
 - Tiny text-layer handling was added: when a text layer becomes very small, transform handle hit zones expand adaptively and near-control taps resolve to the nearest control (resize/rotate) to avoid dead-zone interactions.
 - Pencil drawing tool (active only when pencil tool is selected).
+- Marquee Selection tool for image layers with modes: Rectangle, Ellipse, Free, and Object (manual box).
+- Selection actions in sidebar: Copy, Cut, Paste, Delete, New Layer, Crop.
 - Clone Stamp tool for image layers with source picking and brush settings.
 - Clone performance pipeline for high-resolution images (preview + deferred full-res commit).
 - Undo/redo history system with snapshot stacks and circular controls in the Layers bottom sheet.
@@ -105,7 +107,7 @@ These are intentional product decisions and must stay true unless explicitly cha
 4. Background is fixed as workspace and is not transformed like movable overlays.
 5. Drawing is NOT globally active; it works only when `Pencil` tool is active.
 6. Clone tool is active only when a visible `Image` layer is selected.
-7. Selection tool has no dedicated settings panel; it is transform-only behavior.
+7. Move tool is transform-only behavior for text layers; Marquee tool has its own sidebar settings/actions.
 8. Sidebar overlays content (drawer), it must not push/rebuild layout of canvas.
 9. Newly added layers are auto-selected.
 10. Keep thin/minimal toolbar + navbar visual style.
@@ -119,7 +121,7 @@ Contains:
 - menu button
 - move/select tool
 - pencil tool
-- crop tool
+- marquee selection tool (square selection icon)
 - clone stamp tool (custom painted icon)
 - settings button (opens right sidebar)
 - Left menu and right settings remain fixed; center tool rail is horizontally scrollable for future tool expansion.
@@ -141,7 +143,7 @@ Contains:
   - `pencil` -> Pencil settings
   - `text` -> Text settings
   - `clone` -> Clone settings
-  - `crop` -> Crop placeholder settings card (tool wiring planned next phase)
+  - `marquee` -> Selection mode + actions (`Copy/Cut/Paste/Delete/New Layer/Crop`)
   - `move` -> no direct selection-tool settings; resolves to selected layer context
 - For `move` + selected text layer, text settings are shown.
 
@@ -311,11 +313,40 @@ This design is key for reducing lag on large images.
 
 ---
 
-### 13.6 Undo / Redo history
+## 14. Marquee Selection Tool
+
+### 14.1 Activation constraints
+- Works only on selected, visible `Image` layer.
+- Disabled logically for text/vector/mask/solid layers.
+
+### 14.2 Selection modes
+- Rectangle
+- Ellipse
+- Free (lasso)
+- Object (manual box flow for now)
+
+### 14.3 Sidebar actions
+- Copy
+- Cut
+- Paste
+- Delete
+- New Layer
+- Crop
+
+### 14.4 Behavior notes
+- Selection shape is drawn on canvas using dashed marquee outline.
+- Copy/Cut extract only selected pixels (with transparency preserved).
+- Paste creates a new image layer from clipboard content.
+- New Layer creates an image layer from selected pixels.
+- Crop replaces selected image layer with cropped selection result.
+
+---
+
+### 14.5 Undo / Redo history
 
 History model:
 - Snapshot-based history stored in-memory.
-- Each snapshot stores: `layers`, `selectedLayerId`, `activeTool`, `nextLayerId`, clone-source armed state, and text locale.
+- Each snapshot stores: `layers`, `selectedLayerId`, `activeTool`, `nextLayerId`, clone-source armed state, text locale, marquee mode, and marquee selection.
 - Two stacks are used: `undoStack` and `redoStack` (with size cap).
 
 Recorded operations:
@@ -325,6 +356,7 @@ Recorded operations:
 - Text content/style updates.
 - Text transform gestures (move/resize/rotate), grouped at gesture start/end.
 - Image updates from clone commits.
+- Marquee destructive pixel edits (cut/delete/crop) and selection layer creation/paste.
 
 Behavior:
 - Any new edit clears `redoStack`.
@@ -333,7 +365,7 @@ Behavior:
 
 ---
 
-## 14. Fonts and Assets
+## 15. Fonts and Assets
 
 Registered font families:
 - English: Barlow, Cabin, CrimsonText, DMSerifDisplay, FiraSans, Inter, Karla, Lato, Manrope, Merriweather, Montserrat, Mulish, Nunito, Oswald, PlayfairDisplay, Poppins, Quicksand, Raleway, SourceSans3, WorkSans
@@ -345,7 +377,7 @@ Font files live under:
 
 ---
 
-## 15. Platform Permissions
+## 16. Platform Permissions
 
 ### iOS (`ios/Runner/Info.plist`)
 Configured:
@@ -358,7 +390,7 @@ Configured:
 
 ---
 
-## 16. Development Workflow
+## 17. Development Workflow
 
 ### 16.1 Setup
 ```bash
@@ -381,18 +413,17 @@ flutter analyze
 
 ---
 
-## 17. Known Issues / Technical Debt
+## 18. Known Issues / Technical Debt
 
 1. `test/widget_test.dart` is still default boilerplate and currently broken (`MyApp` reference).
 2. Editor logic is concentrated in a single large file (`lib/main.dart`), needs modularization.
 3. `vector` and `mask` are data-model placeholders only (no full editing pipeline yet).
 4. `Save`, `Search`, `Home` actions are UI placeholders.
-5. No undo/redo history yet.
-6. No export/render pipeline yet.
+5. No export/render pipeline yet.
 
 ---
 
-## 18. Refactor Plan (Safe Incremental)
+## 19. Refactor Plan (Safe Incremental)
 
 Recommended order:
 1. Split `main.dart` into modules:
@@ -406,16 +437,16 @@ Recommended order:
    - text creation/editing
    - transform interactions
    - clone source + paint behavior
-4. Introduce undo/redo command stack before adding more destructive tools.
+4. Extend snapshot policy for future vector/mask operations before adding more destructive tools.
 
 ---
 
-## 19. AI Handoff Checklist (For Next Model)
+## 20. AI Handoff Checklist (For Next Model)
 
 Before changing anything, confirm these invariants in code:
 - `EditorLayer` remains single source of truth.
 - Background layer semantics are preserved.
-- Selection tool stays settings-free.
+- Move tool stays transform-focused; Marquee tool handles pixel-region selection/edit actions.
 - Sidebar remains overlay (`endDrawer`) and does not shift canvas layout.
 - Tools remain opt-in (no always-on drawing/cloning).
 - New layers auto-select after insertion.
@@ -435,7 +466,7 @@ When adding new layer types:
 
 ---
 
-## 20. Practical Notes for Continuation
+## 21. Practical Notes for Continuation
 
 - If gallery load fails in simulator, verify photo library permission prompt and simulator media availability.
 - The clone pipeline is sensitive to performance changes; benchmark before modifying preview/full commit logic.
