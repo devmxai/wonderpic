@@ -26,6 +26,7 @@ Implemented and working:
 - Marquee `New Layer` and `Paste` now create true cropped overlay image layers with independent transform state (position/scale/rotation), while the original background stays unchanged.
 - Hiding the background no longer collapses the workspace; overlays remain visible on the artboard. Deleting background image converts work area to solid background to keep the project editable.
 - Selection hit-testing tuned: taps inside text bounds prioritize `move`, while `resize/rotate` trigger only from their dedicated handles.
+- Overlay resize-handle capture was strengthened: larger adaptive hit zones + nearest-control resolution near handles/rotate line for more reliable resize initiation.
 - Rotation handle capture was reinforced with larger, scale-aware touch radius and control-line guard to prevent accidental deselect when pressing rotate.
 - Resize-handle capture was also reinforced (larger scale-aware corner hit area + deselect guard near selected text bounds) to keep selection stable while interacting with corner handles.
 - Tiny text-layer handling was added: when a text layer becomes very small, transform handle hit zones expand adaptively and near-control taps resolve to the nearest control (resize/rotate) to avoid dead-zone interactions.

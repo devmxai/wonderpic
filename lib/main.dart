@@ -4084,38 +4084,81 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     );
 
     if (selectedData != null) {
-      // Keep move dominant inside text, but make rotate handle capture reliable.
+      // Prioritize transform controls over move to make handle capture stable.
       final double minLayerExtent =
           math.min(selectedData.width, selectedData.height);
-      final bool isTinyLayer = minLayerExtent < 56;
+      final bool isImageOverlay = selectedLayer?.type == EditorLayerType.image;
       final double tinyBoost =
-          ((56 - minLayerExtent).clamp(0, 32) / 32).toDouble();
+          ((72 - minLayerExtent).clamp(0, 48) / 48).toDouble();
+      final double imageBoost = isImageOverlay ? 3.0 : 0.0;
       final double rotateHandleRadius =
-          ((20 / _scale).clamp(14, 28) + (tinyBoost * 10)).clamp(14, 38);
+          ((22 / _scale).clamp(15, 30) + (tinyBoost * 12) + imageBoost)
+              .clamp(15, 44);
       final double cornerHandleRadius =
-          ((18 / _scale).clamp(12, 24) + (tinyBoost * 9)).clamp(12, 34);
+          ((24 / _scale).clamp(15, 34) + (tinyBoost * 13) + imageBoost)
+              .clamp(15, 46);
       final double moveHitPadding = (2 / _scale).clamp(0.5, 3);
-      if ((scenePoint - selectedData.rotateHandle).distance <=
-          rotateHandleRadius) {
+
+      final double rotateDistance =
+          (scenePoint - selectedData.rotateHandle).distance;
+      double nearestCornerDistance = double.infinity;
+      for (final Offset handle in selectedData.cornerHandles) {
+        final double distance = (scenePoint - handle).distance;
+        if (distance < nearestCornerDistance) {
+          nearestCornerDistance = distance;
+        }
+      }
+
+      void beginRotate() {
         _interaction = _CanvasInteraction.rotatingLayer;
         _gestureLayerId = selectedData.layerId;
         _layerStartRotation = selectedLayer!.layerRotation;
         widget.onTransformInteractionStart();
-        _rotateStartAngle = math.atan2(scenePoint.dy - selectedData.center.dy,
-            scenePoint.dx - selectedData.center.dx);
+        _rotateStartAngle = math.atan2(
+          scenePoint.dy - selectedData.center.dy,
+          scenePoint.dx - selectedData.center.dx,
+        );
+      }
+
+      void beginResize() {
+        _interaction = _CanvasInteraction.resizingLayer;
+        _gestureLayerId = selectedData.layerId;
+        _layerStartScale = selectedLayer!.layerScale;
+        widget.onTransformInteractionStart();
+        _resizeStartDistance = (scenePoint - selectedData.center).distance;
+        if (_resizeStartDistance < 1) _resizeStartDistance = 1;
+      }
+
+      if (rotateDistance <= rotateHandleRadius) {
+        beginRotate();
+        return;
+      }
+      if (nearestCornerDistance <= cornerHandleRadius) {
+        beginResize();
         return;
       }
 
-      for (final Offset handle in selectedData.cornerHandles) {
-        if ((scenePoint - handle).distance <= cornerHandleRadius) {
-          _interaction = _CanvasInteraction.resizingLayer;
-          _gestureLayerId = selectedData.layerId;
-          _layerStartScale = selectedLayer!.layerScale;
-          widget.onTransformInteractionStart();
-          _resizeStartDistance = (scenePoint - selectedData.center).distance;
-          if (_resizeStartDistance < 1) _resizeStartDistance = 1;
-          return;
+      // Near control lines/corners: resolve to nearest control instead of move.
+      final double controlsPadding =
+          ((isImageOverlay ? 14 : 10) / _scale).clamp(7, 20);
+      final double paddedRotateRadius = rotateHandleRadius + controlsPadding;
+      final double paddedCornerRadius = cornerHandleRadius + controlsPadding;
+      final bool nearControls = _pointNearLayerTransformControls(
+        scenePoint: scenePoint,
+        data: selectedData,
+        rotateHandleRadius: paddedRotateRadius,
+        cornerHandleRadius: paddedCornerRadius,
+        rotateLineDistance: (12 / _scale).clamp(6, 14),
+      );
+      if (nearControls) {
+        final double rotateScore = rotateDistance / paddedRotateRadius;
+        final double cornerScore = nearestCornerDistance / paddedCornerRadius;
+        if (rotateScore <= cornerScore) {
+          beginRotate();
+        } else {
+          beginResize();
         }
+        return;
       }
 
       if (_pointInRotatedLayerBounds(
@@ -4129,50 +4172,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
             Offset(workspaceSize.width / 2, workspaceSize.height / 2);
         widget.onTransformInteractionStart();
         _layerStartScenePoint = scenePoint;
-        return;
-      }
-
-      // Do not drop selection when tapping close to transform controls.
-      final double controlsPadding = (10 / _scale).clamp(5, 14);
-      if (_pointNearLayerTransformControls(
-        scenePoint: scenePoint,
-        data: selectedData,
-        rotateHandleRadius: rotateHandleRadius + controlsPadding,
-        cornerHandleRadius: cornerHandleRadius + controlsPadding,
-        rotateLineDistance: (10 / _scale).clamp(5, 12),
-      )) {
-        // For very small layers, resolve to the nearest control to avoid
-        // dead zones where handles are visually tiny and hard to reacquire.
-        if (isTinyLayer) {
-          final double rotateDistance =
-              (scenePoint - selectedData.rotateHandle).distance;
-          double nearestCornerDistance = double.infinity;
-          for (final Offset handle in selectedData.cornerHandles) {
-            final double distance = (scenePoint - handle).distance;
-            if (distance < nearestCornerDistance) {
-              nearestCornerDistance = distance;
-            }
-          }
-          if (rotateDistance <= nearestCornerDistance) {
-            _interaction = _CanvasInteraction.rotatingLayer;
-            _gestureLayerId = selectedData.layerId;
-            _layerStartRotation = selectedLayer!.layerRotation;
-            widget.onTransformInteractionStart();
-            _rotateStartAngle = math.atan2(
-              scenePoint.dy - selectedData.center.dy,
-              scenePoint.dx - selectedData.center.dx,
-            );
-            return;
-          }
-          _interaction = _CanvasInteraction.resizingLayer;
-          _gestureLayerId = selectedData.layerId;
-          _layerStartScale = selectedLayer!.layerScale;
-          widget.onTransformInteractionStart();
-          _resizeStartDistance = (scenePoint - selectedData.center).distance;
-          if (_resizeStartDistance < 1) _resizeStartDistance = 1;
-          return;
-        }
-        _interaction = _CanvasInteraction.none;
         return;
       }
     }
