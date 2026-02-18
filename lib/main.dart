@@ -813,7 +813,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final double width = MediaQuery.sizeOf(context).width * 0.75;
     return Drawer(
       width: width,
-      backgroundColor: const Color(0xFF23242A),
+      backgroundColor: const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(18),
@@ -834,7 +834,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFE9ECF3),
+                        color: Color(0xFF2F3743),
                       ),
                     ),
                   ),
@@ -844,7 +844,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                     icon: const Icon(
                       Icons.close,
                       size: 20,
-                      color: Color(0xFFD2D8E4),
+                      color: Color(0xFF4C5562),
                     ),
                   ),
                 ],
@@ -993,7 +993,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
-            color: Color(0xFFE3E8F2),
+            color: Color(0xFF2F3743),
           ),
         ),
         const SizedBox(height: 8),
@@ -1007,16 +1007,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 type.label,
                 style: TextStyle(
                   color: selected
-                      ? const Color(0xFFF5F7FB)
-                      : const Color(0xFFB9C0CE),
+                      ? const Color(0xFF2F3743)
+                      : const Color(0xFF6B7482),
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
               ),
               selected: selected,
-              backgroundColor: const Color(0xFF2E3037),
-              selectedColor: const Color(0xFF4A4F5D),
-              side: const BorderSide(color: Color(0xFF555A67)),
+              backgroundColor: const Color(0xFFF4F5F7),
+              selectedColor: const Color(0xFFE0E7F1),
+              side: const BorderSide(color: Color(0xFFC7CDD8)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(9),
               ),
@@ -1034,7 +1034,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           style: TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
-            color: Color(0xFFE3E8F2),
+            color: Color(0xFF2F3743),
           ),
         ),
         const SizedBox(height: 8),
@@ -1042,9 +1042,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            color: const Color(0xFF2E3037),
+            color: const Color(0xFFF4F5F7),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF3F4451)),
+            border: Border.all(color: const Color(0xFFD5DAE1)),
           ),
           child: Wrap(
             spacing: 8,
@@ -1309,9 +1309,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           width: double.infinity,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: const Color(0xFF2E3037),
+            color: const Color(0xFFF4F5F7),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF3F4451)),
+            border: Border.all(color: const Color(0xFFD5DAE1)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1321,7 +1321,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFE8EDF7),
+                  color: Color(0xFF2F3743),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1332,7 +1332,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 minLines: 2,
                 maxLines: 4,
                 style: TextStyle(
-                  color: const Color(0xFFF3F6FC),
+                  color: const Color(0xFF2F3743),
                   fontSize: 16,
                   fontFamily: selectedFamily,
                   height: 1.2,
@@ -1340,23 +1340,23 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 decoration: InputDecoration(
                   hintText: 'Write your text here',
                   hintStyle: const TextStyle(
-                    color: Color(0xFF98A2B5),
+                    color: Color(0xFF6B7482),
                     fontSize: 14,
                   ),
                   filled: true,
-                  fillColor: const Color(0xFF1F2127),
+                  fillColor: const Color(0xFFFFFFFF),
                   contentPadding: const EdgeInsets.all(12),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFF424754)),
+                    borderSide: const BorderSide(color: Color(0xFFD5DAE1)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFF424754)),
+                    borderSide: const BorderSide(color: Color(0xFFD5DAE1)),
                   ),
                   disabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFF3A3F4C)),
+                    borderSide: const BorderSide(color: Color(0xFFD5DAE1)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -1401,9 +1401,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF2E3037),
+              color: const Color(0xFFF4F5F7),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF3F4451)),
+              border: Border.all(color: const Color(0xFFD5DAE1)),
             ),
             child: Row(
               children: [
@@ -1411,7 +1411,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   child: Text(
                     'No text layer selected',
                     style: TextStyle(
-                      color: Color(0xFFB8C0CF),
+                      color: Color(0xFF6B7482),
                       fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1431,9 +1431,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2E3037),
+                  color: const Color(0xFFF4F5F7),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF3F4451)),
+                  border: Border.all(color: const Color(0xFFD5DAE1)),
                 ),
                 child: SizedBox(
                   height: fontListHeight,
@@ -1479,12 +1479,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                   vertical: 10,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF2A2D36),
+                                  color: const Color(0xFFFFFFFF),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
                                     color: selected
                                         ? const Color(0xFF6F8BFF)
-                                        : const Color(0xFF3F4451),
+                                        : const Color(0xFFD5DAE1),
                                     width: selected ? 1.4 : 1,
                                   ),
                                 ),
@@ -1497,7 +1497,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                       Text(
                                         option.label,
                                         style: TextStyle(
-                                          color: const Color(0xFFEFF3FB),
+                                          color: const Color(0xFF2F3743),
                                           fontSize: 14.5,
                                           fontWeight: _fontWeightFromValue(
                                               previewWeight),
@@ -1508,7 +1508,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                       Text(
                                         option.preview,
                                         style: TextStyle(
-                                          color: const Color(0xFFB9C2D2),
+                                          color: const Color(0xFF6B7482),
                                           fontSize: 12.5,
                                           height: 1.15,
                                           fontWeight: _fontWeightFromValue(
@@ -1537,9 +1537,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2E3037),
+                  color: const Color(0xFFF4F5F7),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF3F4451)),
+                  border: Border.all(color: const Color(0xFFD5DAE1)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1549,7 +1549,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFE8EDF7),
+                        color: Color(0xFF2F3743),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1574,20 +1574,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                               alignment: Alignment.center,
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0xFF4A4F5D)
-                                    : const Color(0xFF252831),
+                                    ? const Color(0xFFE0E7F1)
+                                    : const Color(0xFFFFFFFF),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: isSelected
                                       ? const Color(0xFF6F8BFF)
-                                      : const Color(0xFF3F4451),
+                                      : const Color(0xFFD5DAE1),
                                   width: isSelected ? 1.3 : 1,
                                 ),
                               ),
                               child: Text(
                                 'B',
                                 style: TextStyle(
-                                  color: const Color(0xFFE8EDF7),
+                                  color: const Color(0xFF2F3743),
                                   fontSize: 18,
                                   fontFamily: selectedFamily,
                                   fontWeight: _fontWeightFromValue(weightValue),
@@ -1606,9 +1606,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2E3037),
+                  color: const Color(0xFFF4F5F7),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF3F4451)),
+                  border: Border.all(color: const Color(0xFFD5DAE1)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1618,7 +1618,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFFE8EDF7),
+                        color: Color(0xFF2F3743),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -1688,9 +1688,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF2E3037),
+            color: const Color(0xFFF4F5F7),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFF3F4451)),
+            border: Border.all(color: const Color(0xFFD5DAE1)),
           ),
           child: Text(
             enabled
@@ -1700,7 +1700,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 : 'Select an Image Layer first. Clone tool is disabled for Text, Vector, Mask, and Solid layers.',
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFFB8C0CF),
+              color: Color(0xFF6B7482),
               height: 1.35,
             ),
           ),
@@ -1711,8 +1711,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           child: ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor:
-                  enabled ? const Color(0xFF434A58) : const Color(0xFF353841),
-              foregroundColor: const Color(0xFFF0F3FA),
+                  enabled ? const Color(0xFFE0E7F1) : const Color(0xFFE8ECF3),
+              foregroundColor: const Color(0xFF2F3743),
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(11),
@@ -1965,7 +1965,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (_isPickingImage) return;
     final _AddAction? action = await showModalBottomSheet<_AddAction>(
       context: context,
-      backgroundColor: const Color(0xFF23242A),
+      backgroundColor: const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -1981,7 +1981,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   width: 38,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF5E606A),
+                    color: const Color(0xFFC7CDD8),
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
@@ -1990,16 +1990,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  tileColor: const Color(0xFF2E3037),
+                  tileColor: const Color(0xFFF4F5F7),
                   leading: const Icon(
                     Icons.add_photo_alternate_outlined,
-                    color: Color(0xFFE4E8F0),
+                    color: Color(0xFF4C5562),
                     size: 20,
                   ),
                   title: const Text(
                     'Add image',
                     style: TextStyle(
-                      color: Color(0xFFE9ECF3),
+                      color: Color(0xFF2F3743),
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2013,16 +2013,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  tileColor: const Color(0xFF2E3037),
+                  tileColor: const Color(0xFFF4F5F7),
                   leading: const Icon(
                     Icons.dashboard_customize_outlined,
-                    color: Color(0xFFE4E8F0),
+                    color: Color(0xFF4C5562),
                     size: 20,
                   ),
                   title: const Text(
                     'Add solid layer',
                     style: TextStyle(
-                      color: Color(0xFFE9ECF3),
+                      color: Color(0xFF2F3743),
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2030,7 +2030,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   subtitle: const Text(
                     'Square, Story, Portrait',
                     style: TextStyle(
-                      color: Color(0xFFAEB6C6),
+                      color: Color(0xFF6B7482),
                       fontSize: 12,
                     ),
                   ),
@@ -2074,7 +2074,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final _SolidProjectPreset? selected =
         await showModalBottomSheet<_SolidProjectPreset>(
       context: context,
-      backgroundColor: const Color(0xFF23242A),
+      backgroundColor: const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -2090,7 +2090,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   width: 38,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF5E606A),
+                    color: const Color(0xFFC7CDD8),
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
@@ -2100,7 +2100,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   child: Text(
                     'Solid Layer Presets',
                     style: TextStyle(
-                      color: Colors.white,
+                      color: Color(0xFF2F3743),
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
@@ -2114,15 +2114,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      tileColor: const Color(0xFF2E3037),
+                      tileColor: const Color(0xFFF4F5F7),
                       leading: const Icon(
                         Icons.crop_square_rounded,
-                        color: Color(0xFFE5EAF6),
+                        color: Color(0xFF4C5562),
                       ),
                       title: Text(
                         preset.title,
                         style: const TextStyle(
-                          color: Color(0xFFE9ECF3),
+                          color: Color(0xFF2F3743),
                           fontSize: 15.5,
                           fontWeight: FontWeight.w700,
                         ),
@@ -2130,7 +2130,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       subtitle: Text(
                         preset.subtitle,
                         style: const TextStyle(
-                          color: Color(0xFFADB5C5),
+                          color: Color(0xFF6B7482),
                           fontSize: 12,
                         ),
                       ),
@@ -2171,7 +2171,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Future<void> _openLayersBottomSheet() async {
     await showModalBottomSheet<void>(
       context: context,
-      backgroundColor: const Color(0xFF23242A),
+      backgroundColor: const Color(0xFFFFFFFF),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -2189,7 +2189,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       width: 38,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF5E606A),
+                        color: const Color(0xFFC7CDD8),
                         borderRadius: BorderRadius.circular(6),
                       ),
                     ),
@@ -2199,7 +2199,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       child: Text(
                         'Layers',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: Color(0xFF2F3743),
                           fontWeight: FontWeight.w700,
                           fontSize: 16,
                         ),
@@ -2214,13 +2214,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2E3037),
+                          color: const Color(0xFFF4F5F7),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Text(
                           'No layers yet. Add an image to create the background workspace.',
                           style: TextStyle(
-                            color: Color(0xFFC8CDD8),
+                            color: Color(0xFF6B7482),
                             fontSize: 12.5,
                           ),
                         ),
@@ -2393,18 +2393,18 @@ class _TextLocaleToggleButton extends StatelessWidget {
           height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFF4A4F5D) : const Color(0xFF2E3037),
+            color: selected ? const Color(0xFFE0E7F1) : const Color(0xFFF4F5F7),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color:
-                  selected ? const Color(0xFF6F8BFF) : const Color(0xFF3F4451),
+                  selected ? const Color(0xFF6F8BFF) : const Color(0xFFD5DAE1),
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
               color:
-                  selected ? const Color(0xFFF5F8FE) : const Color(0xFFC0C7D6),
+                  selected ? const Color(0xFF2F3743) : const Color(0xFF6B7482),
               fontWeight: FontWeight.w700,
               fontSize: 14.5,
             ),
@@ -2438,7 +2438,7 @@ class _SettingsSliderTile extends StatelessWidget {
       data: Theme.of(context).copyWith(
         sliderTheme: const SliderThemeData(
           activeTrackColor: Color(0xFFC3CBD9),
-          inactiveTrackColor: Color(0xFF4A4F5D),
+          inactiveTrackColor: Color(0xFFC7CDD8),
           thumbColor: Color(0xFFF3F6FC),
           overlayColor: Color(0x33444A58),
         ),
@@ -2446,9 +2446,9 @@ class _SettingsSliderTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.fromLTRB(10, 10, 10, 6),
         decoration: BoxDecoration(
-          color: const Color(0xFF2E3037),
+          color: const Color(0xFFF4F5F7),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFF3F4451)),
+          border: Border.all(color: const Color(0xFFD5DAE1)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2461,7 +2461,7 @@ class _SettingsSliderTile extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFFE8EDF7),
+                      color: Color(0xFF2F3743),
                     ),
                   ),
                 ),
@@ -2470,7 +2470,7 @@ class _SettingsSliderTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 11.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFFAEB7C8),
+                    color: Color(0xFF6B7482),
                   ),
                 ),
               ],
@@ -2503,9 +2503,9 @@ class _ToolHintCard extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF2E3037),
+        color: const Color(0xFFF4F5F7),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFF3F4451)),
+        border: Border.all(color: const Color(0xFFD5DAE1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2515,7 +2515,7 @@ class _ToolHintCard extends StatelessWidget {
             style: const TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w700,
-              color: Color(0xFFE7ECF6),
+              color: Color(0xFF2F3743),
             ),
           ),
           const SizedBox(height: 6),
@@ -2523,7 +2523,7 @@ class _ToolHintCard extends StatelessWidget {
             message,
             style: const TextStyle(
               fontSize: 12,
-              color: Color(0xFFB2BBCB),
+              color: Color(0xFF6B7482),
               height: 1.3,
             ),
           ),
@@ -2552,10 +2552,10 @@ class _LayerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF2E3037),
+        color: const Color(0xFFF4F5F7),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: selected ? const Color(0xFF6F8BFF) : const Color(0xFF3F424C),
+          color: selected ? const Color(0xFF6F8BFF) : const Color(0xFFD5DAE1),
           width: selected ? 1.4 : 1,
         ),
       ),
@@ -2570,7 +2570,7 @@ class _LayerRow extends StatelessWidget {
               child: Container(
                 width: 44,
                 height: 44,
-                color: const Color(0xFF3A3D47),
+                color: const Color(0xFFE6EAF1),
                 child: _buildLayerThumbnail(),
               ),
             ),
@@ -2587,7 +2587,7 @@ class _LayerRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: Color(0xFFF2F4F8),
+                            color: Color(0xFF2F3743),
                             fontSize: 13.5,
                             fontWeight: FontWeight.w700,
                           ),
@@ -2601,13 +2601,13 @@ class _LayerRow extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4A5070),
+                            color: const Color(0xFFE0E7F1),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: const Text(
                             'Work Area',
                             style: TextStyle(
-                              color: Colors.white,
+                              color: Color(0xFF4C5562),
                               fontSize: 9.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -2619,7 +2619,7 @@ class _LayerRow extends StatelessWidget {
                   Text(
                     layer.type.label,
                     style: const TextStyle(
-                      color: Color(0xFFA9B0BF),
+                      color: Color(0xFF6B7482),
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
                     ),
@@ -2636,7 +2636,7 @@ class _LayerRow extends StatelessWidget {
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
                 size: 19,
-                color: const Color(0xFFD7DCE8),
+                color: const Color(0xFF4C5562),
               ),
             ),
             IconButton(
@@ -2672,7 +2672,7 @@ class _LayerRow extends StatelessWidget {
     }
     return Icon(
       layer.type.icon,
-      color: const Color(0xFFCDD3DF),
+      color: const Color(0xFF6B7482),
       size: 20,
     );
   }

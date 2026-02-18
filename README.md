@@ -12,6 +12,7 @@ Status captured from codebase on **February 18, 2026**.
 Implemented and working:
 - Custom editor UI (thin top toolbar + thin bottom navigation).
 - Dynamic right settings sidebar (75% width overlay, does not relayout canvas).
+- Settings sidebar + all editor bottom sheets now use the app light style (white surfaces, light cards, dark text).
 - Workspace/artboard creation through:
   - `Add image` (gallery picker)
   - `Add solid layer` presets: Square, Story, Portrait
@@ -128,6 +129,7 @@ Contains:
 
 ### 6.3 Right settings sidebar
 - Implemented as `endDrawer`, width = `75%` of screen.
+- Visual style is light: white base background, light card surfaces, dark typography/icons.
 - Dynamic content based on active tool context:
   - `pencil` -> Pencil settings
   - `text` -> Text settings
@@ -182,6 +184,8 @@ Layer types defined but not fully used yet:
 Bottom sheet offers:
 1. `Add image`
 2. `Add solid layer`
+
+All add/layer/preset bottom sheets are aligned to the light app style (white sheet background + light tiles).
 
 ### 9.2 Add image
 - Uses `ImagePicker.pickImage` with `ImageSource.gallery`.
@@ -427,4 +431,3 @@ Before production release:
 3. Modular refactor of `main.dart` with parity tests.
 4. Add real non-background image layers and transform handles.
 5. Add vector/mask pipelines and corresponding tool settings.
-
