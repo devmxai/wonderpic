@@ -303,6 +303,7 @@ Behavior:
 - Source pointer is maintained per image layer.
 - Source selection is not reset when changing brush settings.
 - Canvas message snackbars for clone are currently suppressed by design (`_showToolMessage` is no-op).
+- Clone tap behavior is immediate on mobile: first tap can set source (when armed) or place a single clone stamp without requiring drag.
 
 ### 13.5 Performance pipeline (important)
 To handle high-resolution images smoothly:

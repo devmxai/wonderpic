@@ -3889,6 +3889,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
   double _rotateStartAngle = 0.0;
   Offset? _marqueeStartUv;
   final List<Offset> _freeMarqueePointsUv = <Offset>[];
+  Offset? _pendingCloneDownScenePoint;
+  bool _cloneHandledByScaleGesture = false;
 
   static const double _minScale = 0.6;
   static const double _maxScale = 3.5;
@@ -3904,6 +3906,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
+          onTapDown: (details) => _onTapDown(details, canvasSize),
+          onTapUp: (details) => _onTapUp(details, canvasSize),
+          onTapCancel: _onTapCancel,
           onScaleStart: (details) => _onScaleStart(details, canvasSize),
           onScaleUpdate: (details) => _onScaleUpdate(details, canvasSize),
           onScaleEnd: _onScaleEnd,
@@ -4019,10 +4024,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     _cloneOffsetUv = null;
     _lastCloneDestUv = null;
     _cloneChangedLayer = false;
+    _cloneHandledByScaleGesture = false;
     _cancelClonePreviewTimer(clearLayerId: false);
 
     if (details.pointerCount > 1) {
       _activeStroke = null;
+      _pendingCloneDownScenePoint = null;
       return;
     }
 
@@ -4059,7 +4066,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
     if (widget.activeTool == EditorTool.clone) {
       _activeStroke = null;
-      _startCloneGesture(scenePoint: scenePoint, artboard: artboard);
+      final Offset seedPoint = _pendingCloneDownScenePoint ?? scenePoint;
+      _pendingCloneDownScenePoint = null;
+      _cloneHandledByScaleGesture = _startCloneGesture(
+        scenePoint: seedPoint,
+        artboard: artboard,
+      );
       return;
     }
 
@@ -4352,11 +4364,54 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     _cloneOffsetUv = null;
     _lastCloneDestUv = null;
     _cloneChangedLayer = false;
+    _pendingCloneDownScenePoint = null;
     _marqueeStartUv = null;
     _freeMarqueePointsUv.clear();
     if (endedTransform) {
       widget.onTransformInteractionEnd();
     }
+  }
+
+  void _onTapDown(TapDownDetails details, Size canvasSize) {
+    if (widget.activeTool != EditorTool.clone) return;
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null) return;
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: canvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final Offset scenePoint = _toScenePoint(details.localPosition);
+    if (!artboard.contains(scenePoint)) {
+      _pendingCloneDownScenePoint = null;
+      return;
+    }
+    _pendingCloneDownScenePoint = scenePoint;
+  }
+
+  void _onTapUp(TapUpDetails details, Size canvasSize) {
+    if (widget.activeTool != EditorTool.clone) return;
+    if (_cloneHandledByScaleGesture) {
+      _cloneHandledByScaleGesture = false;
+      return;
+    }
+    if (_interaction != _CanvasInteraction.none) return;
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null) return;
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: canvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final Offset scenePoint = _toScenePoint(details.localPosition);
+    _cloneTapAtPoint(scenePoint: scenePoint, artboard: artboard);
+  }
+
+  void _onTapCancel() {
+    _pendingCloneDownScenePoint = null;
+    _cloneHandledByScaleGesture = false;
   }
 
   void _onDoubleTapDown(TapDownDetails details, Size canvasSize) {
@@ -4502,18 +4557,41 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     }
   }
 
-  void _startCloneGesture({
+  bool _startCloneGesture({
     required Offset scenePoint,
     required Rect artboard,
+  }) {
+    return _cloneAtPoint(
+      scenePoint: scenePoint,
+      artboard: artboard,
+      continuous: true,
+    );
+  }
+
+  bool _cloneTapAtPoint({
+    required Offset scenePoint,
+    required Rect artboard,
+  }) {
+    return _cloneAtPoint(
+      scenePoint: scenePoint,
+      artboard: artboard,
+      continuous: false,
+    );
+  }
+
+  bool _cloneAtPoint({
+    required Offset scenePoint,
+    required Rect artboard,
+    required bool continuous,
   }) {
     final EditorLayer? layer = _selectedImageLayerForClone();
     if (layer == null) {
       widget.onCanvasMessage(
         'Clone tool works only when an Image Layer is selected',
       );
-      return;
+      return false;
     }
-    if (!artboard.contains(scenePoint)) return;
+    if (!artboard.contains(scenePoint)) return false;
 
     final Offset tapUv = _toUv(scenePoint, artboard);
 
@@ -4522,43 +4600,54 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         _clonePointerUvByLayer[layer.id] = tapUv;
       });
       widget.onCloneSourcePicked();
-      return;
+      return true;
     }
 
     final Offset? sourceUv = _clonePointerUvByLayer[layer.id];
     if (sourceUv == null) {
-      return;
+      return false;
     }
 
     final _EditableImageBuffer? buffer = _editableImages[layer.id];
     if (buffer == null) {
       _prepareEditableImageBuffer(layer);
       widget.onCanvasMessage('Preparing layer for clone, try again');
-      return;
+      return false;
     }
 
-    _interaction = _CanvasInteraction.cloning;
-    _gestureLayerId = layer.id;
-    _cloneOffsetUv = sourceUv - tapUv;
-    _lastCloneDestUv = tapUv;
-    _activeCloneStroke = _CloneStrokeSession(
+    final _CloneStrokeSession stroke = _CloneStrokeSession(
       layerId: layer.id,
-      sourceOffsetUv: _cloneOffsetUv!,
+      sourceOffsetUv: sourceUv - tapUv,
       settings: widget.cloneSettings,
       artboardWidth: artboard.width,
       destPointsUv: <Offset>[tapUv],
     );
+    if (continuous) {
+      _interaction = _CanvasInteraction.cloning;
+      _gestureLayerId = layer.id;
+      _cloneOffsetUv = stroke.sourceOffsetUv;
+      _lastCloneDestUv = tapUv;
+      _activeCloneStroke = stroke;
+    }
 
     _applyCloneSegment(
       layerId: layer.id,
       buffer: buffer,
       fromDestUv: tapUv,
       toDestUv: tapUv,
-      stroke: _activeCloneStroke!,
+      stroke: stroke,
     );
-    _queueEditableImageRefresh(layer.id);
-
-    _cloneChangedLayer = true;
+    if (continuous) {
+      _queueEditableImageRefresh(layer.id);
+      _cloneChangedLayer = true;
+    } else {
+      _queueEditableImageRefresh(layer.id, notifyParent: !buffer.usesPreview);
+      if (buffer.usesPreview) {
+        _enqueueFullResolutionCommit(
+            layerId: layer.id, stroke: stroke.freeze());
+      }
+    }
+    return true;
   }
 
   void _startMarqueeGesture({
