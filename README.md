@@ -121,6 +121,8 @@ Contains:
 - text tool
 - clone stamp tool (custom painted icon)
 - settings button (opens right sidebar)
+- Left menu and right settings remain fixed; center tool rail is horizontally scrollable for future tool expansion.
+- Vertical separators are rendered between fixed side actions and the scrollable center tool rail.
 
 ### 6.2 Bottom nav
 Contains:

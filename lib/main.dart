@@ -730,35 +730,45 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         children: [
           _toolButton(icon: Icons.menu, filled: false),
           const SizedBox(width: 8),
+          _toolbarSectionDivider(),
+          const SizedBox(width: 8),
           Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _toolButton(
-                  icon: Icons.near_me_outlined,
-                  filled: _activeTool == EditorTool.move,
-                  onTap: () => _setActiveTool(EditorTool.move),
-                ),
-                _toolButton(
-                  icon: Icons.edit_outlined,
-                  filled: _activeTool == EditorTool.pencil,
-                  onTap: () => _setActiveTool(EditorTool.pencil),
-                ),
-                _toolButton(
-                  icon: Icons.text_fields,
-                  filled: _activeTool == EditorTool.text,
-                  onTap: _createTextLayerAndOpenEditor,
-                ),
-                _toolButton(
-                  filled: _activeTool == EditorTool.clone,
-                  onTap: () => _setActiveTool(EditorTool.clone),
-                  customChild: const _CloneStampToolIcon(
-                    color: WonderPicEditorScreen._iconColor,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: [
+                  _toolButton(
+                    icon: Icons.near_me_outlined,
+                    filled: _activeTool == EditorTool.move,
+                    onTap: () => _setActiveTool(EditorTool.move),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  _toolButton(
+                    icon: Icons.edit_outlined,
+                    filled: _activeTool == EditorTool.pencil,
+                    onTap: () => _setActiveTool(EditorTool.pencil),
+                  ),
+                  const SizedBox(width: 8),
+                  _toolButton(
+                    icon: Icons.text_fields,
+                    filled: _activeTool == EditorTool.text,
+                    onTap: _createTextLayerAndOpenEditor,
+                  ),
+                  const SizedBox(width: 8),
+                  _toolButton(
+                    filled: _activeTool == EditorTool.clone,
+                    onTap: () => _setActiveTool(EditorTool.clone),
+                    customChild: const _CloneStampToolIcon(
+                      color: WonderPicEditorScreen._iconColor,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
+          const SizedBox(width: 8),
+          _toolbarSectionDivider(),
           const SizedBox(width: 8),
           _toolButton(
             filled: false,
@@ -771,6 +781,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _toolbarSectionDivider() {
+    return Container(
+      width: 1.2,
+      height: 34,
+      color: const Color(0xFFC7CDD8),
     );
   }
 
