@@ -739,7 +739,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               child: Row(
                 children: [
                   _toolButton(
-                    icon: Icons.near_me_outlined,
+                    icon: Icons.open_with_rounded,
                     filled: _activeTool == EditorTool.move,
                     onTap: () => _setActiveTool(EditorTool.move),
                   ),

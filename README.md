@@ -11,6 +11,7 @@ Status captured from codebase on **February 18, 2026**.
 
 Implemented and working:
 - Custom editor UI (thin top toolbar + thin bottom navigation).
+- Selection/Move tool in top toolbar now uses a directional move icon style (`open_with_rounded`) instead of pointer-style icon.
 - Dynamic right settings sidebar (75% width overlay, does not relayout canvas).
 - Settings sidebar + all editor bottom sheets now use the app light style (white surfaces, light cards, dark text).
 - Workspace/artboard creation through:
@@ -215,7 +216,6 @@ Creates/updates a white `solid` background layer and auto-selects it.
 
 ### 10.1 Creation
 Text can be created from:
-- top toolbar text button
 - bottom nav text button
 
 On creation:
