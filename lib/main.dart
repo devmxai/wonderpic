@@ -74,7 +74,7 @@ extension EditorLayerTypeUi on EditorLayerType {
   }
 }
 
-enum EditorTool { move, pencil, text, clone }
+enum EditorTool { move, pencil, text, clone, crop }
 
 enum _AddAction { image, solid }
 
@@ -751,9 +751,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                   const SizedBox(width: 8),
                   _toolButton(
-                    icon: Icons.text_fields,
-                    filled: _activeTool == EditorTool.text,
-                    onTap: _createTextLayerAndOpenEditor,
+                    icon: Icons.crop_rounded,
+                    filled: _activeTool == EditorTool.crop,
+                    onTap: () => _setActiveTool(EditorTool.crop),
                   ),
                   const SizedBox(width: 8),
                   _toolButton(
@@ -929,6 +929,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return 'Text Tool Settings';
       case EditorTool.clone:
         return 'Clone Tool Settings';
+      case EditorTool.crop:
+        return 'Crop Tool Settings';
       case null:
         final EditorLayer? selectedLayer = _selectedLayer();
         if (_activeTool == EditorTool.move) {
@@ -954,6 +956,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return _buildTextSettingsPanel();
       case EditorTool.clone:
         return _buildCloneSettingsPanel();
+      case EditorTool.crop:
+        return const _ToolHintCard(
+          title: 'Crop Tool',
+          message:
+              'Crop UI is placed in the top toolbar. Cropping behavior can be wired in the next phase.',
+        );
       case null:
         final EditorLayer? selectedLayer = _selectedLayer();
         if (_activeTool == EditorTool.move) {

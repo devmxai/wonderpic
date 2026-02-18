@@ -118,7 +118,7 @@ Contains:
 - menu button
 - move/select tool
 - pencil tool
-- text tool
+- crop tool
 - clone stamp tool (custom painted icon)
 - settings button (opens right sidebar)
 - Left menu and right settings remain fixed; center tool rail is horizontally scrollable for future tool expansion.
@@ -140,6 +140,7 @@ Contains:
   - `pencil` -> Pencil settings
   - `text` -> Text settings
   - `clone` -> Clone settings
+  - `crop` -> Crop placeholder settings card (tool wiring planned next phase)
   - `move` -> no direct selection-tool settings; resolves to selected layer context
 - For `move` + selected text layer, text settings are shown.
 
