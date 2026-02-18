@@ -2918,8 +2918,15 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
     if (selectedData != null) {
       // Keep move dominant inside text, but make rotate handle capture reliable.
-      final double rotateHandleRadius = (20 / _scale).clamp(14, 28);
-      final double cornerHandleRadius = (18 / _scale).clamp(12, 24);
+      final double minLayerExtent =
+          math.min(selectedData.width, selectedData.height);
+      final bool isTinyLayer = minLayerExtent < 56;
+      final double tinyBoost =
+          ((56 - minLayerExtent).clamp(0, 32) / 32).toDouble();
+      final double rotateHandleRadius =
+          ((20 / _scale).clamp(14, 28) + (tinyBoost * 10)).clamp(14, 38);
+      final double cornerHandleRadius =
+          ((18 / _scale).clamp(12, 24) + (tinyBoost * 9)).clamp(12, 34);
       final double moveHitPadding = (2 / _scale).clamp(0.5, 3);
       if ((scenePoint - selectedData.rotateHandle).distance <=
           rotateHandleRadius) {
@@ -2964,6 +2971,35 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         cornerHandleRadius: cornerHandleRadius + controlsPadding,
         rotateLineDistance: (10 / _scale).clamp(5, 12),
       )) {
+        // For very small layers, resolve to the nearest control to avoid
+        // dead zones where handles are visually tiny and hard to reacquire.
+        if (isTinyLayer) {
+          final double rotateDistance =
+              (scenePoint - selectedData.rotateHandle).distance;
+          double nearestCornerDistance = double.infinity;
+          for (final Offset handle in selectedData.cornerHandles) {
+            final double distance = (scenePoint - handle).distance;
+            if (distance < nearestCornerDistance) {
+              nearestCornerDistance = distance;
+            }
+          }
+          if (rotateDistance <= nearestCornerDistance) {
+            _interaction = _CanvasInteraction.rotatingLayer;
+            _gestureLayerId = selectedData.layerId;
+            _layerStartRotation = selectedLayer!.layerRotation;
+            _rotateStartAngle = math.atan2(
+              scenePoint.dy - selectedData.center.dy,
+              scenePoint.dx - selectedData.center.dx,
+            );
+            return;
+          }
+          _interaction = _CanvasInteraction.resizingLayer;
+          _gestureLayerId = selectedData.layerId;
+          _layerStartScale = selectedLayer!.layerScale;
+          _resizeStartDistance = (scenePoint - selectedData.center).distance;
+          if (_resizeStartDistance < 1) _resizeStartDistance = 1;
+          return;
+        }
         _interaction = _CanvasInteraction.none;
         return;
       }
