@@ -22,6 +22,7 @@ Implemented and working:
   - move
   - resize (corner handles)
   - rotate (bottom rotate handle)
+- Selection hit-testing tuned: taps inside text bounds prioritize `move`, while `resize/rotate` trigger only from their dedicated handles.
 - Pencil drawing tool (active only when pencil tool is selected).
 - Clone Stamp tool for image layers with source picking and brush settings.
 - Clone performance pipeline for high-resolution images (preview + deferred full-res commit).
