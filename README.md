@@ -19,10 +19,12 @@ Implemented and working:
   - `Add solid layer` presets: Square, Story, Portrait
 - Layer system foundation with layer list bottom sheet.
 - Text tool with live editing, EN/AR fonts, weight controls, and color palette.
-- Selection/transform for text layers:
+- Selection/transform for text layers and image overlay layers:
   - move
   - resize (corner handles)
   - rotate (bottom rotate handle)
+- Marquee `New Layer` and `Paste` now create true cropped overlay image layers with independent transform state (position/scale/rotation), while the original background stays unchanged.
+- Hiding the background no longer collapses the workspace; overlays remain visible on the artboard. Deleting background image converts work area to solid background to keep the project editable.
 - Selection hit-testing tuned: taps inside text bounds prioritize `move`, while `resize/rotate` trigger only from their dedicated handles.
 - Rotation handle capture was reinforced with larger, scale-aware touch radius and control-line guard to prevent accidental deselect when pressing rotate.
 - Resize-handle capture was also reinforced (larger scale-aware corner hit area + deselect guard near selected text bounds) to keep selection stable while interacting with corner handles.
@@ -250,7 +252,7 @@ Text sidebar includes:
 
 ## 11. Selection/Transform System
 
-Current transform controls are implemented for text layers:
+Current transform controls are implemented for text layers and non-background image overlay layers:
 - Move by dragging inside text bounds.
 - Resize via 4 corner handles.
 - Rotate via bottom rotation handle.
@@ -336,9 +338,10 @@ This design is key for reducing lag on large images.
 ### 14.4 Behavior notes
 - Selection shape is drawn on canvas using dashed marquee outline.
 - Copy/Cut extract only selected pixels (with transparency preserved).
-- Paste creates a new image layer from clipboard content.
-- New Layer creates an image layer from selected pixels.
+- Paste creates a new cropped overlay image layer from clipboard content.
+- New Layer creates a new cropped overlay image layer from selected pixels.
 - Crop replaces selected image layer with cropped selection result.
+- New overlay layers are auto-selected and editor switches to Move tool for immediate transform.
 
 ---
 

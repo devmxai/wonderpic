@@ -1411,6 +1411,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return layer;
   }
 
+  EditorLayer? _selectedMarqueeLayer() {
+    final EditorLayer? layer = _selectedImageLayer();
+    if (layer == null) return null;
+    if (!layer.isBackground) return null;
+    return layer;
+  }
+
   EditorLayer? _selectedTextLayer() {
     final EditorLayer? layer = _selectedLayer();
     if (layer == null) return null;
@@ -2108,7 +2115,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Widget _buildMarqueeSettingsPanel() {
-    final EditorLayer? selectedImageLayer = _selectedImageLayer();
+    final EditorLayer? selectedImageLayer = _selectedMarqueeLayer();
     final bool imageReady = selectedImageLayer != null;
     final bool hasSelection = _marqueeSelection != null &&
         _marqueeSelection!.hasUsableArea &&
@@ -2131,7 +2138,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 ? (hasSelection
                     ? 'Selection active on Image Layer. Use actions below.'
                     : 'Drag on the image to create selection.')
-                : 'Select an Image Layer first. Selection tool works on image pixels only.',
+                : 'Select the Background Image Layer first. Selection tool currently edits workspace image pixels.',
             style: const TextStyle(
               fontSize: 12,
               color: Color(0xFF6B7482),
@@ -2288,7 +2295,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<void> _copyMarqueeSelection() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final MarqueeSelection? selection = _marqueeSelection;
     if (layer == null || selection == null || selection.layerId != layer.id) {
       return;
@@ -2314,7 +2321,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<void> _cutMarqueeSelection() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final MarqueeSelection? selection = _marqueeSelection;
     if (layer == null || selection == null || selection.layerId != layer.id) {
       return;
@@ -2357,7 +2364,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<void> _deleteMarqueeSelection() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final MarqueeSelection? selection = _marqueeSelection;
     if (layer == null || selection == null || selection.layerId != layer.id) {
       return;
@@ -2393,49 +2400,36 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<void> _createLayerFromMarqueeSelection() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final MarqueeSelection? selection = _marqueeSelection;
     if (layer == null || selection == null || selection.layerId != layer.id) {
       return;
     }
+    final EditorLayer? workspaceLayer = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspaceLayer == null ? null : _workspaceSourceSize(workspaceLayer);
+    if (workspaceSize == null) return;
     final Uint8List? sourcePixels = await _readImagePixels(layer.image!);
     if (sourcePixels == null) return;
-    final _SelectionPixelBounds? bounds = _selectionPixelBounds(
-      selection: selection,
+    final _SelectionRaster? raster = _rasterizeSelection(
+      sourcePixels: sourcePixels,
       imageWidth: layer.image!.width,
       imageHeight: layer.image!.height,
+      selection: selection,
     );
-    if (bounds == null) return;
-
-    final Uint8List extractedPixels =
-        Uint8List(layer.image!.width * layer.image!.height * 4);
-    bool hasPixels = false;
-    for (int y = bounds.top; y < bounds.bottom; y++) {
-      for (int x = bounds.left; x < bounds.right; x++) {
-        final Offset uv = Offset(
-          (x + 0.5) / layer.image!.width,
-          (y + 0.5) / layer.image!.height,
-        );
-        if (!_selectionContainsUv(selection, uv)) continue;
-        final int sourceIndex = ((y * layer.image!.width) + x) * 4;
-        final int destIndex = sourceIndex;
-        extractedPixels[destIndex] = sourcePixels[sourceIndex];
-        extractedPixels[destIndex + 1] = sourcePixels[sourceIndex + 1];
-        extractedPixels[destIndex + 2] = sourcePixels[sourceIndex + 2];
-        extractedPixels[destIndex + 3] = sourcePixels[sourceIndex + 3];
-        if (extractedPixels[destIndex + 3] > 0) {
-          hasPixels = true;
-        }
-      }
-    }
-    if (!hasPixels) return;
+    if (raster == null || !raster.hasVisiblePixels) return;
 
     final ui.Image extractedImage = await _buildUiImageFromRgba(
-      pixels: extractedPixels,
-      width: layer.image!.width,
-      height: layer.image!.height,
+      pixels: raster.pixels,
+      width: raster.width,
+      height: raster.height,
     );
     if (!mounted) return;
+
+    final Offset selectionCenter = Offset(
+      selection.boundsUv.center.dx * workspaceSize.width,
+      selection.boundsUv.center.dy * workspaceSize.height,
+    );
 
     _pushUndoSnapshot();
     setState(() {
@@ -2453,17 +2447,25 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         isVisible: true,
         image: extractedImage,
         solidSize: _imageSourceSize(extractedImage),
+        position: selectionCenter,
+        layerScale: 1.0,
+        layerRotation: 0.0,
       );
       _layers = <EditorLayer>[..._layers, extractedLayer];
       _selectedLayerId = newId;
-      _marqueeSelection = selection.copyWith(layerId: newId);
+      _activeTool = EditorTool.move;
+      _marqueeSelection = null;
     });
   }
 
   Future<void> _pasteMarqueeClipboard() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final _MarqueeClipboard? clipboard = _marqueeClipboard;
     if (layer == null || clipboard == null) return;
+    final EditorLayer? workspaceLayer = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspaceLayer == null ? null : _workspaceSourceSize(workspaceLayer);
+    if (workspaceSize == null) return;
     final Rect targetBoundsUv = (_marqueeSelection != null &&
             _marqueeSelection!.layerId == layer.id &&
             _marqueeSelection!.hasUsableArea)
@@ -2482,21 +2484,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (targetBounds == null) return;
 
     final Uint8List pastedPixels =
-        Uint8List(layer.image!.width * layer.image!.height * 4);
+        Uint8List(targetBounds.width * targetBounds.height * 4);
     for (int y = 0; y < targetBounds.height; y++) {
-      final int dstY = targetBounds.top + y;
-      if (dstY < 0 || dstY >= layer.image!.height) continue;
       final int srcY = ((y * clipboard.height) / targetBounds.height)
           .floor()
           .clamp(0, clipboard.height - 1);
       for (int x = 0; x < targetBounds.width; x++) {
-        final int dstX = targetBounds.left + x;
-        if (dstX < 0 || dstX >= layer.image!.width) continue;
         final int srcX = ((x * clipboard.width) / targetBounds.width)
             .floor()
             .clamp(0, clipboard.width - 1);
         final int sourceIndex = ((srcY * clipboard.width) + srcX) * 4;
-        final int destIndex = ((dstY * layer.image!.width) + dstX) * 4;
+        final int destIndex = ((y * targetBounds.width) + x) * 4;
         pastedPixels[destIndex] = clipboard.pixels[sourceIndex];
         pastedPixels[destIndex + 1] = clipboard.pixels[sourceIndex + 1];
         pastedPixels[destIndex + 2] = clipboard.pixels[sourceIndex + 2];
@@ -2505,10 +2503,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     final ui.Image pastedImage = await _buildUiImageFromRgba(
       pixels: pastedPixels,
-      width: layer.image!.width,
-      height: layer.image!.height,
+      width: targetBounds.width,
+      height: targetBounds.height,
     );
     if (!mounted) return;
+    final Offset pasteCenter = Offset(
+      targetBoundsUv.center.dx * workspaceSize.width,
+      targetBoundsUv.center.dy * workspaceSize.height,
+    );
 
     _pushUndoSnapshot();
     setState(() {
@@ -2526,19 +2528,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         isVisible: true,
         image: pastedImage,
         solidSize: _imageSourceSize(pastedImage),
+        position: pasteCenter,
+        layerScale: 1.0,
+        layerRotation: 0.0,
       );
       _layers = <EditorLayer>[..._layers, pastedLayer];
       _selectedLayerId = newId;
-      _marqueeSelection = MarqueeSelection(
-        layerId: newId,
-        mode: MarqueeSelectionMode.rectangular,
-        boundsUv: targetBoundsUv,
-      );
+      _activeTool = EditorTool.move;
+      _marqueeSelection = null;
     });
   }
 
   Future<void> _cropToMarqueeSelection() async {
-    final EditorLayer? layer = _selectedImageLayer();
+    final EditorLayer? layer = _selectedMarqueeLayer();
     final MarqueeSelection? selection = _marqueeSelection;
     if (layer == null || selection == null || selection.layerId != layer.id) {
       return;
@@ -3272,10 +3274,32 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _deleteLayer(String layerId) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final EditorLayer target = _layers[index];
     _pushUndoSnapshot();
     setState(() {
-      _layers = _layers.where((layer) => layer.id != layerId).toList();
-      if (_selectedLayerId == layerId) {
+      final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+      if (target.isBackground) {
+        final Size? workspaceSize = _workspaceSourceSize(target);
+        if (workspaceSize != null) {
+          nextLayers[index] = EditorLayer(
+            id: target.id,
+            name: 'Background',
+            type: EditorLayerType.solid,
+            isVisible: true,
+            isBackground: true,
+            solidColor: const Color(0xFFFFFFFF),
+            solidSize: workspaceSize,
+          );
+        } else {
+          nextLayers.removeAt(index);
+        }
+      } else {
+        nextLayers.removeAt(index);
+      }
+      _layers = nextLayers;
+      if (_selectedLayerId == layerId && !target.isBackground) {
         _selectedLayerId = null;
       }
       if (_marqueeSelection != null && _marqueeSelection!.layerId == layerId) {
@@ -4052,13 +4076,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
     _activeStroke = null;
     final EditorLayer? selectedLayer = _layerById(widget.selectedLayerId);
-    final _TextLayerSceneData? selectedData = selectedLayer == null
-        ? null
-        : _buildTextLayerSceneData(
-            layer: selectedLayer,
-            artboard: artboard,
-            workspaceSize: workspaceSize,
-          );
+    final _TransformLayerSceneData? selectedData =
+        _buildSelectedTransformLayerData(
+      selectedLayer: selectedLayer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
 
     if (selectedData != null) {
       // Keep move dominant inside text, but make rotate handle capture reliable.
@@ -4095,7 +4118,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
         }
       }
 
-      if (_pointInRotatedTextBounds(
+      if (_pointInRotatedLayerBounds(
         scenePoint,
         selectedData,
         padding: moveHitPadding,
@@ -4111,7 +4134,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
       // Do not drop selection when tapping close to transform controls.
       final double controlsPadding = (10 / _scale).clamp(5, 14);
-      if (_pointNearTextTransformControls(
+      if (_pointNearLayerTransformControls(
         scenePoint: scenePoint,
         data: selectedData,
         rotateHandleRadius: rotateHandleRadius + controlsPadding,
@@ -4154,7 +4177,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       }
     }
 
-    final EditorLayer? hitLayer = _hitTopTextLayer(
+    final EditorLayer? hitLayer = _hitTopTransformLayer(
       scenePoint: scenePoint,
       artboard: artboard,
       workspaceSize: workspaceSize,
@@ -4172,7 +4195,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
     // Keep current selection when tapping near the selected text layer bounds.
     if (selectedData != null &&
-        _pointInRotatedTextBounds(
+        _pointInRotatedLayerBounds(
           scenePoint,
           selectedData,
           padding: (20 / _scale).clamp(10, 24),
@@ -4254,8 +4277,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     if (layerId == null) return;
     final EditorLayer? targetLayer = _layerById(layerId);
     if (targetLayer == null) return;
-    final _TextLayerSceneData? data = _buildTextLayerSceneData(
-      layer: targetLayer,
+    final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+      selectedLayer: targetLayer,
       artboard: artboard,
       workspaceSize: workspaceSize,
     );
@@ -4402,6 +4425,13 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     return layer;
   }
 
+  EditorLayer? _selectedBackgroundImageLayerForMarquee() {
+    final EditorLayer? layer = _selectedImageLayerForClone();
+    if (layer == null) return null;
+    if (!layer.isBackground) return null;
+    return layer;
+  }
+
   void _primeSelectedCloneLayerBitmap() {
     final EditorLayer? selectedLayer = _selectedImageLayerForClone();
     if (selectedLayer == null) return;
@@ -4536,7 +4566,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     required Offset scenePoint,
     required Rect artboard,
   }) {
-    final EditorLayer? selectedImage = _selectedImageLayerForClone();
+    final EditorLayer? selectedImage =
+        _selectedBackgroundImageLayerForMarquee();
     if (selectedImage == null) {
       widget.onMarqueeSelectionChanged(null);
       return;
@@ -5062,9 +5093,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
 
   EditorLayer? _backgroundLayer(List<EditorLayer> layers) {
     for (final EditorLayer layer in layers) {
-      if (layer.isBackground &&
-          layer.isVisible &&
-          _workspaceSourceSize(layer) != null) {
+      if (layer.isBackground && _workspaceSourceSize(layer) != null) {
         return layer;
       }
     }
@@ -5075,6 +5104,64 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
     if (layerId == null) return null;
     for (final EditorLayer layer in widget.layers) {
       if (layer.id == layerId) return layer;
+    }
+    return null;
+  }
+
+  _TransformLayerSceneData? _buildSelectedTransformLayerData({
+    required EditorLayer? selectedLayer,
+    required Rect artboard,
+    required Size workspaceSize,
+  }) {
+    if (selectedLayer == null) return null;
+    switch (selectedLayer.type) {
+      case EditorLayerType.text:
+        return _buildTextLayerSceneData(
+          layer: selectedLayer,
+          artboard: artboard,
+          workspaceSize: workspaceSize,
+        );
+      case EditorLayerType.image:
+        if (selectedLayer.isBackground || selectedLayer.image == null) {
+          return null;
+        }
+        final ui.Image image =
+            _currentImageOverrides()[selectedLayer.id] ?? selectedLayer.image!;
+        return _buildImageLayerSceneData(
+          layer: selectedLayer,
+          image: image,
+          artboard: artboard,
+          workspaceSize: workspaceSize,
+        );
+      case EditorLayerType.vector:
+      case EditorLayerType.mask:
+      case EditorLayerType.solid:
+        return null;
+    }
+  }
+
+  EditorLayer? _hitTopTransformLayer({
+    required Offset scenePoint,
+    required Rect artboard,
+    required Size workspaceSize,
+  }) {
+    for (int i = widget.layers.length - 1; i >= 0; i--) {
+      final EditorLayer layer = widget.layers[i];
+      if (!layer.isVisible || layer.isBackground) continue;
+      final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+        selectedLayer: layer,
+        artboard: artboard,
+        workspaceSize: workspaceSize,
+      );
+      if (data == null) continue;
+      final double hitPadding = (10 / _scale).clamp(5, 14);
+      if (_pointInRotatedLayerBounds(
+        scenePoint,
+        data,
+        padding: hitPadding,
+      )) {
+        return layer;
+      }
     }
     return null;
   }
@@ -5095,11 +5182,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas> {
       );
       if (data == null) continue;
       final double hitPadding = (10 / _scale).clamp(5, 14);
-      if (_pointInRotatedTextBounds(
-        scenePoint,
-        data,
-        padding: hitPadding,
-      )) {
+      if (_pointInRotatedLayerBounds(scenePoint, data, padding: hitPadding)) {
         return layer;
       }
     }
@@ -5197,14 +5280,13 @@ class _CloneBrushMask {
   final List<double> alphaGrid;
 }
 
-class _TextLayerSceneData {
-  _TextLayerSceneData({
+abstract class _TransformLayerSceneData {
+  const _TransformLayerSceneData({
     required this.layerId,
     required this.center,
     required this.width,
     required this.height,
     required this.rotation,
-    required this.textPainter,
   });
 
   final String layerId;
@@ -5212,7 +5294,6 @@ class _TextLayerSceneData {
   final double width;
   final double height;
   final double rotation;
-  final TextPainter textPainter;
 
   double get halfWidth => width / 2;
   double get halfHeight => height / 2;
@@ -5229,6 +5310,32 @@ class _TextLayerSceneData {
   Offset get rotateLineStart => _toScene(Offset(0, halfHeight));
 
   Offset get rotateHandle => _toScene(Offset(0, halfHeight + 28));
+}
+
+class _TextLayerSceneData extends _TransformLayerSceneData {
+  _TextLayerSceneData({
+    required super.layerId,
+    required super.center,
+    required super.width,
+    required super.height,
+    required super.rotation,
+    required this.textPainter,
+  });
+
+  final TextPainter textPainter;
+}
+
+class _ImageLayerSceneData extends _TransformLayerSceneData {
+  const _ImageLayerSceneData({
+    required super.layerId,
+    required super.center,
+    required super.width,
+    required super.height,
+    required super.rotation,
+    required this.image,
+  });
+
+  final ui.Image image;
 }
 
 EditorLayer? _workspaceLayerForEdit(List<EditorLayer> layers) {
@@ -5281,6 +5388,30 @@ _TextLayerSceneData? _buildTextLayerSceneData({
   );
 }
 
+_ImageLayerSceneData? _buildImageLayerSceneData({
+  required EditorLayer layer,
+  required ui.Image image,
+  required Rect artboard,
+  required Size workspaceSize,
+}) {
+  if (layer.type != EditorLayerType.image) return null;
+  final double unitScale = artboard.width / workspaceSize.width;
+  final Offset sourcePos = layer.position ??
+      Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+  final Offset center = artboard.topLeft +
+      Offset(sourcePos.dx * unitScale, sourcePos.dy * unitScale);
+  final double drawWidth = image.width * unitScale * layer.layerScale;
+  final double drawHeight = image.height * unitScale * layer.layerScale;
+  return _ImageLayerSceneData(
+    layerId: layer.id,
+    center: center,
+    width: drawWidth,
+    height: drawHeight,
+    rotation: layer.layerRotation,
+    image: image,
+  );
+}
+
 Offset _rotateVector(Offset value, double angle) {
   final double c = math.cos(angle);
   final double s = math.sin(angle);
@@ -5290,9 +5421,9 @@ Offset _rotateVector(Offset value, double angle) {
   );
 }
 
-bool _pointInRotatedTextBounds(
+bool _pointInRotatedLayerBounds(
   Offset scenePoint,
-  _TextLayerSceneData data, {
+  _TransformLayerSceneData data, {
   double padding = 0,
 }) {
   final Offset local = _rotateVector(scenePoint - data.center, -data.rotation);
@@ -5300,9 +5431,9 @@ bool _pointInRotatedTextBounds(
       local.dy.abs() <= (data.halfHeight + padding);
 }
 
-bool _pointNearTextTransformControls({
+bool _pointNearLayerTransformControls({
   required Offset scenePoint,
-  required _TextLayerSceneData data,
+  required _TransformLayerSceneData data,
   required double rotateHandleRadius,
   required double cornerHandleRadius,
   required double rotateLineDistance,
@@ -5449,22 +5580,25 @@ class _SkiaCanvasPainter extends CustomPainter {
     canvas.translate(pan.dx, pan.dy);
     canvas.scale(scale);
     canvas.clipRect(artboard);
-    final ui.Image? workspaceImage = _resolveLayerImage(workspace);
-    if (workspace.type == EditorLayerType.image && workspaceImage != null) {
-      final Rect sourceRect = Rect.fromLTWH(
-        0,
-        0,
-        workspaceImage.width.toDouble(),
-        workspaceImage.height.toDouble(),
-      );
-      canvas.drawImageRect(workspaceImage, sourceRect, artboard, Paint());
-    } else if (workspace.type == EditorLayerType.solid) {
-      final Paint solidPaint = Paint()
-        ..color = workspace.solidColor ?? Colors.white
-        ..style = PaintingStyle.fill;
-      canvas.drawRect(artboard, solidPaint);
+    if (workspace.isVisible) {
+      final ui.Image? workspaceImage = _resolveLayerImage(workspace);
+      if (workspace.type == EditorLayerType.image && workspaceImage != null) {
+        final Rect sourceRect = Rect.fromLTWH(
+          0,
+          0,
+          workspaceImage.width.toDouble(),
+          workspaceImage.height.toDouble(),
+        );
+        canvas.drawImageRect(workspaceImage, sourceRect, artboard, Paint());
+      } else if (workspace.type == EditorLayerType.solid) {
+        final Paint solidPaint = Paint()
+          ..color = workspace.solidColor ?? Colors.white
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(artboard, solidPaint);
+      }
     }
-    final _TextLayerSceneData? selectedTextLayer = _drawNonBackgroundLayers(
+    final _TransformLayerSceneData? selectedTransformLayer =
+        _drawNonBackgroundLayers(
       canvas: canvas,
       artboard: artboard,
       workspaceSize: workspaceSize,
@@ -5473,8 +5607,8 @@ class _SkiaCanvasPainter extends CustomPainter {
     if (marqueeSelection != null && activeTool == EditorTool.marquee) {
       _drawMarqueeSelection(canvas, artboard, marqueeSelection!);
     }
-    if (selectedTextLayer != null && activeTool == EditorTool.move) {
-      _drawSelectionControls(canvas, selectedTextLayer);
+    if (selectedTransformLayer != null && activeTool == EditorTool.move) {
+      _drawSelectionControls(canvas, selectedTransformLayer);
     }
     if (activeTool == EditorTool.clone && cloneSourcePointerUv != null) {
       _drawCloneSourcePointer(canvas, artboard, cloneSourcePointerUv!);
@@ -5482,25 +5616,44 @@ class _SkiaCanvasPainter extends CustomPainter {
     canvas.restore();
   }
 
-  _TextLayerSceneData? _drawNonBackgroundLayers({
+  _TransformLayerSceneData? _drawNonBackgroundLayers({
     required Canvas canvas,
     required Rect artboard,
     required Size workspaceSize,
   }) {
-    _TextLayerSceneData? selectedData;
+    _TransformLayerSceneData? selectedData;
     for (final EditorLayer layer in layers) {
       if (!layer.isVisible || layer.isBackground) continue;
       switch (layer.type) {
         case EditorLayerType.image:
           final ui.Image? image = _resolveLayerImage(layer);
           if (image != null) {
+            final _ImageLayerSceneData? data = _buildImageLayerSceneData(
+              layer: layer,
+              image: image,
+              artboard: artboard,
+              workspaceSize: workspaceSize,
+            );
+            if (data == null) break;
             final Rect sourceRect = Rect.fromLTWH(
               0,
               0,
               image.width.toDouble(),
               image.height.toDouble(),
             );
-            canvas.drawImageRect(image, sourceRect, artboard, Paint());
+            final Rect destinationRect = Rect.fromCenter(
+              center: Offset.zero,
+              width: data.width,
+              height: data.height,
+            );
+            canvas.save();
+            canvas.translate(data.center.dx, data.center.dy);
+            canvas.rotate(data.rotation);
+            canvas.drawImageRect(image, sourceRect, destinationRect, Paint());
+            canvas.restore();
+            if (selectedLayerId == layer.id) {
+              selectedData = data;
+            }
           }
           break;
         case EditorLayerType.text:
@@ -5537,7 +5690,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     return selectedData;
   }
 
-  void _drawSelectionControls(Canvas canvas, _TextLayerSceneData data) {
+  void _drawSelectionControls(Canvas canvas, _TransformLayerSceneData data) {
     final Paint frame = Paint()
       ..color = const Color(0xFF5B7CFF)
       ..style = PaintingStyle.stroke
@@ -5810,9 +5963,7 @@ class _SkiaCanvasPainter extends CustomPainter {
 
   EditorLayer? _backgroundLayer(List<EditorLayer> layers) {
     for (final EditorLayer layer in layers) {
-      if (layer.isBackground &&
-          layer.isVisible &&
-          _workspaceSourceSize(layer) != null) {
+      if (layer.isBackground && _workspaceSourceSize(layer) != null) {
         return layer;
       }
     }
