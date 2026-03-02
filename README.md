@@ -296,6 +296,28 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Snackbar lookup no longer depends on a potentially deactivated widget context.
 - This removes the unsafe ancestor-lookup path that was triggering the assertion chain.
 
+### 0.11 Latest Handoff (March 2, 2026 - Generate Workspace Contract)
+
+#### True root-cause split
+- The `API key` and `red-screen assertion` are two different issues:
+  - API key: embedded keys are intentionally empty (push-protection requirement), so generation requires runtime `--dart-define` keys.
+  - UI assertion/lifecycle instability: generate flow previously relied on context-sensitive lookups during transient UI states.
+
+#### Generate mechanism hardening (professional flow)
+- On `+` -> `Generate Image`, if no workspace exists yet:
+  - create a solid background workspace immediately using the selected generate size preset.
+  - this guarantees canvas/artboard dimensions are available before async generation starts.
+- During generation:
+  - keep same magic shimmer + center progress behavior over the canvas/artboard.
+- On success:
+  - if workspace was created by this generate action, replace that background with generated image (not overlay).
+  - if workspace already existed before generate, insert generated result as overlay layer (existing behavior).
+
+#### Why this matters
+- Workspace size now always matches the selected generation size in blank-state flows.
+- Generate loader targets a real workspace rect instead of relying on inferred fallback only.
+- This removes a major source of runtime instability in blank-first generate scenarios.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

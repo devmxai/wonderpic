@@ -6740,6 +6740,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       '2757d1ac2f1291af219f5f10e8ecba15e92e7c05253e2841295f3ba6bff6adc4';
   final ImagePicker _picker = ImagePicker();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<ScaffoldMessengerState> _editorScaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
   final GlobalKey _canvasViewportKey = GlobalKey();
   final GlobalKey<_SkiaEditorCanvasState> _editorCanvasStateKey =
       GlobalKey<_SkiaEditorCanvasState>();
@@ -6967,67 +6969,71 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: WonderPicEditorScreen._pageBg,
-      resizeToAvoidBottomInset: false,
-      endDrawer: _buildToolSettingsSidebar(context),
-      endDrawerEnableOpenDragGesture: false,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
-              children: [
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: _buildTopTools(),
-                ),
-                const SizedBox(height: 14),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(22),
-                    child: _buildEditorCanvasPanel(),
+    return ScaffoldMessenger(
+      key: _editorScaffoldMessengerKey,
+      child: Scaffold(
+        key: _scaffoldKey,
+        backgroundColor: WonderPicEditorScreen._pageBg,
+        resizeToAvoidBottomInset: false,
+        endDrawer: _buildToolSettingsSidebar(context),
+        endDrawerEnableOpenDragGesture: false,
+        body: SafeArea(
+          child: Stack(
+            children: [
+              Column(
+                children: [
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: _buildTopTools(),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: _bottomNavHorizontalInset,
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: _buildEditorCanvasPanel(),
+                    ),
                   ),
-                  child: _buildBottomNav(),
-                ),
-                const SizedBox(height: 4),
-              ],
-            ),
-            if (_isExpandActionDockVisible) _buildExpandActionDock(),
-            if (_isMoveJoystickDockVisible) _buildMoveJoystickDock(),
-            if (_isCloneJoystickDockVisible) _buildCloneJoystickDock(),
-            if (_isTextQuickDockVisible && !_isTextSettingsBottomSheetOpen)
-              _buildTextQuickActionsDock(),
-            if (_isTextFontsFloatingOpen && !_isTextSettingsBottomSheetOpen)
-              _buildTextFontsFloatingOverlay(),
-            if (_isTextWeightFloatingOpen && !_isTextSettingsBottomSheetOpen)
-              _buildTextWeightFloatingOverlay(),
-            if (_isTextColorFloatingOpen && !_isTextSettingsBottomSheetOpen)
-              _buildTextColorFloatingOverlay(),
-            if (_activeTextEffectFloatingPanel != null &&
-                !_isTextSettingsBottomSheetOpen)
-              _buildTextEffectFloatingOverlay(),
-            if (_isPencilSettingsFloatingOpen)
-              _buildPencilSettingsFloatingOverlay(),
-            if (_isOverlayCutFloatingOpen) _buildOverlayCutFloatingOverlay(),
-            if (_isOverlayImageShadowFloatingOpen)
-              _buildOverlayImageShadowFloatingOverlay(),
-            if (_isImageAdjustFloatingOpen) _buildImageAdjustFloatingOverlay(),
-            if (_isPhotoRoomRemoveBgFloatingOpen)
-              _buildPhotoRoomRemoveBgFloatingOverlay(),
-            if (_isSketchReplaceFloatingOpen)
-              _buildSketchReplaceFloatingOverlay(),
-            if (_isReplaceObjectFloatingOpen)
-              _buildReplaceObjectFloatingOverlay(),
-            if (_isExporting) _buildExportingOverlay(),
-          ],
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: _bottomNavHorizontalInset,
+                    ),
+                    child: _buildBottomNav(),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+              if (_isExpandActionDockVisible) _buildExpandActionDock(),
+              if (_isMoveJoystickDockVisible) _buildMoveJoystickDock(),
+              if (_isCloneJoystickDockVisible) _buildCloneJoystickDock(),
+              if (_isTextQuickDockVisible && !_isTextSettingsBottomSheetOpen)
+                _buildTextQuickActionsDock(),
+              if (_isTextFontsFloatingOpen && !_isTextSettingsBottomSheetOpen)
+                _buildTextFontsFloatingOverlay(),
+              if (_isTextWeightFloatingOpen && !_isTextSettingsBottomSheetOpen)
+                _buildTextWeightFloatingOverlay(),
+              if (_isTextColorFloatingOpen && !_isTextSettingsBottomSheetOpen)
+                _buildTextColorFloatingOverlay(),
+              if (_activeTextEffectFloatingPanel != null &&
+                  !_isTextSettingsBottomSheetOpen)
+                _buildTextEffectFloatingOverlay(),
+              if (_isPencilSettingsFloatingOpen)
+                _buildPencilSettingsFloatingOverlay(),
+              if (_isOverlayCutFloatingOpen) _buildOverlayCutFloatingOverlay(),
+              if (_isOverlayImageShadowFloatingOpen)
+                _buildOverlayImageShadowFloatingOverlay(),
+              if (_isImageAdjustFloatingOpen)
+                _buildImageAdjustFloatingOverlay(),
+              if (_isPhotoRoomRemoveBgFloatingOpen)
+                _buildPhotoRoomRemoveBgFloatingOverlay(),
+              if (_isSketchReplaceFloatingOpen)
+                _buildSketchReplaceFloatingOverlay(),
+              if (_isReplaceObjectFloatingOpen)
+                _buildReplaceObjectFloatingOverlay(),
+              if (_isExporting) _buildExportingOverlay(),
+            ],
+          ),
         ),
       ),
     );
@@ -12459,10 +12465,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         workspace == null ? null : _workspaceSourceSize(workspace);
     if (workspaceSize == null) {
       if (shouldShowError) {
-        final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
-        final ScaffoldMessengerState? messenger = scaffoldContext == null
-            ? null
-            : ScaffoldMessenger.maybeOf(scaffoldContext);
+        final ScaffoldMessengerState? messenger =
+            _editorScaffoldMessengerKey.currentState;
         messenger?.showSnackBar(
           const SnackBar(
             content: Text('Add a background image or solid layer first'),
@@ -18311,10 +18315,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool isError = false,
   }) {
     if (!mounted) return;
-    final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
-    if (scaffoldContext == null) return;
     final ScaffoldMessengerState? messenger =
-        ScaffoldMessenger.maybeOf(scaffoldContext);
+        _editorScaffoldMessengerKey.currentState;
     if (messenger == null) return;
     messenger.showSnackBar(
       SnackBar(
@@ -18560,10 +18562,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       });
     } on PlatformException {
       if (!mounted) return;
-      final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
-      final ScaffoldMessengerState? messenger = scaffoldContext == null
-          ? null
-          : ScaffoldMessenger.maybeOf(scaffoldContext);
+      final ScaffoldMessengerState? messenger =
+          _editorScaffoldMessengerKey.currentState;
       messenger?.showSnackBar(
         const SnackBar(
           content: Text(
@@ -18573,10 +18573,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
     } catch (_) {
       if (!mounted) return;
-      final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
-      final ScaffoldMessengerState? messenger = scaffoldContext == null
-          ? null
-          : ScaffoldMessenger.maybeOf(scaffoldContext);
+      final ScaffoldMessengerState? messenger =
+          _editorScaffoldMessengerKey.currentState;
       messenger?.showSnackBar(
         const SnackBar(content: Text('Could not load image from gallery')),
       );
@@ -20846,8 +20844,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
       return;
     }
+    final bool hadWorkspaceBefore = _workspaceLayerForEdit(_layers) != null;
 
     setState(() {
+      if (!hadWorkspaceBefore) {
+        _upsertSolidBackground(
+          solidSize: request.sizePreset.baseSize,
+          name: 'Background',
+        );
+      }
       _defaultKieAiImageModel = request.model;
       _defaultKieNanoVersion = request.nanoVersion;
       _defaultKieIdeogramStyle = request.ideogramStyle;
@@ -20878,7 +20883,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _pushUndoSnapshot();
       setState(() {
         final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
-        if (workspace == null) {
+        if (!hadWorkspaceBefore || workspace == null) {
           _upsertBackgroundLayer(
             image: image,
             thumbnailBytes: pngBytes,
