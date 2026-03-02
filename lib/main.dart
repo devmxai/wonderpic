@@ -8138,6 +8138,23 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 ],
               );
             }
+            final Widget baseProgressPanel = _AiMagicProgressIndicator(
+              progress: _aiCanvasGeneratingProgress,
+              panelSize: panelSize,
+              statusText: statusText,
+            );
+            final Widget progressPanel = isExpandOverlay
+                ? Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 1.6, sigmaY: 1.6),
+                        child: Container(color: const Color(0x0F171B21)),
+                      ),
+                      baseProgressPanel,
+                    ],
+                  )
+                : baseProgressPanel;
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -8145,19 +8162,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 if (artboardRect != null)
                   Positioned.fromRect(
                     rect: artboardRect,
-                    child: _AiMagicProgressIndicator(
-                      progress: _aiCanvasGeneratingProgress,
-                      panelSize: panelSize,
-                      statusText: statusText,
-                    ),
+                    child: progressPanel,
                   )
                 else
                   Center(
-                    child: _AiMagicProgressIndicator(
-                      progress: _aiCanvasGeneratingProgress,
-                      panelSize: panelSize,
-                      statusText: statusText,
-                    ),
+                    child: progressPanel,
                   ),
               ],
             );
@@ -9730,6 +9739,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _rotateVector(localShiftWorkspace, selectedLayer.layerRotation);
       final Offset nextPosition = oldPosition - rotatedShiftWorkspace;
       _pushUndoSnapshot();
+      _editorCanvasStateKey.currentState?.commitExpandViewportAfterApply(
+        preserveViewportOnNextWorkspaceResize: selectedLayer.isBackground,
+      );
       setState(() {
         final int layerIndex =
             _layers.indexWhere((entry) => entry.id == selectedLayer.id);
@@ -26025,6 +26037,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   Offset? _expandViewportPanBefore;
   double? _expandViewportScaleBefore;
   bool _hasCapturedExpandViewport = false;
+  bool _preserveViewportOnNextWorkspaceResize = false;
   static const Duration _expandViewportEnterDuration =
       Duration(milliseconds: 320);
   static const Duration _expandViewportExitDuration =
@@ -26634,14 +26647,20 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       _bitmapLoadInFlight.remove(layer.id);
     }
 
-    if (oldBackground?.id != newBackground?.id ||
-        oldBackground?.thumbnailBytes != newBackground?.thumbnailBytes ||
-        oldSize != newSize ||
-        oldBackground?.solidColor != newBackground?.solidColor) {
+    final bool didWorkspaceBackgroundChange =
+        oldBackground?.id != newBackground?.id ||
+            oldBackground?.thumbnailBytes != newBackground?.thumbnailBytes ||
+            oldSize != newSize ||
+            oldBackground?.solidColor != newBackground?.solidColor;
+    if (didWorkspaceBackgroundChange) {
+      final bool preserveViewport = _preserveViewportOnNextWorkspaceResize;
+      _preserveViewportOnNextWorkspaceResize = false;
       setState(() {
         _activeStroke = null;
-        _pan = Offset.zero;
-        _scale = 1.0;
+        if (!preserveViewport) {
+          _pan = Offset.zero;
+          _scale = 1.0;
+        }
         _interaction = _CanvasInteraction.none;
         _gestureLayerId = null;
         _activeCloneStroke = null;
@@ -26660,11 +26679,22 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         _clearCapturedExpandViewport();
       });
       _repaintCanvas();
+    } else if (wasExpandToolActive && !isExpandToolActive) {
+      _preserveViewportOnNextWorkspaceResize = false;
     }
   }
 
   void _repaintCanvas() {
     _canvasRepaintTick.value++;
+  }
+
+  void commitExpandViewportAfterApply({
+    required bool preserveViewportOnNextWorkspaceResize,
+  }) {
+    _expandViewportPrepared = false;
+    _clearCapturedExpandViewport();
+    _preserveViewportOnNextWorkspaceResize =
+        preserveViewportOnNextWorkspaceResize;
   }
 
   void _captureViewportBeforeExpand() {

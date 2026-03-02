@@ -486,6 +486,35 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Expand indicator/handle no longer remains after generation success.
 - UI returns to neutral state (no active tool) once Expand is done.
 
+### 0.20 Latest Handoff (March 2, 2026 - Expand Viewport Commit + Stable Post-Apply State)
+
+#### Reported issue
+- After successful `Expand`, the canvas view could jump back to the old zoom/pan state.
+- In some flows, the user-adjusted zoom-out framing was not preserved after expand output was applied.
+
+#### Root cause
+- Two viewport reset paths were still active on expand success:
+  - leaving Expand mode always triggered `_restoreViewportAfterExpandExit()`
+  - workspace/background size changes in canvas `didUpdateWidget` force-reset viewport to `_pan = Offset.zero` and `_scale = 1.0`
+- On successful expand of background/workspace images, these paths could override the user’s current framing.
+
+#### Fix applied
+- Added an explicit expand-commit hook from parent to canvas state before applying output:
+  - `_editorCanvasStateKey.currentState?.commitExpandViewportAfterApply(...)`
+- New canvas-state commit method:
+  - clears captured pre-expand viewport snapshot
+  - sets a one-shot flag to preserve viewport on the next workspace resize when needed
+- Updated workspace-change handling in `didUpdateWidget`:
+  - consumes the one-shot preserve flag
+  - skips pan/scale reset for that post-expand commit frame only
+  - clears the flag on normal expand exit if no workspace resize occurred
+- Expand generation overlay received a subtle front blur layer over the target rect so shimmer/blur reads above image content.
+
+#### Result
+- Expand no longer snaps back to pre-expand viewport on success.
+- User zoom/pan framing remains stable after apply.
+- Expand session still auto-closes cleanly with no stale handles.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
