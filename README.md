@@ -515,6 +515,34 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - User zoom/pan framing remains stable after apply.
 - Expand session still auto-closes cleanly with no stale handles.
 
+### 0.21 Latest Handoff (March 2, 2026 - Crop Workspace Fix + Stable Canvas Crop)
+
+#### Reported issue
+- Crop frame/handles were not showing in common workflows.
+- User needed crop to define the new canvas bounds (inside frame stays, outside removed) without breaking layer placement or resetting viewport.
+
+#### Root cause
+- Crop target resolver was limited to overlay-only layers:
+  - `_selectedCropLayer()` returned `_selectedOverlayImageLayer()` only.
+- Background/workspace crop path was hard-blocked in apply step.
+- On workspace size change, viewport could reset unless explicitly preserved.
+
+#### Fix applied
+- Crop target resolution now supports selected image layer and falls back to workspace background when needed.
+- Workspace/background crop is enabled:
+  - selected crop rect becomes new canvas size
+  - background image is cropped to the selected region
+  - non-background layers are translated by crop offset so composition stays aligned inside the new canvas
+- Viewport is preserved across workspace resize after crop apply by committing canvas viewport before state update.
+- For workspace crop quality/alignment safety:
+  - rotate/straighten controls are disabled in settings
+  - apply blocks non-zero rotate/straighten in workspace mode (frame-only crop)
+
+#### Result
+- Crop frame appears reliably when Crop tool is activated on normal projects.
+- Crop now behaves as true canvas crop for workspace images.
+- Layer composition remains stable after crop and no forced jump back to default view occurs.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

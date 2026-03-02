@@ -11288,7 +11288,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   EditorLayer? _selectedCropLayer() {
-    return _selectedOverlayImageLayer();
+    final EditorLayer? selectedImage = _selectedImageLayer();
+    if (selectedImage != null) return selectedImage;
+    return _workspaceLayerForEdit(_layers);
   }
 
   EditorLayer? _selectedExpandLayer() {
@@ -12073,15 +12075,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final EditorLayer? layer = _selectedCropLayer();
     final _CropToolConfig? config = _cropToolConfig;
     if (layer == null || config == null || config.layerId != layer.id) return;
-    if (layer.isBackground) {
+    final ui.Image? sourceImage = layer.image;
+    if (sourceImage == null) return;
+    final bool isWorkspaceCrop = layer.isBackground;
+    final int turns = ((config.quarterTurns % 4) + 4) % 4;
+    final double straighten = config.straightenDegrees.clamp(-30.0, 30.0);
+    if (isWorkspaceCrop && (turns != 0 || straighten.abs() >= 0.01)) {
       _showExportMessage(
-        'Background workspace crop is locked to keep canvas size stable.',
+        'Workspace crop supports frame-only mode. Reset Rotate/Straighten to 0°.',
         isError: true,
       );
       return;
     }
-    final ui.Image? sourceImage = layer.image;
-    if (sourceImage == null) return;
     final Uint8List? rgba = await _readImagePixels(sourceImage);
     if (rgba == null) return;
 
@@ -12093,16 +12098,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       numChannels: 4,
     );
 
-    final int turns = ((config.quarterTurns % 4) + 4) % 4;
-    if (turns != 0) {
+    if (!isWorkspaceCrop && turns != 0) {
       working = img.copyRotate(
         working,
         angle: turns * 90,
         interpolation: img.Interpolation.linear,
       );
     }
-    final double straighten = config.straightenDegrees.clamp(-30.0, 30.0);
-    if (straighten.abs() >= 0.01) {
+    if (!isWorkspaceCrop && straighten.abs() >= 0.01) {
       working = img.copyRotate(
         working,
         angle: straighten,
@@ -12185,6 +12188,44 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (!mounted) return;
 
     _pushUndoSnapshot();
+    if (isWorkspaceCrop) {
+      final Size oldWorkspaceSize = Size(
+        sourceImage.width.toDouble(),
+        sourceImage.height.toDouble(),
+      );
+      final Offset cropOffset = Offset(left.toDouble(), top.toDouble());
+      _editorCanvasStateKey.currentState?.commitExpandViewportAfterApply(
+        preserveViewportOnNextWorkspaceResize: true,
+      );
+      setState(() {
+        final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+        for (int i = 0; i < nextLayers.length; i++) {
+          final EditorLayer entry = nextLayers[i];
+          if (entry.id == layer.id) {
+            nextLayers[i] = entry.copyWith(
+              image: nextImage,
+              solidSize: _imageSourceSize(nextImage),
+              thumbnailBytes: null,
+            );
+            continue;
+          }
+          if (entry.isBackground) continue;
+          final Offset oldPosition = entry.position ??
+              Offset(
+                oldWorkspaceSize.width / 2,
+                oldWorkspaceSize.height / 2,
+              );
+          nextLayers[i] = entry.copyWith(position: oldPosition - cropOffset);
+        }
+        _layers = nextLayers;
+        _cropToolConfig = null;
+        _isToolEnabled = false;
+        _isCropFloatingOpen = false;
+      });
+      _showExportMessage('Workspace crop applied.');
+      return;
+    }
+
     setState(() {
       _replaceLayerImage(layer.id, nextImage);
       _cropToolConfig = null;
@@ -14514,6 +14555,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Widget _buildCropSettingsPanel() {
     final EditorLayer? selectedImageLayer = _selectedCropLayer();
     final bool enabled = selectedImageLayer != null;
+    final bool isWorkspaceCrop = selectedImageLayer?.isBackground ?? false;
     final _CropToolConfig? config =
         enabled ? _resolvedCropConfigForLayer(selectedImageLayer.id) : null;
     return Column(
@@ -14601,7 +14643,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: enabled ? () => _rotateCropQuarterTurns(-1) : null,
+                  onPressed: enabled && !isWorkspaceCrop
+                      ? () => _rotateCropQuarterTurns(-1)
+                      : null,
                   icon: const Icon(
                     Icons.rotate_90_degrees_ccw_rounded,
                     size: 15,
@@ -14627,7 +14671,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: enabled ? () => _rotateCropQuarterTurns(1) : null,
+                  onPressed: enabled && !isWorkspaceCrop
+                      ? () => _rotateCropQuarterTurns(1)
+                      : null,
                   icon: const Icon(
                     Icons.rotate_90_degrees_cw_rounded,
                     size: 15,
@@ -14655,7 +14701,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         ),
         const SizedBox(height: 10),
         Opacity(
-          opacity: enabled ? 1 : 0.55,
+          opacity: enabled && !isWorkspaceCrop ? 1 : 0.55,
           child: _SettingsSliderTile(
             label: 'Straighten',
             value: config?.straightenDegrees ?? 0.0,
@@ -14663,11 +14709,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             max: 30,
             valueText:
                 '${(config?.straightenDegrees ?? 0.0).toStringAsFixed(1)}°',
-            onChanged: enabled
+            onChanged: enabled && !isWorkspaceCrop
                 ? (value) => _updateCropToolConfig(straightenDegrees: value)
                 : (_) {},
           ),
         ),
+        if (isWorkspaceCrop) ...[
+          const SizedBox(height: 10),
+          const _ToolHintCard(
+            title: 'Workspace Crop',
+            message:
+                'Crop frame becomes the new canvas. Rotate/Straighten are disabled to keep layer alignment and pixel quality.',
+          ),
+        ],
       ],
     );
   }
