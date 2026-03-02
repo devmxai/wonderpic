@@ -8030,6 +8030,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             onOverlayCutConfigChanged: _onOverlayCutConfigChangedFromCanvas,
             cropToolConfig: _activeCropConfigForCanvas(),
             expandToolConfig: _activeExpandConfigForCanvas(),
+            isExpandGenerating: _isExpandGenerating,
             onCropToolConfigChanged: _onCropToolConfigChangedFromCanvas,
             onExpandToolConfigChanged: _onExpandToolConfigChangedFromCanvas,
             onCropCommitRequested: _onCropCommitRequestedFromCanvas,
@@ -8286,7 +8287,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   _ExpandToolConfig? _activeExpandConfigForCanvas() {
-    if (_isExpandGenerating) return null;
     if (!_isToolEnabled || _activeTool != EditorTool.expand) return null;
     final EditorLayer? selectedImage = _selectedExpandLayer();
     if (selectedImage == null) return null;
@@ -25905,6 +25905,7 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.onOverlayCutConfigChanged,
     required this.cropToolConfig,
     required this.expandToolConfig,
+    required this.isExpandGenerating,
     required this.onCropToolConfigChanged,
     required this.onExpandToolConfigChanged,
     required this.onCropCommitRequested,
@@ -25955,6 +25956,7 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final ValueChanged<_OverlayCutConfig> onOverlayCutConfigChanged;
   final _CropToolConfig? cropToolConfig;
   final _ExpandToolConfig? expandToolConfig;
+  final bool isExpandGenerating;
   final ValueChanged<_CropToolConfig> onCropToolConfigChanged;
   final ValueChanged<_ExpandToolConfig> onExpandToolConfigChanged;
   final VoidCallback onCropCommitRequested;
@@ -26113,7 +26115,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   }
 
   void _syncVisualEffectTicker() {
-    final bool shouldRun = _isExpandToolActive || _isUpscaleMagicActive;
+    final bool shouldRun =
+        (_isExpandToolActive && !widget.isExpandGenerating) ||
+            _isUpscaleMagicActive;
     if (shouldRun) {
       if (_visualEffectTicker == null) {
         _visualEffectTicker = createTicker(_onVisualEffectTick)..start();
@@ -26129,7 +26133,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   void _onVisualEffectTick(Duration elapsed) {
     if (!mounted) return;
     final double seconds = elapsed.inMicroseconds / 1000000.0;
-    if (_isExpandToolActive) {
+    if (_isExpandToolActive && !widget.isExpandGenerating) {
       _expandPreviewPhase = (seconds * 0.58) % 1.0;
     }
     if (_isUpscaleMagicActive) {
@@ -26190,6 +26194,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
               overlayCutConfig: widget.overlayCutConfig,
               cropToolConfig: widget.cropToolConfig,
               expandToolConfig: widget.expandToolConfig,
+              isExpandGenerating: widget.isExpandGenerating,
               expandAnimationPhaseResolver: () => _expandPreviewPhase,
               sketchMaskLayerId: widget.sketchMaskLayerId,
               sketchMaskStrokes: widget.sketchMaskStrokes,
@@ -26980,6 +26985,11 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
 
     if (expandToolConfig != null && expandLayerData != null) {
       _activeStroke = null;
+      if (widget.isExpandGenerating) {
+        _interaction = _CanvasInteraction.none;
+        _gestureLayerId = null;
+        return;
+      }
       final bool consumed = _startExpandInteraction(
         scenePoint: scenePoint,
         layerData: expandLayerData,
@@ -32886,6 +32896,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     required this.overlayCutConfig,
     required this.cropToolConfig,
     required this.expandToolConfig,
+    required this.isExpandGenerating,
     required this.expandAnimationPhaseResolver,
     required this.sketchMaskLayerId,
     required this.sketchMaskStrokes,
@@ -32925,6 +32936,7 @@ class _SkiaCanvasPainter extends CustomPainter {
   final _OverlayCutConfig? overlayCutConfig;
   final _CropToolConfig? cropToolConfig;
   final _ExpandToolConfig? expandToolConfig;
+  final bool isExpandGenerating;
   final double Function() expandAnimationPhaseResolver;
   final String? sketchMaskLayerId;
   final List<_SketchMaskStroke> sketchMaskStrokes;
@@ -33073,7 +33085,8 @@ class _SkiaCanvasPainter extends CustomPainter {
           );
     if (expandToolConfig != null &&
         expandLayerData != null &&
-        expandLayerData.layerId == expandToolConfig!.layerId) {
+        expandLayerData.layerId == expandToolConfig!.layerId &&
+        !isExpandGenerating) {
       _drawExpandPreview(
         canvas,
         expandLayerData,
@@ -34605,7 +34618,8 @@ class _SkiaCanvasPainter extends CustomPainter {
         oldDelegate.marqueeSelection != marqueeSelection ||
         oldDelegate.overlayCutConfig != overlayCutConfig ||
         oldDelegate.cropToolConfig != cropToolConfig ||
-        oldDelegate.expandToolConfig != expandToolConfig;
+        oldDelegate.expandToolConfig != expandToolConfig ||
+        oldDelegate.isExpandGenerating != isExpandGenerating;
   }
 
   EditorLayer? _backgroundLayer(List<EditorLayer> layers) {

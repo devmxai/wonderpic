@@ -558,6 +558,29 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Bottom snackbar notifications are fully hidden in the editor UI.
 - Crop/generate/effects no longer show completion/info toasts from the bottom.
 
+### 0.23 Latest Handoff (March 2, 2026 - Expand Viewport Jump Fix During Generation)
+
+#### Reported issue
+- After pressing `Expand`, the view could jump back to a previous zoom/pan state and feel like the image returned to its initial place.
+
+#### Root cause
+- During active expand generation, canvas was receiving `expandToolConfig = null` (to hide handles), which made the canvas think Expand mode had exited.
+- That triggered expand-exit viewport restore logic, causing the unwanted jump.
+
+#### Fix applied
+- Expand session now stays active in canvas while generation runs:
+  - removed `expand config -> null` gating from `_activeExpandConfigForCanvas()` during generation.
+- Added explicit `isExpandGenerating` plumbing from editor screen to canvas/painter.
+- While generating:
+  - expand preview handles/interactive resize are suppressed
+  - expand preview ticker is paused to avoid unnecessary repaints
+  - generation overlay still renders over the final expand frame region
+
+#### Result
+- No expand-exit restore is triggered at generation start.
+- Viewport no longer snaps back unexpectedly after pressing `Expand`.
+- Expand loading remains scoped to the final expand frame with stable visual behavior.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
