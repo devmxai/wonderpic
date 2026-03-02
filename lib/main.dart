@@ -7005,6 +7005,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isTextSettingsBottomSheetOpen = false;
   String _textFontSearchQuery = '';
   int _fontWarmupRequestToken = 0;
+  String? _pendingTextFontFamily;
+  int? _pendingTextFontWeight;
   _TextEffectFloatingPanel? _activeTextEffectFloatingPanel;
   bool _isPencilSettingsFloatingOpen = false;
   PencilSettings? _pencilSettingsFloatingBaseline;
@@ -10148,7 +10150,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 final String selectedFamily =
                     selectedTextLayer.textFontFamily ??
                         localeOptions.first.family;
-                final int selectedIndexRaw = _selectedFontOptionIndex(
+                final int selectedIndexRaw = _effectiveSelectedFontOptionIndex(
                   options: options,
                   selectedLayer: selectedTextLayer,
                 );
@@ -10652,8 +10654,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                   itemBuilder: (context, index) {
                                     final _TextFontOption option =
                                         options[index];
-                                    final bool isSelected =
-                                        _fontOptionMatchesLayer(
+                                    final bool isSelected = _isFontOptionActive(
                                       option,
                                       selectedTextLayer,
                                     );
@@ -12918,28 +12919,42 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _applyTextFontOption(_TextFontOption option) {
-    unawaited(_applyTextFontOptionAsync(option));
-  }
-
-  Future<void> _applyTextFontOptionAsync(_TextFontOption option) async {
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
-    final String layerId = selectedTextLayer.id;
-    final int initialWeight = selectedTextLayer.textFontWeight ?? 400;
-    final int initialRequestedWeight =
-        option.defaultWeight > 0 ? option.defaultWeight : initialWeight;
-    final int initialNextWeight =
-        _resolveSupportedWeight(option.family, initialRequestedWeight);
+    final int currentWeight = selectedTextLayer.textFontWeight ?? 400;
+    final int requestedWeight =
+        option.defaultWeight > 0 ? option.defaultWeight : currentWeight;
+    final int nextWeight =
+        _resolveSupportedWeight(option.family, requestedWeight);
+    setState(() {
+      _pendingTextFontFamily = option.family;
+      _pendingTextFontWeight = nextWeight;
+    });
+    unawaited(
+      _applyTextFontOptionAsync(
+        option,
+        layerId: selectedTextLayer.id,
+        initialResolvedWeight: nextWeight,
+      ),
+    );
+  }
+
+  Future<void> _applyTextFontOptionAsync(
+    _TextFontOption option, {
+    required String layerId,
+    required int initialResolvedWeight,
+  }) async {
     final int requestToken = ++_fontWarmupRequestToken;
     await _ensureFontReady(
       family: option.family,
-      weight: initialNextWeight,
+      weight: initialResolvedWeight,
     );
     if (!mounted || requestToken != _fontWarmupRequestToken) {
       return;
     }
     final int liveIndex = _layers.indexWhere((layer) => layer.id == layerId);
     if (liveIndex < 0 || _layers[liveIndex].type != EditorLayerType.text) {
+      _clearPendingTextFontOptionIfCurrent(requestToken);
       return;
     }
     final EditorLayer liveLayer = _layers[liveIndex];
@@ -12955,6 +12970,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       textFontWeight: liveNextWeight,
       recordHistory: false,
     );
+    _clearPendingTextFontOptionIfCurrent(requestToken);
+  }
+
+  void _clearPendingTextFontOptionIfCurrent(int requestToken) {
+    if (!mounted || requestToken != _fontWarmupRequestToken) return;
+    if (_pendingTextFontFamily == null && _pendingTextFontWeight == null) {
+      return;
+    }
+    setState(() {
+      _pendingTextFontFamily = null;
+      _pendingTextFontWeight = null;
+    });
   }
 
   Future<void> _ensureFontReady({
@@ -12988,7 +13015,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       query: _textFontSearchQuery,
     );
     if (options.isEmpty) return;
-    int currentIndex = _selectedFontOptionIndex(
+    int currentIndex = _effectiveSelectedFontOptionIndex(
       options: options,
       selectedLayer: selectedTextLayer,
     );
@@ -13074,6 +13101,27 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return selectedWeight == optionWeight;
   }
 
+  bool _pendingFontOptionMatches(_TextFontOption option) {
+    final String? pendingFamily = _pendingTextFontFamily;
+    final int? pendingWeight = _pendingTextFontWeight;
+    if (pendingFamily == null || pendingWeight == null) return false;
+    if (pendingFamily != option.family) return false;
+    final int resolvedPendingWeight = _resolveSupportedWeight(
+      option.family,
+      pendingWeight,
+    );
+    final int optionWeight = _resolveSupportedWeight(
+      option.family,
+      option.defaultWeight,
+    );
+    return resolvedPendingWeight == optionWeight;
+  }
+
+  bool _isFontOptionActive(_TextFontOption option, EditorLayer layer) {
+    return _pendingFontOptionMatches(option) ||
+        _fontOptionMatchesLayer(option, layer);
+  }
+
   int _selectedFontOptionIndex({
     required List<_TextFontOption> options,
     required EditorLayer selectedLayer,
@@ -13086,6 +13134,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     final String selectedFamily = selectedLayer.textFontFamily ?? '';
     return options.indexWhere((option) => option.family == selectedFamily);
+  }
+
+  int _effectiveSelectedFontOptionIndex({
+    required List<_TextFontOption> options,
+    required EditorLayer selectedLayer,
+  }) {
+    final int pendingIndex = options.indexWhere(_pendingFontOptionMatches);
+    if (pendingIndex >= 0) {
+      return pendingIndex;
+    }
+    return _selectedFontOptionIndex(
+      options: options,
+      selectedLayer: selectedLayer,
+    );
   }
 
   FontWeight _fontWeightFromValue(int weight) {
@@ -23830,7 +23892,7 @@ Hard requirements:
       locale: _textFontLocale,
       query: _textFontSearchQuery,
     );
-    final int selectedIndexRaw = _selectedFontOptionIndex(
+    final int selectedIndexRaw = _effectiveSelectedFontOptionIndex(
       options: options,
       selectedLayer: selectedTextLayer,
     );
@@ -24021,8 +24083,8 @@ Hard requirements:
                             SizedBox(height: cardSpacing),
                         itemBuilder: (context, index) {
                           final _TextFontOption option = options[index];
-                          final bool selected = _fontOptionMatchesLayer(
-                              option, selectedTextLayer);
+                          final bool selected =
+                              _isFontOptionActive(option, selectedTextLayer);
                           final int titleWeight = _resolveSupportedWeight(
                             option.family,
                             600,

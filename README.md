@@ -1020,6 +1020,42 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_resolveInlineTextEditorLayout`
   - `_createInlineTextEditorSession`
 
+### 0.39 Latest Handoff (March 3, 2026 - Font Arrow Navigation Stability Under Async Loading)
+
+#### Reported issue
+- Right/left font navigation arrows were not stable:
+  - one tap could move selection, then next tap could appear to lose active highlight or not advance consistently.
+  - expected behavior: every tap moves exactly one font step immediately and keeps active state visible.
+
+#### Root cause
+- Font apply path is async (`GoogleFonts` warm-up), but arrow navigation index/highlight was derived only from persisted layer state.
+- During in-flight async apply, UI could temporarily compute stale index/highlight, causing apparent flicker/skip behavior.
+
+#### Fix applied
+- Added pending font-selection state to bridge async apply frames:
+  - `_pendingTextFontFamily`
+  - `_pendingTextFontWeight`
+- Arrow index resolution now uses effective index:
+  - pending option index first, then persisted layer index fallback.
+- Active highlight now uses pending-or-persisted matching (not persisted-only).
+- Pending state is cleared only for the current/latest apply request token to avoid race flicker during rapid taps.
+
+#### Verification
+- `dart format lib/main.dart`
+- `flutter analyze lib/main.dart`
+  - no new compile errors; existing baseline warnings remain unchanged.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_applyTextFontOption`
+  - `_applyTextFontOptionAsync`
+  - `_clearPendingTextFontOptionIfCurrent`
+  - `_pendingFontOptionMatches`
+  - `_isFontOptionActive`
+  - `_effectiveSelectedFontOptionIndex`
+  - `_jumpTextFontSelection`
+  - text-font list highlight/index usage in bottom sheet and floating panel
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
