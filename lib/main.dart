@@ -19794,15 +19794,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       const Spacer(),
                       SizedBox(
                         width: double.infinity,
-                        child: _buildTextEffectFloatingActionButton(
+                        child: _buildUpscaleBottomSheetActionButton(
                           label: isUpscaling
                               ? 'Upscaling...'
                               : sourceMode == _UpscaleSourceMode.selectedLayer
                                   ? 'Upscale Layer'
                                   : 'Upscale as Overlay',
-                          onTap: isUpscaling
-                              ? () {}
-                              : () => runUpscale(sheetContext, setSheetState),
+                          enabled: !isUpscaling,
+                          onTap: () => runUpscale(sheetContext, setSheetState),
                         ),
                       ),
                     ],
@@ -24937,6 +24936,51 @@ Hard requirements:
                   ),
                 ),
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUpscaleBottomSheetActionButton({
+    required String label,
+    required VoidCallback onTap,
+    required bool enabled,
+  }) {
+    const double height = 48;
+    const BorderRadius borderRadius = BorderRadius.all(Radius.circular(15));
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: borderRadius,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          height: height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: enabled ? kActiveAccent : kActiveAccent.withOpacity(0.46),
+            borderRadius: borderRadius,
+            boxShadow: enabled
+                ? const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x220F172A),
+                      blurRadius: 16,
+                      spreadRadius: 0,
+                      offset: Offset(0, 7),
+                    ),
+                  ]
+                : const <BoxShadow>[],
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color:
+                  enabled ? kActiveAccentForeground : const Color(0xAA191E23),
+              fontSize: 13.8,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),

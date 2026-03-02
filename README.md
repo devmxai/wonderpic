@@ -892,6 +892,22 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - `lib/main.dart`
   - `_openUpscaleBottomSheet` (`showModalBottomSheet(...).whenComplete`)
 
+### 0.35 Latest Handoff (March 2, 2026 - Upscale Bottom Action Button Visual Fix)
+
+#### Request addressed
+- Upscale primary action button at the bottom of the Upscale sheet appeared dark/black and did not match active Upscale yellow style.
+- Button should feel slightly wider/stronger visually in the bottom sheet.
+
+#### Fix applied
+- Updated the Upscale bottom-sheet primary action button style:
+  - yellow surface now matches Upscale active accent.
+  - disabled state no longer falls back to dark black; it stays yellow with reduced opacity.
+  - slight size increase for clearer visual weight in the bottom area.
+
+#### Primary code touchpoint
+- `lib/main.dart`
+  - `_buildUpscaleBottomSheetActionButton`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
