@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/painting.dart' as painting;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
@@ -6371,12 +6372,26 @@ class _TextFontOption {
     required this.label,
     required this.preview,
     required this.direction,
+    required this.defaultWeight,
   });
 
   final String family;
   final String label;
   final String preview;
   final TextDirection direction;
+  final int defaultWeight;
+}
+
+class _TextFontFamilyPack {
+  const _TextFontFamilyPack({
+    required this.family,
+    required this.label,
+    this.weights = _kDefaultCatalogWeights,
+  });
+
+  final String family;
+  final String label;
+  final List<int> weights;
 }
 
 class _SolidProjectPreset {
@@ -6458,251 +6473,350 @@ const List<Color> _kPencilPalette = <Color>[
   Color(0xFFF43F5E),
 ];
 
-const List<_TextFontOption> _kEnglishFontOptions = <_TextFontOption>[
-  _TextFontOption(
-    family: 'Barlow',
-    label: 'Barlow',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+const List<int> _kDefaultCatalogWeights = <int>[400];
+const List<int> _kArabicTrendingWeights = <int>[300, 400, 600, 700];
+
+const List<_TextFontFamilyPack> _kEnglishFontPacks = <_TextFontFamilyPack>[
+  _TextFontFamilyPack(family: 'Roboto', label: 'Roboto'),
+  _TextFontFamilyPack(family: 'Open Sans', label: 'Open Sans'),
+  _TextFontFamilyPack(family: 'Inter', label: 'Inter'),
+  _TextFontFamilyPack(family: 'Montserrat', label: 'Montserrat'),
+  _TextFontFamilyPack(family: 'Lato', label: 'Lato'),
+  _TextFontFamilyPack(family: 'Roboto Condensed', label: 'Roboto Condensed'),
+  _TextFontFamilyPack(family: 'Arimo', label: 'Arimo'),
+  _TextFontFamilyPack(family: 'Roboto Mono', label: 'Roboto Mono'),
+  _TextFontFamilyPack(family: 'Oswald', label: 'Oswald'),
+  _TextFontFamilyPack(family: 'Raleway', label: 'Raleway'),
+  _TextFontFamilyPack(family: 'Nunito', label: 'Nunito'),
+  _TextFontFamilyPack(family: 'Playfair Display', label: 'Playfair Display'),
+  _TextFontFamilyPack(family: 'Nunito Sans', label: 'Nunito Sans'),
+  _TextFontFamilyPack(family: 'DM Sans', label: 'DM Sans'),
+  _TextFontFamilyPack(family: 'Ubuntu', label: 'Ubuntu'),
+  _TextFontFamilyPack(family: 'Roboto Slab', label: 'Roboto Slab'),
+  _TextFontFamilyPack(family: 'Merriweather', label: 'Merriweather'),
+  _TextFontFamilyPack(family: 'Work Sans', label: 'Work Sans'),
+  _TextFontFamilyPack(family: 'Archivo Black', label: 'Archivo Black'),
+  _TextFontFamilyPack(family: 'Archivo', label: 'Archivo'),
+  _TextFontFamilyPack(family: 'PT Sans', label: 'PT Sans'),
+  _TextFontFamilyPack(family: 'Lora', label: 'Lora'),
+  _TextFontFamilyPack(family: 'Outfit', label: 'Outfit'),
+  _TextFontFamilyPack(family: 'Manrope', label: 'Manrope'),
+  _TextFontFamilyPack(family: 'Mulish', label: 'Mulish'),
+  _TextFontFamilyPack(family: 'Fjalla One', label: 'Fjalla One'),
+  _TextFontFamilyPack(family: 'Figtree', label: 'Figtree'),
+  _TextFontFamilyPack(family: 'Bebas Neue', label: 'Bebas Neue'),
+  _TextFontFamilyPack(family: 'Quicksand', label: 'Quicksand'),
+  _TextFontFamilyPack(family: 'Fira Sans', label: 'Fira Sans'),
+  _TextFontFamilyPack(family: 'Saira', label: 'Saira'),
+  _TextFontFamilyPack(family: 'Barlow', label: 'Barlow'),
+  _TextFontFamilyPack(family: 'Heebo', label: 'Heebo'),
+  _TextFontFamilyPack(family: 'Titillium Web', label: 'Titillium Web'),
+  _TextFontFamilyPack(family: 'Share Tech', label: 'Share Tech'),
+  _TextFontFamilyPack(family: 'Smooch Sans', label: 'Smooch Sans'),
+  _TextFontFamilyPack(family: 'Noto Serif', label: 'Noto Serif'),
+  _TextFontFamilyPack(
+    family: 'Bricolage Grotesque',
+    label: 'Bricolage Grotesque',
   ),
-  _TextFontOption(
-    family: 'Cabin',
-    label: 'Cabin',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'IBM Plex Sans', label: 'IBM Plex Sans'),
+  _TextFontFamilyPack(family: 'Karla', label: 'Karla'),
+  _TextFontFamilyPack(family: 'Jost', label: 'Jost'),
+  _TextFontFamilyPack(family: 'PT Serif', label: 'PT Serif'),
+  _TextFontFamilyPack(family: 'Gravitas One', label: 'Gravitas One'),
+  _TextFontFamilyPack(family: 'Source Sans 3', label: 'Source Sans 3'),
+  _TextFontFamilyPack(family: 'Inconsolata', label: 'Inconsolata'),
+  _TextFontFamilyPack(family: 'Bungee', label: 'Bungee'),
+  _TextFontFamilyPack(family: 'Lobster Two', label: 'Lobster Two'),
+  _TextFontFamilyPack(family: 'Plus Jakarta Sans', label: 'Plus Jakarta Sans'),
+  _TextFontFamilyPack(family: 'Libre Baskerville', label: 'Libre Baskerville'),
+  _TextFontFamilyPack(family: 'Dancing Script', label: 'Dancing Script'),
+  _TextFontFamilyPack(family: 'Josefin Sans', label: 'Josefin Sans'),
+  _TextFontFamilyPack(family: 'Source Code Pro', label: 'Source Code Pro'),
+  _TextFontFamilyPack(family: 'EB Garamond', label: 'EB Garamond'),
+  _TextFontFamilyPack(family: 'Libre Franklin', label: 'Libre Franklin'),
+  _TextFontFamilyPack(family: 'Changa One', label: 'Changa One'),
+  _TextFontFamilyPack(family: 'Anton', label: 'Anton'),
+  _TextFontFamilyPack(family: 'Alfa Slab One', label: 'Alfa Slab One'),
+  _TextFontFamilyPack(family: 'Public Sans', label: 'Public Sans'),
+  _TextFontFamilyPack(family: 'Dosis', label: 'Dosis'),
+  _TextFontFamilyPack(family: 'Space Grotesk', label: 'Space Grotesk'),
+  _TextFontFamilyPack(family: 'Barlow Condensed', label: 'Barlow Condensed'),
+  _TextFontFamilyPack(family: 'Assistant', label: 'Assistant'),
+  _TextFontFamilyPack(family: 'Roboto Flex', label: 'Roboto Flex'),
+  _TextFontFamilyPack(family: 'Bitter', label: 'Bitter'),
+  _TextFontFamilyPack(family: 'Cabin', label: 'Cabin'),
+  _TextFontFamilyPack(
+    family: 'Schibsted Grotesk',
+    label: 'Schibsted Grotesk',
   ),
-  _TextFontOption(
-    family: 'CrimsonText',
-    label: 'Crimson Text',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'Slabo 27px', label: 'Slabo 27px'),
+  _TextFontFamilyPack(family: 'Pacifico', label: 'Pacifico'),
+  _TextFontFamilyPack(family: 'Red Hat Display', label: 'Red Hat Display'),
+  _TextFontFamilyPack(family: 'Exo 2', label: 'Exo 2'),
+  _TextFontFamilyPack(
+    family: 'Cormorant Garamond',
+    label: 'Cormorant Garamond',
   ),
-  _TextFontOption(
-    family: 'DMSerifDisplay',
-    label: 'DM Serif Display',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'Oxygen', label: 'Oxygen'),
+  _TextFontFamilyPack(family: 'Lobster', label: 'Lobster'),
+  _TextFontFamilyPack(family: 'Crimson Text', label: 'Crimson Text'),
+  _TextFontFamilyPack(family: 'Lexend', label: 'Lexend'),
+  _TextFontFamilyPack(family: 'Arvo', label: 'Arvo'),
+  _TextFontFamilyPack(family: 'Caveat', label: 'Caveat'),
+  _TextFontFamilyPack(family: 'Comfortaa', label: 'Comfortaa'),
+  _TextFontFamilyPack(family: 'Inter Tight', label: 'Inter Tight'),
+  _TextFontFamilyPack(family: 'Urbanist', label: 'Urbanist'),
+  _TextFontFamilyPack(family: 'Overpass', label: 'Overpass'),
+  _TextFontFamilyPack(family: 'PT Sans Narrow', label: 'PT Sans Narrow'),
+  _TextFontFamilyPack(family: 'Sora', label: 'Sora'),
+  _TextFontFamilyPack(family: 'Abel', label: 'Abel'),
+  _TextFontFamilyPack(family: 'DM Serif Display', label: 'DM Serif Display'),
+  _TextFontFamilyPack(
+    family: 'Barlow Semi Condensed',
+    label: 'Barlow Semi Condensed',
   ),
-  _TextFontOption(
-    family: 'FiraSans',
-    label: 'Fira Sans',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'Source Serif 4', label: 'Source Serif 4'),
+  _TextFontFamilyPack(family: 'Orbitron', label: 'Orbitron'),
+  _TextFontFamilyPack(
+    family: 'Merriweather Sans',
+    label: 'Merriweather Sans',
   ),
-  _TextFontOption(
-    family: 'Inter',
-    label: 'Inter',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'Lexend Deca', label: 'Lexend Deca'),
+  _TextFontFamilyPack(family: 'Fredoka', label: 'Fredoka'),
+  _TextFontFamilyPack(family: 'IBM Plex Mono', label: 'IBM Plex Mono'),
+  _TextFontFamilyPack(family: 'Lilita One', label: 'Lilita One'),
+  _TextFontFamilyPack(family: 'Cinzel', label: 'Cinzel'),
+  _TextFontFamilyPack(family: 'Play', label: 'Play'),
+  _TextFontFamilyPack(family: 'Asap', label: 'Asap'),
+  _TextFontFamilyPack(family: 'Bodoni Moda', label: 'Bodoni Moda'),
+  _TextFontFamilyPack(family: 'Indie Flower', label: 'Indie Flower'),
+  _TextFontFamilyPack(
+    family: 'Shadows Into Light',
+    label: 'Shadows Into Light',
   ),
-  _TextFontOption(
-    family: 'Karla',
-    label: 'Karla',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(family: 'JetBrains Mono', label: 'JetBrains Mono'),
+];
+
+const List<_TextFontFamilyPack> _kArabicFontPacks = <_TextFontFamilyPack>[
+  _TextFontFamilyPack(
+    family: 'Rubik',
+    label: 'Rubik',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Lato',
-    label: 'Lato',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Cairo',
+    label: 'Cairo',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Manrope',
-    label: 'Manrope',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Tajawal',
+    label: 'Tajawal',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Merriweather',
-    label: 'Merriweather',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Almarai',
+    label: 'Almarai',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Montserrat',
-    label: 'Montserrat',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Noto Sans Arabic',
+    label: 'Noto Sans Arabic',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Mulish',
-    label: 'Mulish',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'IBM Plex Sans Arabic',
+    label: 'IBM Plex Sans Arabic',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Nunito',
-    label: 'Nunito',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Noto Kufi Arabic',
+    label: 'Noto Kufi Arabic',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Oswald',
-    label: 'Oswald',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Amiri',
+    label: 'Amiri',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'PlayfairDisplay',
-    label: 'Playfair Display',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Changa',
+    label: 'Changa',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Poppins',
-    label: 'Poppins',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Readex Pro',
+    label: 'Readex Pro',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Quicksand',
-    label: 'Quicksand',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Noto Naskh Arabic',
+    label: 'Noto Naskh Arabic',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'Raleway',
-    label: 'Raleway',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'El Messiri',
+    label: 'El Messiri',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'SourceSans3',
-    label: 'Source Sans 3',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Noto Nastaliq Urdu',
+    label: 'Noto Nastaliq Urdu',
+    weights: _kArabicTrendingWeights,
   ),
-  _TextFontOption(
-    family: 'WorkSans',
-    label: 'Work Sans',
-    preview: 'The quick brown fox jumps 123',
-    direction: TextDirection.ltr,
+  _TextFontFamilyPack(
+    family: 'Reem Kufi',
+    label: 'Reem Kufi',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Alexandria',
+    label: 'Alexandria',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Lateef',
+    label: 'Lateef',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Mada',
+    label: 'Mada',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Lalezar',
+    label: 'Lalezar',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Vazirmatn',
+    label: 'Vazirmatn',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Lemonada',
+    label: 'Lemonada',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Rakkas',
+    label: 'Rakkas',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Fustat',
+    label: 'Fustat',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Playpen Sans Arabic',
+    label: 'Playpen Sans Arabic',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Cascadia Mono',
+    label: 'Cascadia Mono',
+    weights: _kArabicTrendingWeights,
+  ),
+  _TextFontFamilyPack(
+    family: 'Kufam',
+    label: 'Kufam',
+    weights: _kArabicTrendingWeights,
   ),
 ];
 
-const List<_TextFontOption> _kArabicFontOptions = <_TextFontOption>[
-  _TextFontOption(
-    family: 'Cairo',
-    label: 'القاهرة',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Tajawal',
-    label: 'تجوال',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Almarai',
-    label: 'المراعي',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Changa',
-    label: 'شانجا',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'ElMessiri',
-    label: 'المسيري',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'ReemKufi',
-    label: 'ريم كوفي',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Amiri',
-    label: 'أميري',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'NotoNaskhArabic',
-    label: 'نسخ عربي',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'NotoKufiArabic',
-    label: 'كوفي عربي',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'MarkaziText',
-    label: 'مركزي',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Harmattan',
-    label: 'هرمتان',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Katibeh',
-    label: 'كاتبه',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Lateef',
-    label: 'لطيف',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Mada',
-    label: 'مدى',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Mirza',
-    label: 'ميرزا',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Rakkas',
-    label: 'ركاز',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'Lemonada',
-    label: 'ليمونادة',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'BalooBhaijaan2',
-    label: 'بالو بهيجان',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'ArefRuqaa',
-    label: 'عارف رقعة',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-  _TextFontOption(
-    family: 'ScheherazadeNew',
-    label: 'شهرزاد',
-    preview: 'اكتب نصك هنا للمعاينة',
-    direction: TextDirection.rtl,
-  ),
-];
+final List<_TextFontOption> _kEnglishFontOptions =
+    _buildTextFontOptionsFromPacks(
+  packs: _kEnglishFontPacks,
+  preview: 'The quick brown fox jumps 123',
+  direction: TextDirection.ltr,
+);
+
+final List<_TextFontOption> _kArabicFontOptions =
+    _buildTextFontOptionsFromPacks(
+  packs: _kArabicFontPacks,
+  preview: 'اكتب نصك هنا للمعاينة',
+  direction: TextDirection.rtl,
+  appendWeightTag: true,
+);
+
+final Set<String> _kGoogleFontFamilies = <String>{
+  ..._kEnglishFontPacks.map((pack) => pack.family),
+  ..._kArabicFontPacks.map((pack) => pack.family),
+};
+
+List<_TextFontOption> _buildTextFontOptionsFromPacks({
+  required List<_TextFontFamilyPack> packs,
+  required String preview,
+  required TextDirection direction,
+  bool appendWeightTag = false,
+}) {
+  final List<_TextFontOption> options = <_TextFontOption>[];
+  for (final _TextFontFamilyPack pack in packs) {
+    final List<int> weights =
+        pack.weights.isEmpty ? _kDefaultCatalogWeights : pack.weights;
+    for (final int weight in weights) {
+      final String label = appendWeightTag && weights.length > 1
+          ? '${pack.label} ${_fontWeightTag(weight)}'
+          : pack.label;
+      options.add(
+        _TextFontOption(
+          family: pack.family,
+          label: label,
+          preview: preview,
+          direction: direction,
+          defaultWeight: weight,
+        ),
+      );
+    }
+  }
+  return List<_TextFontOption>.unmodifiable(options);
+}
+
+String _fontWeightTag(int weight) {
+  if (weight <= 300) return 'Light';
+  if (weight <= 400) return 'Regular';
+  if (weight <= 500) return 'Medium';
+  if (weight <= 600) return 'SemiBold';
+  if (weight <= 700) return 'Bold';
+  if (weight <= 800) return 'ExtraBold';
+  return 'Black';
+}
+
+TextStyle _fontAwareTextStyle({
+  String? family,
+  Color? color,
+  Paint? foreground,
+  double? fontSize,
+  FontWeight? fontWeight,
+  double? height,
+}) {
+  final String normalizedFamily = family?.trim() ?? '';
+  final Color? resolvedColor = foreground == null ? color : null;
+  if (normalizedFamily.isNotEmpty &&
+      _kGoogleFontFamilies.contains(normalizedFamily)) {
+    try {
+      return GoogleFonts.getFont(
+        normalizedFamily,
+        color: resolvedColor,
+        foreground: foreground,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        height: height,
+      );
+    } catch (_) {
+      // Fallback to local TextStyle if the family is unavailable at runtime.
+    }
+  }
+  return TextStyle(
+    color: resolvedColor,
+    foreground: foreground,
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    height: height,
+    fontFamily: normalizedFamily.isEmpty ? null : normalizedFamily,
+  );
+}
 
 const List<int> _kDefaultFontWeights = <int>[400];
 const List<int> _kVariableFontWeights = <int>[
@@ -10033,8 +10147,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 final String selectedFamily =
                     selectedTextLayer.textFontFamily ??
                         localeOptions.first.family;
-                final int selectedIndexRaw = options
-                    .indexWhere((option) => option.family == selectedFamily);
+                final int selectedIndexRaw = _selectedFontOptionIndex(
+                  options: options,
+                  selectedLayer: selectedTextLayer,
+                );
                 final int selectedIndex = selectedIndexRaw < 0
                     ? 0
                     : selectedIndexRaw
@@ -10145,12 +10261,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                   ),
                                   child: Text(
                                     'B',
-                                    style: TextStyle(
+                                    style: _fontAwareTextStyle(
+                                      family: selectedFamily,
                                       color: isSelected
                                           ? kActiveAccentForeground
                                           : const Color(0xFFF3F3F2),
                                       fontSize: scaled(16, min: 12),
-                                      fontFamily: selectedFamily,
                                       fontWeight:
                                           _fontWeightFromValue(weightValue),
                                     ),
@@ -10536,7 +10652,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                     final _TextFontOption option =
                                         options[index];
                                     final bool isSelected =
-                                        selectedFamily == option.family;
+                                        _fontOptionMatchesLayer(
+                                      option,
+                                      selectedTextLayer,
+                                    );
                                     final int titleWeight =
                                         _resolveSupportedWeight(
                                             option.family, 600);
@@ -10575,7 +10694,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
-                                                    style: TextStyle(
+                                                    style: _fontAwareTextStyle(
+                                                      family: option.family,
                                                       color: isSelected
                                                           ? kActiveAccentForeground
                                                           : _floatingPanelTextSecondary,
@@ -10585,7 +10705,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                                           _fontWeightFromValue(
                                                         titleWeight,
                                                       ),
-                                                      fontFamily: option.family,
                                                       height: 1.0,
                                                     ),
                                                   ),
@@ -12801,8 +12920,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
     final int currentWeight = selectedTextLayer.textFontWeight ?? 400;
+    final int requestedWeight =
+        option.defaultWeight > 0 ? option.defaultWeight : currentWeight;
     final int nextWeight =
-        _resolveSupportedWeight(option.family, currentWeight);
+        _resolveSupportedWeight(option.family, requestedWeight);
     _syncTextLocaleFromFamily(option.family);
     _updateTextLayer(
       selectedTextLayer.id,
@@ -12823,10 +12944,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       query: _textFontSearchQuery,
     );
     if (options.isEmpty) return;
-    final String currentFamily =
-        selectedTextLayer.textFontFamily ?? options.first.family;
-    int currentIndex =
-        options.indexWhere((option) => option.family == currentFamily);
+    int currentIndex = _selectedFontOptionIndex(
+      options: options,
+      selectedLayer: selectedTextLayer,
+    );
     if (currentIndex < 0) currentIndex = 0;
     final int nextIndex =
         (currentIndex + direction).clamp(0, options.length - 1).toInt();
@@ -12870,7 +12991,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   List<int> _availableWeightsForFamily(String family) {
-    return _kFontWeightSupport[family] ?? _kDefaultFontWeights;
+    if (_kFontWeightSupport.containsKey(family)) {
+      return _kFontWeightSupport[family]!;
+    }
+    if (_kGoogleFontFamilies.contains(family)) {
+      return _kVariableFontWeights;
+    }
+    return _kDefaultFontWeights;
   }
 
   int _resolveSupportedWeight(String family, int requestedWeight) {
@@ -12885,6 +13012,36 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       }
     }
     return nearest;
+  }
+
+  bool _fontOptionMatchesLayer(_TextFontOption option, EditorLayer layer) {
+    final String selectedFamily = layer.textFontFamily ?? '';
+    if (selectedFamily != option.family) {
+      return false;
+    }
+    final int selectedWeight = _resolveSupportedWeight(
+      option.family,
+      layer.textFontWeight ?? 400,
+    );
+    final int optionWeight = _resolveSupportedWeight(
+      option.family,
+      option.defaultWeight,
+    );
+    return selectedWeight == optionWeight;
+  }
+
+  int _selectedFontOptionIndex({
+    required List<_TextFontOption> options,
+    required EditorLayer selectedLayer,
+  }) {
+    final int exactIndex = options.indexWhere(
+      (option) => _fontOptionMatchesLayer(option, selectedLayer),
+    );
+    if (exactIndex >= 0) {
+      return exactIndex;
+    }
+    final String selectedFamily = selectedLayer.textFontFamily ?? '';
+    return options.indexWhere((option) => option.family == selectedFamily);
   }
 
   FontWeight _fontWeightFromValue(int weight) {
@@ -23610,16 +23767,14 @@ Hard requirements:
         math.max(min, value * uiScale);
 
     final BorderRadius panelRadius = BorderRadius.circular(scaled(16, min: 12));
-    final List<_TextFontOption> allLocaleOptions =
-        _fontOptionsForLocale(_textFontLocale);
     final List<_TextFontOption> options = _filteredTextFontOptions(
       locale: _textFontLocale,
       query: _textFontSearchQuery,
     );
-    final String selectedFamily =
-        selectedTextLayer.textFontFamily ?? allLocaleOptions.first.family;
-    final int selectedIndexRaw =
-        options.indexWhere((option) => option.family == selectedFamily);
+    final int selectedIndexRaw = _selectedFontOptionIndex(
+      options: options,
+      selectedLayer: selectedTextLayer,
+    );
     final int selectedIndex = selectedIndexRaw < 0
         ? 0
         : selectedIndexRaw.clamp(0, math.max(0, options.length - 1)).toInt();
@@ -23807,7 +23962,8 @@ Hard requirements:
                             SizedBox(height: cardSpacing),
                         itemBuilder: (context, index) {
                           final _TextFontOption option = options[index];
-                          final bool selected = selectedFamily == option.family;
+                          final bool selected = _fontOptionMatchesLayer(
+                              option, selectedTextLayer);
                           final int titleWeight = _resolveSupportedWeight(
                             option.family,
                             600,
@@ -23849,7 +24005,8 @@ Hard requirements:
                                           option.label,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
+                                          style: _fontAwareTextStyle(
+                                            family: option.family,
                                             color: selected
                                                 ? const Color(0xFF19191A)
                                                 : _floatingPanelTextSecondary,
@@ -23857,7 +24014,6 @@ Hard requirements:
                                             fontWeight: _fontWeightFromValue(
                                               titleWeight,
                                             ),
-                                            fontFamily: option.family,
                                             height: 1.0,
                                           ),
                                         ),
@@ -24123,12 +24279,12 @@ Hard requirements:
                                     ),
                                     child: Text(
                                       'B',
-                                      style: TextStyle(
+                                      style: _fontAwareTextStyle(
+                                        family: selectedFamily,
                                         color: isSelected
                                             ? const Color(0xFF19191A)
                                             : const Color(0xFFF3F3F2),
                                         fontSize: scaled(16, min: 12),
-                                        fontFamily: selectedFamily,
                                         fontWeight:
                                             _fontWeightFromValue(weightValue),
                                       ),
@@ -26987,7 +27143,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
               height: 1.05,
               forceStrutHeight: true,
             ),
-            style: TextStyle(
+            style: _fontAwareTextStyle(
+              family: layout.layer.textFontFamily,
               fontSize: layout.fontSize,
               height: 1.05,
               color: (layout.layer.textColor ?? const Color(0xFF1F2937))
@@ -26996,7 +27153,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
                         ((layout.layer.textOpacity ?? 100) / 100))
                     .clamp(0.0, 1.0),
               ),
-              fontFamily: layout.layer.textFontFamily,
               fontWeight:
                   _fontWeightFromNumeric(layout.layer.textFontWeight ?? 400),
             ),
@@ -32785,12 +32941,12 @@ _TextLayerSceneData? _buildTextLayerSceneData({
       .withOpacity(
           ((layer.textColor ?? const Color(0xFF1F2937)).opacity * textOpacity)
               .clamp(0.0, 1.0));
-  final TextStyle baseStyle = TextStyle(
+  final TextStyle baseStyle = _fontAwareTextStyle(
+    family: family,
     color: fillColor,
     fontSize: fontSize,
     fontWeight: fontWeight,
     height: 1.05,
-    fontFamily: family,
   );
 
   final TextPainter fillPainter = TextPainter(

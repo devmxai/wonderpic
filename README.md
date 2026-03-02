@@ -908,6 +908,47 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - `lib/main.dart`
   - `_buildUpscaleBottomSheetActionButton`
 
+### 0.36 Latest Handoff (March 2, 2026 - 100 EN + 100 AR Free Trending Fonts Expansion)
+
+#### Request addressed
+- Expand text-font library strongly for design workflows:
+  - `100` English free/trending fonts.
+  - `100` Arabic free/trending entries.
+- Keep fonts integrated inside existing English/Arabic font lists and current text UX.
+
+#### Selection source (free + trending)
+- Font discovery/ranking was based on Google Fonts public metadata popularity feed:
+  - `https://fonts.google.com/metadata/fonts`
+- English set:
+  - top `100` Latin-focused popular families from Google Fonts metadata (free/open catalog).
+- Arabic set:
+  - top Arabic-script families from Google Fonts metadata, expanded as professional weight variants (`Light/Regular/SemiBold/Bold`) to provide `100` Arabic entries in the picker.
+
+#### Engineering changes
+- Added `google_fonts` package integration for dynamic family loading with safe fallback:
+  - if a family is available in the curated Google set, app applies `GoogleFonts.getFont(...)`.
+  - otherwise app falls back to local `TextStyle(fontFamily: ...)`.
+- Rebuilt font catalog architecture:
+  - introduced font family pack model + generated options.
+  - English list now built from `100` curated families.
+  - Arabic list now built from `25` curated families × `4` curated weights = `100` entries.
+- Upgraded font-option selection logic to be family+weight aware (not family-only), so variant entries behave correctly.
+- Updated font weight availability logic:
+  - curated Google-font families default to variable weight set.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - font catalog section (`_TextFontOption`, `_TextFontFamilyPack`, `_kEnglishFontPacks`, `_kArabicFontPacks`)
+  - `_buildTextFontOptionsFromPacks`
+  - `_fontAwareTextStyle`
+  - `_availableWeightsForFamily`
+  - `_fontOptionMatchesLayer`
+  - `_selectedFontOptionIndex`
+  - `_applyTextFontOption`
+  - `_jumpTextFontSelection`
+- `pubspec.yaml`
+  - added `google_fonts`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
