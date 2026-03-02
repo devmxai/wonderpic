@@ -12459,7 +12459,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         workspace == null ? null : _workspaceSourceSize(workspace);
     if (workspaceSize == null) {
       if (shouldShowError) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
+        final ScaffoldMessengerState? messenger = scaffoldContext == null
+            ? null
+            : ScaffoldMessenger.maybeOf(scaffoldContext);
+        messenger?.showSnackBar(
           const SnackBar(
             content: Text('Add a background image or solid layer first'),
           ),
@@ -18307,7 +18311,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool isError = false,
   }) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
+    final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
+    if (scaffoldContext == null) return;
+    final ScaffoldMessengerState? messenger =
+        ScaffoldMessenger.maybeOf(scaffoldContext);
+    if (messenger == null) return;
+    messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: WonderPicEditorScreen._pageBg,
@@ -18551,7 +18560,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       });
     } on PlatformException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
+      final ScaffoldMessengerState? messenger = scaffoldContext == null
+          ? null
+          : ScaffoldMessenger.maybeOf(scaffoldContext);
+      messenger?.showSnackBar(
         const SnackBar(
           content: Text(
             'Gallery access failed. Please allow photo access and try again.',
@@ -18560,7 +18573,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final BuildContext? scaffoldContext = _scaffoldKey.currentContext;
+      final ScaffoldMessengerState? messenger = scaffoldContext == null
+          ? null
+          : ScaffoldMessenger.maybeOf(scaffoldContext);
+      messenger?.showSnackBar(
         const SnackBar(content: Text('Could not load image from gallery')),
       );
     } finally {

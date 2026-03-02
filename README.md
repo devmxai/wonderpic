@@ -273,6 +273,29 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Embedded keys are intentionally empty for repository push protection.
 - Generation now requires runtime key injection via `--dart-define`.
 
+### 0.10 Latest Handoff (March 2, 2026 - Deactivated Context Snackbar Fix)
+
+#### Symptom
+- Runtime red-screen assertion:
+  - `Failed assertion: ... _dependents.isEmpty: is not true`
+- Followed by repeated framework errors:
+  - `Looking up a deactivated widget's ancestor is unsafe.`
+
+#### Root cause
+- Snackbar calls inside `WonderPicEditorScreen` used `ScaffoldMessenger.of(context)` from async action paths.
+- In some transition states (sheet close / route lifecycle), that `context` can be deactivated and ancestor lookup asserts in debug mode.
+
+#### Fix applied
+- Replaced editor snackbar lookups to use active scaffold context via `_scaffoldKey.currentContext` + `ScaffoldMessenger.maybeOf(...)`.
+- Updated all direct editor snackbar call sites:
+  - `_showExportMessage`
+  - `_createTextLayer` (no-workspace warning)
+  - `_pickImageFromGallery` error branches
+
+#### Result
+- Snackbar lookup no longer depends on a potentially deactivated widget context.
+- This removes the unsafe ancestor-lookup path that was triggering the assertion chain.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
