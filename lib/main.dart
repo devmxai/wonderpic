@@ -11754,7 +11754,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
       return _pollKieTaskAndDownload(
         taskId: taskId,
-        maxAttempts: 90,
+        maxAttempts: 60,
         pollDelayResolver: _kieUpscalePollDelay,
       );
     }
@@ -11815,19 +11815,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _shouldRetryUpscaleWithConservativePayload(Object error) {
     final String text = error.toString().toLowerCase();
     return text.contains('internal image processing error') ||
-        text.contains('kie task timeout') ||
         text.contains('task completed but output url is missing') ||
         text.contains('returned a non-image file');
   }
 
   Duration _kieUpscalePollDelay(int attempt) {
-    if (attempt < 10) {
+    if (attempt < 12) {
+      return const Duration(milliseconds: 350);
+    }
+    if (attempt < 34) {
       return const Duration(milliseconds: 500);
     }
-    if (attempt < 36) {
-      return const Duration(milliseconds: 700);
-    }
-    return const Duration(milliseconds: 900);
+    return const Duration(milliseconds: 650);
   }
 
   Future<Uint8List> _encodeUiImageToPngBytes(ui.Image sourceImage) async {
@@ -35300,9 +35299,9 @@ class _UpscaleToolIcon extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: color,
-            fontSize: 8.8,
+            fontSize: 9.7,
             height: 1.0,
-            letterSpacing: 0.18,
+            letterSpacing: 0.12,
             fontWeight: FontWeight.w700,
           ),
         ),

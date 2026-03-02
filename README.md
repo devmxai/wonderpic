@@ -761,6 +761,31 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_kieUpscalePollDelay`
   - `_UpscaleToolIcon`
 
+### 0.30 Latest Handoff (March 2, 2026 - Upscale Delay Cut + Icon Size Tweak)
+
+#### Reported issue
+- Upscale still felt too slow.
+- `UP` icon looked too small.
+
+#### Root cause
+- Timeout-triggered retries could re-run the full upscale cycle, causing long end-to-end waits.
+- Upscale polling cadence still allowed long wait windows before returning.
+
+#### Fix applied
+- Kept model/API unchanged: `recraft/crisp-upscale` (KIE API only).
+- Reduced upscale polling window:
+  - `maxAttempts` lowered for upscale calls.
+  - more aggressive upscale-specific poll delay profile.
+- Prevented full second run on timeout by removing timeout from conservative-retry triggers.
+- Increased `UP` icon size for better readability while keeping toolbar consistency.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_upscaleImageWithKieRecraftCrisp`
+  - `_kieUpscalePollDelay`
+  - `_shouldRetryUpscaleWithConservativePayload`
+  - `_UpscaleToolIcon`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
