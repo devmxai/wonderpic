@@ -376,6 +376,33 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Visual is softer, less sharp, and blends better with editor background.
 - Progress `%` and status text behavior remains unchanged.
 
+### 0.15 Latest Handoff (March 2, 2026 - Regenerate Lag + Moving Blur Shimmer)
+
+#### Reported issue
+- During `Regenerate`, shimmer movement had visible micro-stutter/lag.
+- Request required blur over the canvas image itself with a smooth moving blur wave (ChatGPT-like generation feel).
+
+#### Root cause (performance)
+- Regenerate flow was also enabling `UpscaleMagic` canvas effect:
+  - `_isUpscaleLayerProcessing = true`
+  - `_upscaleEffectLayerId = sourceLayer.id`
+- This activated `_isUpscaleMagicActive` inside canvas state, which starts `_visualEffectTicker` and repaints `_drawUpscaleMagicOverlay` every frame.
+- Result: two animated systems during regenerate (canvas painter effect + generate overlay) caused unnecessary extra repaint load and visible stutter on some devices.
+
+#### Fix applied
+- Regenerate no longer toggles upscale magic state.
+- Generate/Regenerate overlay now owns the loading visual exclusively.
+- Upgraded generate shimmer visual to include professional blur behavior:
+  - static backdrop blur over artboard
+  - moving blur band (`BackdropFilter` wave) sweeping across the canvas area
+  - softer highlight/gradient layers with low opacity
+  - preserved center `%` + status text UX
+- Added `RepaintBoundary` around the progress indicator widget to isolate overlay repaints.
+
+#### Result
+- Regenerate animation path is lighter and smoother.
+- Canvas content under the generate overlay is now visibly blurred with a moving blur sweep, matching the requested style direction.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

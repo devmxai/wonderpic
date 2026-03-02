@@ -5416,85 +5416,117 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
             final double phase = _controller.value;
             final int percent =
                 (smoothProgress * 100).round().clamp(0, 100).toInt();
-            return SizedBox(
-              width: panelSize.width,
-              height: panelSize.height,
-              child: ClipRect(
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    const ColoredBox(
-                      color: Color(0x20191C22),
-                    ),
-                    ImageFiltered(
-                      imageFilter:
-                          ui.ImageFilter.blur(sigmaX: 2.9, sigmaY: 2.9),
-                      child: Container(
+            final double blurBandWidth =
+                (panelSize.width * 0.34).clamp(72.0, 260.0).toDouble();
+            final double blurBandTravel = panelSize.width + blurBandWidth;
+            final double blurBandLeft =
+                (phase * blurBandTravel) - blurBandWidth;
+            return RepaintBoundary(
+              child: SizedBox(
+                width: panelSize.width,
+                height: panelSize.height,
+                child: ClipRect(
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      const ColoredBox(
+                        color: Color(0x16191C22),
+                      ),
+                      BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 3.2, sigmaY: 3.2),
+                        child: Container(
+                          color: const Color(0x12191C22),
+                        ),
+                      ),
+                      Positioned(
+                        left: blurBandLeft,
+                        top: 0,
+                        bottom: 0,
+                        width: blurBandWidth,
+                        child: BackdropFilter(
+                          filter: ui.ImageFilter.blur(sigmaX: 6.4, sigmaY: 6.4),
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: <Color>[
+                                  Color(0x00FFFFFF),
+                                  Color(0x14FFFFFF),
+                                  Color(0x00FFFFFF),
+                                ],
+                                stops: <double>[0.0, 0.5, 1.0],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Container(
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
-                            begin: Alignment(-1.6 + (phase * 3.2), -0.15),
-                            end: Alignment(-0.7 + (phase * 3.2), 0.15),
+                            begin: Alignment(-1.6 + (phase * 3.2), -0.16),
+                            end: Alignment(-0.65 + (phase * 3.2), 0.16),
                             colors: const <Color>[
                               Color(0x00FFFFFF),
-                              Color(0x12FFFFFF),
+                              Color(0x10FFFFFF),
                               Color(0x00FFFFFF),
                             ],
                             stops: const <double>[0.0, 0.52, 1.0],
                           ),
                         ),
                       ),
-                    ),
-                    const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: RadialGradient(
-                          center: Alignment(0.0, 0.06),
-                          radius: 1.08,
-                          colors: <Color>[
-                            Color(0x1E2A2F38),
-                            Color(0x0A1A1D24),
-                            Color(0x001A1D24),
-                          ],
-                          stops: <double>[0.0, 0.7, 1.0],
+                      const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: RadialGradient(
+                            center: Alignment(0.0, 0.06),
+                            radius: 1.08,
+                            colors: <Color>[
+                              Color(0x182A2F38),
+                              Color(0x081A1D24),
+                              Color(0x001A1D24),
+                            ],
+                            stops: <double>[0.0, 0.7, 1.0],
+                          ),
                         ),
                       ),
-                    ),
-                    CustomPaint(
-                      painter: _AiMagicSparklesPainter(phase: phase),
-                    ),
-                    Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: horizontalPadding,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '$percent%',
-                              style: TextStyle(
-                                color: const Color(0xFFF3F3F2),
-                                fontSize: percentFontSize,
-                                fontWeight: FontWeight.w800,
+                      CustomPaint(
+                        painter: _AiMagicSparklesPainter(phase: phase),
+                      ),
+                      Center(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: horizontalPadding,
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '$percent%',
+                                style: TextStyle(
+                                  color: const Color(0xFFF3F3F2),
+                                  fontSize: percentFontSize,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              widget.statusText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: const Color(0xFFD4D4D3),
-                                fontSize: statusFontSize,
-                                fontWeight: FontWeight.w700,
-                                height: 1.25,
+                              const SizedBox(height: 6),
+                              Text(
+                                widget.statusText,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: const Color(0xFFD4D4D3),
+                                  fontSize: statusFontSize,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.25,
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -8956,8 +8988,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _aiCanvasGeneratingSizePreset = _sizePresetFromImage(sourceImage);
       _isAiCanvasGenerating = true;
       _aiCanvasGeneratingProgress = 0.0;
-      _isUpscaleLayerProcessing = true;
-      _upscaleEffectLayerId = sourceLayer.id;
     });
     _startAiCanvasGeneratingProgressEstimator();
 
@@ -9019,8 +9049,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _isAiCanvasGenerating = false;
           _aiCanvasGeneratingProgress = 0.0;
           _aiCanvasGeneratingSizePreset = null;
-          _isUpscaleLayerProcessing = false;
-          _upscaleEffectLayerId = null;
         });
       } else {
         _aiCanvasGeneratingProgressTimer?.cancel();
