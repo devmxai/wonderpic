@@ -11752,11 +11752,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final String taskId = await _createKieRecraftUpscaleTask(
         imageUrl: imageUrl,
       );
-      return _pollKieTaskAndDownload(
-        taskId: taskId,
-        maxAttempts: 60,
-        pollDelayResolver: _kieUpscalePollDelay,
-      );
+      try {
+        return await _pollKieTaskAndDownload(
+          taskId: taskId,
+          maxAttempts: 120,
+          pollDelayResolver: _kieUpscalePollDelay,
+          requestTimeout: const Duration(seconds: 18),
+        );
+      } on TimeoutException {
+        // Keep polling the same task instead of creating a new one.
+        return _pollKieTaskAndDownload(
+          taskId: taskId,
+          maxAttempts: 90,
+          pollDelayResolver: _kieUpscaleExtendedPollDelay,
+          requestTimeout: const Duration(seconds: 18),
+        );
+      }
     }
 
     try {
@@ -11820,13 +11831,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Duration _kieUpscalePollDelay(int attempt) {
-    if (attempt < 12) {
-      return const Duration(milliseconds: 350);
+    if (attempt < 16) {
+      return const Duration(milliseconds: 550);
     }
-    if (attempt < 34) {
-      return const Duration(milliseconds: 500);
+    if (attempt < 70) {
+      return const Duration(milliseconds: 750);
     }
-    return const Duration(milliseconds: 650);
+    return const Duration(milliseconds: 950);
+  }
+
+  Duration _kieUpscaleExtendedPollDelay(int attempt) {
+    if (attempt < 18) {
+      return const Duration(milliseconds: 850);
+    }
+    return const Duration(milliseconds: 1100);
   }
 
   Future<Uint8List> _encodeUiImageToPngBytes(ui.Image sourceImage) async {
@@ -20573,6 +20591,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool verifyOutputIsImage = false,
     int maxAttempts = 150,
     Duration Function(int attempt)? pollDelayResolver,
+    Duration requestTimeout = const Duration(seconds: 40),
   }) async {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
@@ -20586,14 +20605,31 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final Duration Function(int) delayResolver =
         pollDelayResolver ?? _kiePollDelay;
 
+    final Duration safeRequestTimeout =
+        requestTimeout < const Duration(seconds: 8)
+            ? const Duration(seconds: 8)
+            : requestTimeout;
+
     for (int attempt = 0; attempt < safeMaxAttempts; attempt++) {
-      final http.Response response = await http.get(
-        uri,
-        headers: <String, String>{
-          'Authorization': 'Bearer $apiKey',
-          'Content-Type': 'application/json',
-        },
-      ).timeout(const Duration(seconds: 40));
+      http.Response response;
+      try {
+        response = await http.get(
+          uri,
+          headers: <String, String>{
+            'Authorization': 'Bearer $apiKey',
+            'Content-Type': 'application/json',
+          },
+        ).timeout(safeRequestTimeout);
+      } on TimeoutException {
+        await Future.delayed(delayResolver(attempt));
+        continue;
+      } on SocketException {
+        await Future.delayed(delayResolver(attempt));
+        continue;
+      } on http.ClientException {
+        await Future.delayed(delayResolver(attempt));
+        continue;
+      }
 
       if (response.statusCode == 429 ||
           (response.statusCode >= 500 && response.statusCode < 600)) {
@@ -35299,7 +35335,7 @@ class _UpscaleToolIcon extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: color,
-            fontSize: 9.7,
+            fontSize: 10.4,
             height: 1.0,
             letterSpacing: 0.12,
             fontWeight: FontWeight.w700,

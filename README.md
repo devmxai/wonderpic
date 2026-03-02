@@ -786,6 +786,31 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_shouldRetryUpscaleWithConservativePayload`
   - `_UpscaleToolIcon`
 
+### 0.31 Latest Handoff (March 2, 2026 - Upscale Timeout Root-Cause Fix)
+
+#### Diagnosed root cause
+- Upscale task completion on KIE often takes around `~80s` to `~120s` under load.
+- Previous upscale polling config could stop too early and throw timeout before task completion.
+- After timeout, user ended with error despite the provider task still potentially in-progress.
+
+#### Fix applied
+- Kept API/model unchanged:
+  - `recraft/crisp-upscale` only.
+- Changed upscale polling strategy to avoid false timeout failures:
+  - primary poll window increased for realistic provider completion times.
+  - if primary window times out, continue polling the **same taskId** (no new task recreation).
+- Added request-timeout handling inside polling loop:
+  - transient `TimeoutException` / `SocketException` / `ClientException` now continue polling instead of hard fail.
+- Increased `UP` icon size slightly for better visibility.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_upscaleImageWithKieRecraftCrisp`
+  - `_kieUpscalePollDelay`
+  - `_kieUpscaleExtendedPollDelay`
+  - `_pollKieTaskAndDownload`
+  - `_UpscaleToolIcon`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
