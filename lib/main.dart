@@ -11738,16 +11738,83 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required Uint8List sourceBytes,
     required _UpscaleAmount amount,
   }) async {
-    final String imageUrl = await _uploadKieReferenceFile(
-      sourceBytes,
-      normalizeOrientation: false,
+    Future<Uint8List> runSinglePass({required bool conservative}) async {
+      final Uint8List uploadBytes = await _encodeBytesForUpscaleUpload(
+        sourceBytes,
+        amount: amount,
+        conservative: conservative,
+      );
+      final String imageUrl = await _uploadKieReferenceFile(
+        uploadBytes,
+        normalizeOrientation: false,
+        preferStreamUpload: true,
+      );
+      final int upscaleFactor = amount == _UpscaleAmount.k2 ? 2 : 4;
+      final String taskId = await _createKieRecraftUpscaleTask(
+        imageUrl: imageUrl,
+        upscaleFactor: upscaleFactor,
+      );
+      return _pollKieTaskAndDownload(taskId: taskId);
+    }
+
+    try {
+      return await runSinglePass(conservative: false);
+    } catch (error) {
+      if (!_shouldRetryUpscaleWithConservativePayload(error)) {
+        rethrow;
+      }
+      return runSinglePass(conservative: true);
+    }
+  }
+
+  int _upscaleUploadMaxLongEdge({
+    required _UpscaleAmount amount,
+    required bool conservative,
+  }) {
+    if (amount == _UpscaleAmount.k4) {
+      return conservative ? 1024 : 1180;
+    }
+    return conservative ? 1280 : 1536;
+  }
+
+  int _upscaleUploadJpegQuality({
+    required _UpscaleAmount amount,
+    required bool conservative,
+  }) {
+    if (amount == _UpscaleAmount.k4) {
+      return conservative ? 82 : 86;
+    }
+    return conservative ? 84 : 88;
+  }
+
+  Future<Uint8List> _encodeBytesForUpscaleUpload(
+    Uint8List sourceBytes, {
+    required _UpscaleAmount amount,
+    required bool conservative,
+  }) async {
+    final Uint8List safeBytes = Uint8List.fromList(sourceBytes);
+    final int jpegQuality = _upscaleUploadJpegQuality(
+      amount: amount,
+      conservative: conservative,
     );
-    final int upscaleFactor = amount == _UpscaleAmount.k2 ? 2 : 4;
-    final String taskId = await _createKieRecraftUpscaleTask(
-      imageUrl: imageUrl,
-      upscaleFactor: upscaleFactor,
+    final int maxLongEdge = _upscaleUploadMaxLongEdge(
+      amount: amount,
+      conservative: conservative,
     );
-    return _pollKieTaskAndDownload(taskId: taskId);
+    return Isolate.run<Uint8List>(
+      () => _encodeJpgFromBytesForAiUploadIsolate(
+        encodedBytes: safeBytes,
+        quality: jpegQuality,
+        maxLongEdge: maxLongEdge,
+      ),
+    );
+  }
+
+  bool _shouldRetryUpscaleWithConservativePayload(Object error) {
+    final String text = error.toString().toLowerCase();
+    return text.contains('internal image processing error') ||
+        text.contains('task completed but output url is missing') ||
+        text.contains('returned a non-image file');
   }
 
   Future<Uint8List> _encodeUiImageToPngBytes(ui.Image sourceImage) async {
@@ -35212,45 +35279,63 @@ class _UpscaleToolIcon extends StatelessWidget {
     return SizedBox(
       width: 20,
       height: 20,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned(
-            left: 1.2,
-            bottom: 1.2,
-            child: Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(1.8),
-                border: Border.all(color: color, width: 1.5),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 0.8,
-            top: 0.8,
-            child: Container(
-              width: 11.5,
-              height: 11.5,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(2.2),
-                border: Border.all(color: color, width: 1.7),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 5.8,
-            top: 5.4,
-            child: Icon(
-              Icons.north_east_rounded,
-              size: 9.8,
-              color: color,
-            ),
-          ),
-        ],
+      child: CustomPaint(
+        painter: _UpscaleToolPainter(color),
       ),
     );
+  }
+}
+
+class _UpscaleToolPainter extends CustomPainter {
+  _UpscaleToolPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint outline = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.55
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    final RRect smallFrame = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        size.width * 0.17,
+        size.height * 0.42,
+        size.width * 0.42,
+        size.height * 0.42,
+      ),
+      Radius.circular(size.width * 0.09),
+    );
+    final RRect largeFrame = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        size.width * 0.36,
+        size.height * 0.17,
+        size.width * 0.47,
+        size.height * 0.47,
+      ),
+      Radius.circular(size.width * 0.10),
+    );
+    canvas.drawRRect(smallFrame, outline);
+    canvas.drawRRect(largeFrame, outline);
+
+    final Offset start = Offset(size.width * 0.44, size.height * 0.56);
+    final Offset end = Offset(size.width * 0.62, size.height * 0.38);
+    canvas.drawLine(start, end, outline);
+
+    final Path arrowHead = Path()
+      ..moveTo(size.width * 0.62, size.height * 0.30)
+      ..lineTo(size.width * 0.62, size.height * 0.38)
+      ..lineTo(size.width * 0.54, size.height * 0.38);
+    canvas.drawPath(arrowHead, outline);
+  }
+
+  @override
+  bool shouldRepaint(covariant _UpscaleToolPainter oldDelegate) {
+    return oldDelegate.color != color;
   }
 }
 

@@ -695,6 +695,41 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_UpscaleToolIcon` (new top-bar icon)
   - `_UpscaleSourceMode` enum
 
+### 0.28 Latest Handoff (March 2, 2026 - Upscale Speed Pass + Icon Refinement)
+
+#### Reported issue
+- Upscale (`2K`/`4K`) could take too long (minutes) and sometimes fail with image-processing errors.
+- Upscale top-bar icon shape was visually weak and did not match surrounding tool icon quality.
+
+#### Root cause
+- Upscale source was being sent in heavy form (large encoded payloads), increasing upload + backend processing time.
+- Upload strategy could fall back to base64-first for smaller payloads, adding additional overhead.
+- The previous icon composition used separated elements that looked less cohesive at toolbar size.
+
+#### Fix applied
+- Added a dedicated **upscale pre-upload optimization** pipeline:
+  - JPEG recompression with controlled quality per mode (`2K` vs `4K`)
+  - max long-edge clamp before upload to reduce processing load on KIE
+- Upscale now uploads with `preferStreamUpload: true` to avoid base64 overhead path.
+- Added conservative auto-retry for known internal processing failure signatures using tighter payload settings.
+- Replaced Upscale icon implementation with a custom painter:
+  - two close overlapping image frames + directional arrow
+  - tuned stroke/spacing to match top-toolbar icon scale.
+
+#### Practical impact
+- Faster average upscale response for large source images (especially in `4K` mode).
+- Lower chance of backend internal processing failures caused by oversized/heavy source payloads.
+- Upscale icon now appears cleaner and more consistent with the rest of top tools.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_upscaleImageWithKieRecraftCrisp`
+  - `_encodeBytesForUpscaleUpload`
+  - `_upscaleUploadMaxLongEdge`
+  - `_upscaleUploadJpegQuality`
+  - `_shouldRetryUpscaleWithConservativePayload`
+  - `_UpscaleToolIcon` / `_UpscaleToolPainter`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
