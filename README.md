@@ -422,6 +422,33 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Text reads cleaner at high progress values while feeling more alive.
 - Glow pulse is smooth and professional without becoming distracting.
 
+### 0.17 Latest Handoff (March 2, 2026 - Expand Uses Shimmer Magic Effect)
+
+#### Request addressed
+- After dragging Expand handles and pressing `Expand`, loading should use the same `Shimmer Magic Effect` used in Regenerate, with blur over the active expand region.
+
+#### What changed
+- Expand generation now renders the same shared overlay component used by Regenerate/Generate (`_AiMagicProgressIndicator`).
+- Added expand-target overlay rect computation based on:
+  - selected layer geometry
+  - expand sides (`left/top/right/bottom`)
+  - layer rotation (bounding-box result)
+- Overlay is applied to the expanded target area itself (new area + image), so content under it is blurred during processing.
+- Expand now reuses the same progress estimator lifecycle (`start/complete`) for smooth `%` transition.
+
+#### Technical notes
+- New expand loading snapshot state was added to freeze visual targeting during async run:
+  - layer snapshot
+  - expand config snapshot
+  - workspace size snapshot
+- Canvas overlay trigger now supports both:
+  - `_isAiCanvasGenerating`
+  - `_isExpandGenerating`
+
+#### Result
+- Expand loading is visually consistent with Regenerate.
+- The expanded region receives moving blur + shimmer while waiting for API completion.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

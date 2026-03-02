@@ -6955,6 +6955,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   _AiCanvasSizePreset? _aiCanvasGeneratingSizePreset;
   Timer? _aiCanvasGeneratingProgressTimer;
   bool _isExpandGenerating = false;
+  EditorLayer? _expandGeneratingLayerSnapshot;
+  _ExpandToolConfig? _expandGeneratingConfigSnapshot;
+  Size? _expandGeneratingWorkspaceSizeSnapshot;
   _AiImageEngine _defaultAiVectorEngine = _AiImageEngine.gemini;
   _AiImageModel _defaultAiVectorModel = _AiImageModel.gptImage15;
   _GeminiImageModel _defaultGeminiAiVectorModel = _GeminiImageModel.nanoBanana;
@@ -8059,7 +8062,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             showUpscaleMagicEffect: _isUpscaleLayerProcessing,
             upscaleMagicLayerId: _upscaleEffectLayerId,
           ),
-          if (_isAiCanvasGenerating) _buildAiCanvasGeneratingOverlay(),
+          if (_isAiCanvasGenerating || _isExpandGenerating)
+            _buildAiCanvasGeneratingOverlay(),
         ],
       ),
     );
@@ -8079,8 +8083,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               constraints.maxWidth,
               constraints.maxHeight,
             );
-            final Rect? rawArtboardRect =
-                _aiCanvasGeneratingArtboardRect(canvasSize);
+            final bool isExpandOverlay = _isExpandGenerating &&
+                _expandGeneratingLayerSnapshot != null &&
+                _expandGeneratingConfigSnapshot != null &&
+                _expandGeneratingWorkspaceSizeSnapshot != null;
+            final Rect? rawArtboardRect = isExpandOverlay
+                ? _expandGeneratingTargetRect(canvasSize)
+                : _aiCanvasGeneratingArtboardRect(canvasSize);
             final Rect? artboardRect = rawArtboardRect == null
                 ? null
                 : Rect.fromLTRB(
@@ -8170,6 +8179,71 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       canvasSize: canvasSize,
       workspaceSize: sourceSize,
     );
+  }
+
+  Rect? _expandGeneratingTargetRect(Size canvasSize) {
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return null;
+    final EditorLayer? layer = _expandGeneratingLayerSnapshot;
+    final _ExpandToolConfig? config = _expandGeneratingConfigSnapshot;
+    final Size? workspaceSize = _expandGeneratingWorkspaceSizeSnapshot;
+    final ui.Image? layerImage = layer?.image;
+    if (layer == null ||
+        config == null ||
+        workspaceSize == null ||
+        layerImage == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return null;
+    }
+
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: canvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _ImageLayerSceneData? layerData = _buildImageLayerSceneData(
+      layer: layer,
+      image: layerImage,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (layerData == null) return null;
+
+    double clampSide(double value) => value.clamp(0.0, 3.0).toDouble();
+    final Rect expandedRectLocal = Rect.fromLTRB(
+      (-layerData.width / 2) - (clampSide(config.leftExpand) * layerData.width),
+      (-layerData.height / 2) -
+          (clampSide(config.topExpand) * layerData.height),
+      (layerData.width / 2) + (clampSide(config.rightExpand) * layerData.width),
+      (layerData.height / 2) +
+          (clampSide(config.bottomExpand) * layerData.height),
+    );
+    final List<Offset> corners = <Offset>[
+      expandedRectLocal.topLeft,
+      expandedRectLocal.topRight,
+      expandedRectLocal.bottomRight,
+      expandedRectLocal.bottomLeft,
+    ].map((point) {
+      return layerData.center + _rotateVector(point, layerData.rotation);
+    }).toList(growable: false);
+    if (corners.isEmpty) return null;
+
+    double minX = corners.first.dx;
+    double maxX = corners.first.dx;
+    double minY = corners.first.dy;
+    double maxY = corners.first.dy;
+    for (final Offset corner in corners) {
+      if (corner.dx < minX) minX = corner.dx;
+      if (corner.dx > maxX) maxX = corner.dx;
+      if (corner.dy < minY) minY = corner.dy;
+      if (corner.dy > maxY) maxY = corner.dy;
+    }
+    final Rect bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
+    final Rect canvasRect = Offset.zero & canvasSize;
+    final Rect clipped = bounds.intersect(canvasRect);
+    if (clipped.width <= 1 || clipped.height <= 1) {
+      return null;
+    }
+    return clipped;
   }
 
   String _aiCanvasGeneratingStatusText(double progress) {
@@ -9567,9 +9641,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       return;
     }
 
+    final EditorLayer? workspaceLayer = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSizeForOverlay = workspaceLayer == null
+        ? _workspaceSourceSize(selectedLayer)
+        : _workspaceSourceSize(workspaceLayer);
     setState(() {
       _isExpandGenerating = true;
+      _aiCanvasGeneratingProgress = 0.0;
+      _expandGeneratingLayerSnapshot = selectedLayer;
+      _expandGeneratingConfigSnapshot = config.copyWith();
+      _expandGeneratingWorkspaceSizeSnapshot = workspaceSizeForOverlay ??
+          Size(
+            sourceImage.width.toDouble(),
+            sourceImage.height.toDouble(),
+          );
     });
+    _startAiCanvasGeneratingProgressEstimator();
 
     try {
       final Uint8List sourcePayloadBytes = await _prepareExpandSourcePayload(
@@ -9675,9 +9762,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           isError: true);
     } finally {
       if (mounted) {
+        await _completeAiCanvasGeneratingProgress();
         setState(() {
           _isExpandGenerating = false;
+          _aiCanvasGeneratingProgress = 0.0;
+          _expandGeneratingLayerSnapshot = null;
+          _expandGeneratingConfigSnapshot = null;
+          _expandGeneratingWorkspaceSizeSnapshot = null;
         });
+      } else {
+        _aiCanvasGeneratingProgressTimer?.cancel();
+        _aiCanvasGeneratingProgressTimer = null;
       }
     }
   }
@@ -21014,14 +21109,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _aiCanvasGeneratingProgressTimer = Timer.periodic(
       const Duration(milliseconds: 110),
       (_) {
-        if (!mounted || !_isAiCanvasGenerating) {
+        if (!mounted || (!_isAiCanvasGenerating && !_isExpandGenerating)) {
           _aiCanvasGeneratingProgressTimer?.cancel();
           _aiCanvasGeneratingProgressTimer = null;
           return;
         }
         final double current = _aiCanvasGeneratingProgress;
         final bool slowMode =
-            _isUpscaleLayerProcessing && _upscaleEffectLayerId != null;
+            (_isUpscaleLayerProcessing && _upscaleEffectLayerId != null) ||
+                _isExpandGenerating;
         final double step = slowMode
             ? (current < 0.2
                 ? 0.0105
