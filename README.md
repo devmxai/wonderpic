@@ -543,6 +543,21 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Crop now behaves as true canvas crop for workspace images.
 - Layer composition remains stable after crop and no forced jump back to default view occurs.
 
+### 0.22 Latest Handoff (March 2, 2026 - Remove Editor Bottom Snackbars)
+
+#### Request addressed
+- Remove the bottom “sync/snackbar” notifications from editor workflows (crop/generate/effects and similar actions).
+
+#### Fix applied
+- Added a central editor flag to disable bottom snackbars:
+  - `_editorBottomSnackbarsEnabled = false`
+- Updated `_showExportMessage(...)` to no-op when the flag is disabled.
+- Replaced remaining direct editor `ScaffoldMessenger.showSnackBar(...)` call sites with `_showExportMessage(...)` so they are also suppressed consistently.
+
+#### Result
+- Bottom snackbar notifications are fully hidden in the editor UI.
+- Crop/generate/effects no longer show completion/info toasts from the bottom.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

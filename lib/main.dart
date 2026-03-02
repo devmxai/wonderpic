@@ -6824,6 +6824,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       '2d4197724d8ed13cc78191e794ebbe6aeedcfe4c5b36f464794732d5ccb9735f';
   static const String _replicateObjectRemoverModelVersion =
       '2757d1ac2f1291af219f5f10e8ecba15e92e7c05253e2841295f3ba6bff6adc4';
+  // Requested UX: no bottom snackbars in editor flows.
+  static const bool _editorBottomSnackbarsEnabled = false;
   final ImagePicker _picker = ImagePicker();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<ScaffoldMessengerState> _editorScaffoldMessengerKey =
@@ -12713,12 +12715,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         workspace == null ? null : _workspaceSourceSize(workspace);
     if (workspaceSize == null) {
       if (shouldShowError) {
-        final ScaffoldMessengerState? messenger =
-            _editorScaffoldMessengerKey.currentState;
-        messenger?.showSnackBar(
-          const SnackBar(
-            content: Text('Add a background image or solid layer first'),
-          ),
+        _showExportMessage(
+          'Add a background image or solid layer first',
+          isError: true,
         );
       }
       return null;
@@ -18576,6 +18575,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool isError = false,
   }) {
     if (!mounted) return;
+    if (!_editorBottomSnackbarsEnabled) return;
     final ScaffoldMessengerState? messenger =
         _editorScaffoldMessengerKey.currentState;
     if (messenger == null) return;
@@ -18823,22 +18823,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       });
     } on PlatformException {
       if (!mounted) return;
-      final ScaffoldMessengerState? messenger =
-          _editorScaffoldMessengerKey.currentState;
-      messenger?.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Gallery access failed. Please allow photo access and try again.',
-          ),
-        ),
+      _showExportMessage(
+        'Gallery access failed. Please allow photo access and try again.',
+        isError: true,
       );
     } catch (_) {
       if (!mounted) return;
-      final ScaffoldMessengerState? messenger =
-          _editorScaffoldMessengerKey.currentState;
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('Could not load image from gallery')),
-      );
+      _showExportMessage('Could not load image from gallery', isError: true);
     } finally {
       if (mounted) {
         setState(() {
