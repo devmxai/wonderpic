@@ -6730,7 +6730,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   static const Color _floatingPanelHint = Color(0xFF938A87);
   static const String _openAiEmbeddedApiKey = '';
   static const String _geminiEmbeddedApiKey = '';
-  static const String _kieEmbeddedApiKey = '';
+  static const String _kieEmbeddedApiKey = '063df1b9f5839b39ba0bf735e5486cf3';
   static const String _replicateEmbeddedApiToken = '';
   static const String _replicateInpaintModelVersion =
       '95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3';

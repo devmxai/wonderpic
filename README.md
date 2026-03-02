@@ -270,8 +270,8 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `KIE API key missing. Add --dart-define=KIE_API_KEY=...`
 
 #### Important runtime note
-- Embedded keys are intentionally empty for repository push protection.
-- Generation now requires runtime key injection via `--dart-define`.
+- `KIE` key is currently embedded directly in code for runtime generation.
+- `--dart-define=KIE_API_KEY=...` still works as an override when needed.
 
 ### 0.10 Latest Handoff (March 2, 2026 - Deactivated Context Snackbar Fix)
 
@@ -300,7 +300,7 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 
 #### True root-cause split
 - The `API key` and `red-screen assertion` are two different issues:
-  - API key: embedded keys are intentionally empty (push-protection requirement), so generation requires runtime `--dart-define` keys.
+  - API key: generation depends on valid KIE key configuration (embedded key or runtime override).
   - UI assertion/lifecycle instability: generate flow previously relied on context-sensitive lookups during transient UI states.
 
 #### Generate mechanism hardening (professional flow)
