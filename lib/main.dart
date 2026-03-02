@@ -26711,6 +26711,16 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
             oldBackground?.thumbnailBytes != newBackground?.thumbnailBytes ||
             oldSize != newSize ||
             oldBackground?.solidColor != newBackground?.solidColor;
+    final ({Offset pan, double scale})? preservedViewportTarget =
+        didWorkspaceBackgroundChange &&
+                _preserveViewportOnNextWorkspaceResize &&
+                oldSize != null &&
+                newSize != null
+            ? _computePreservedViewportAfterWorkspaceResize(
+                oldWorkspaceSize: oldSize,
+                newWorkspaceSize: newSize,
+              )
+            : null;
     if (didWorkspaceBackgroundChange) {
       final bool preserveViewport = _preserveViewportOnNextWorkspaceResize;
       _preserveViewportOnNextWorkspaceResize = false;
@@ -26738,6 +26748,14 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         _clearCapturedExpandViewport();
       });
       _repaintCanvas();
+      if (preserveViewport && preservedViewportTarget != null) {
+        _startPanSettleAnimation(
+          preservedViewportTarget.pan,
+          targetScale: preservedViewportTarget.scale,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        );
+      }
     } else if (wasExpandToolActive && !isExpandToolActive) {
       _preserveViewportOnNextWorkspaceResize = false;
     }
@@ -26745,6 +26763,63 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
 
   void _repaintCanvas() {
     _canvasRepaintTick.value++;
+  }
+
+  ({Offset pan, double scale})? _computePreservedViewportAfterWorkspaceResize({
+    required Size oldWorkspaceSize,
+    required Size newWorkspaceSize,
+  }) {
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return null;
+    }
+    if (oldWorkspaceSize.width <= 0 ||
+        oldWorkspaceSize.height <= 0 ||
+        newWorkspaceSize.width <= 0 ||
+        newWorkspaceSize.height <= 0) {
+      return null;
+    }
+    if (_scale <= 0.0001) return null;
+
+    final Rect oldArtboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: oldWorkspaceSize,
+    );
+    final Rect newArtboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: newWorkspaceSize,
+    );
+    if (oldArtboard.width <= 0 ||
+        oldArtboard.height <= 0 ||
+        newArtboard.width <= 0 ||
+        newArtboard.height <= 0) {
+      return null;
+    }
+    final double oldUnitScale = oldArtboard.width / oldWorkspaceSize.width;
+    final double newUnitScale = newArtboard.width / newWorkspaceSize.width;
+    if (oldUnitScale <= 0 || newUnitScale <= 0) return null;
+
+    final Offset viewportAnchor =
+        Offset(_lastCanvasSize.width / 2, _lastCanvasSize.height / 2);
+    final Offset sceneAnchorBefore = Offset(
+      (viewportAnchor.dx - _pan.dx) / _scale,
+      (viewportAnchor.dy - _pan.dy) / _scale,
+    );
+    final Offset workspaceAnchorBefore = Offset(
+      (sceneAnchorBefore.dx - oldArtboard.left) / oldUnitScale,
+      (sceneAnchorBefore.dy - oldArtboard.top) / oldUnitScale,
+    );
+    final double targetScale = (_scale * (oldUnitScale / newUnitScale))
+        .clamp(_minScale, _maxScale)
+        .toDouble();
+    final Offset sceneAnchorAfter = Offset(
+      newArtboard.left + (workspaceAnchorBefore.dx * newUnitScale),
+      newArtboard.top + (workspaceAnchorBefore.dy * newUnitScale),
+    );
+    final Offset targetPan = Offset(
+      viewportAnchor.dx - (sceneAnchorAfter.dx * targetScale),
+      viewportAnchor.dy - (sceneAnchorAfter.dy * targetScale),
+    );
+    return (pan: targetPan, scale: targetScale);
   }
 
   Rect? expandGeneratingTargetRectInViewport({

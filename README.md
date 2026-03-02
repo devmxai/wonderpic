@@ -600,6 +600,26 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Expand shimmer/blur now tracks the exact expanded frame location under current camera transform.
 - Overlay is constrained to the new expand bounds (including image area inside that frame), not a broad near-full-canvas region.
 
+### 0.25 Latest Handoff (March 2, 2026 - Smooth Post-Expand Viewport Stabilization)
+
+#### Reported issue
+- After expand finished, view could feel like it became more distant (content looked farther) even though generation succeeded.
+
+#### Root cause
+- Workspace dimensions change after expand (especially on background layer), which changes artboard unit scale.
+- Keeping the exact old viewport scale without compensation makes final composition appear zoomed out.
+
+#### Fix applied
+- Added viewport preservation transform on workspace resize:
+  - computes old/new artboard mapping
+  - preserves the same workspace anchor under screen center
+  - compensates viewport scale by old/new unit-scale ratio
+- Applied as a short settle animation (`_startPanSettleAnimation`) so transition is visually smooth instead of abrupt.
+
+#### Result
+- After expand completes, composition stays visually stable instead of snapping farther away.
+- Any required correction now happens with a professional animated settle.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
