@@ -352,6 +352,30 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Reduced global dim overlay behind the generate card for cleaner transparent look.
 - Kept progress `%` + status text + subtle blur behavior.
 
+### 0.14 Latest Handoff (March 2, 2026 - Generate Shimmer Edge Cleanup)
+
+#### UI issue reported
+- Generate shimmer was still visually harsh:
+  - white-looking edge gaps around rounded corners
+  - hard/sharp highlight
+  - unwanted edge shadow feel
+
+#### Root cause (visual pipeline)
+- The generate card used `BackdropFilter` directly over the artboard region with medium alpha and animated sweep.
+- On fractional artboard coordinates, this produced visible edge artifacts/seams against the canvas background.
+- Sparkle intensity and global dim layer were still slightly stronger than needed for a soft glass look.
+
+#### Fix applied
+- Replaced generate-card `BackdropFilter` layer with a softer local blur (`ImageFiltered`) over the shimmer sweep itself.
+- Removed card edge-shadow styling path and kept strict rectangular clipping to match canvas bounds.
+- Reduced shimmer alpha, sparkle opacity, and global dim overlay opacity.
+- Pixel-snapped artboard rect used by generate overlay (`floor/ceil`) to avoid sub-pixel seam artifacts.
+
+#### Result
+- Generate shimmer now sits flush with canvas bounds (no white corner gaps from sub-pixel seams).
+- Visual is softer, less sharp, and blends better with editor background.
+- Progress `%` and status text behavior remains unchanged.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

@@ -5399,7 +5399,6 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
     final double targetProgress = widget.progress.clamp(0.0, 1.0).toDouble();
     final Size panelSize = widget.panelSize;
     final double minSide = math.min(panelSize.width, panelSize.height);
-    final double cornerRadius = (minSide * 0.12).clamp(16.0, 26.0).toDouble();
     final double percentFontSize =
         (minSide * 0.14).clamp(16.0, 29.0).toDouble();
     final double statusFontSize =
@@ -5417,42 +5416,45 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
             final double phase = _controller.value;
             final int percent =
                 (smoothProgress * 100).round().clamp(0, 100).toInt();
-            return Container(
+            return SizedBox(
               width: panelSize.width,
               height: panelSize.height,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(cornerRadius),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: Color(0x1E111418),
-                    blurRadius: 14,
-                    spreadRadius: 0,
-                    offset: Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(cornerRadius),
+              child: ClipRect(
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 5.4, sigmaY: 5.4),
+                    const ColoredBox(
+                      color: Color(0x20191C22),
+                    ),
+                    ImageFiltered(
+                      imageFilter:
+                          ui.ImageFilter.blur(sigmaX: 2.9, sigmaY: 2.9),
                       child: Container(
-                        color: const Color(0x561E1F22),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment(-1.6 + (phase * 3.2), -0.15),
+                            end: Alignment(-0.7 + (phase * 3.2), 0.15),
+                            colors: const <Color>[
+                              Color(0x00FFFFFF),
+                              Color(0x12FFFFFF),
+                              Color(0x00FFFFFF),
+                            ],
+                            stops: const <double>[0.0, 0.52, 1.0],
+                          ),
+                        ),
                       ),
                     ),
-                    Container(
+                    const DecoratedBox(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment(-1.6 + (phase * 3.2), -0.15),
-                          end: Alignment(-0.7 + (phase * 3.2), 0.15),
-                          colors: const <Color>[
-                            Color(0x00FFFFFF),
-                            Color(0x22FFFFFF),
-                            Color(0x00FFFFFF),
+                        gradient: RadialGradient(
+                          center: Alignment(0.0, 0.06),
+                          radius: 1.08,
+                          colors: <Color>[
+                            Color(0x1E2A2F38),
+                            Color(0x0A1A1D24),
+                            Color(0x001A1D24),
                           ],
-                          stops: const <double>[0.0, 0.52, 1.0],
+                          stops: <double>[0.0, 0.7, 1.0],
                         ),
                       ),
                     ),
@@ -5525,15 +5527,15 @@ class _AiMagicSparklesPainter extends CustomPainter {
       final Paint core = Paint()
         ..style = PaintingStyle.fill
         ..isAntiAlias = true
-        ..color = const Color(0xFFE6F24A).withOpacity(0.1 + (0.18 * pulse));
+        ..color = const Color(0xFFE6F24A).withOpacity(0.045 + (0.07 * pulse));
       canvas.drawCircle(c, radius * 0.48, core);
 
       final Paint cross = Paint()
         ..style = PaintingStyle.stroke
         ..isAntiAlias = true
-        ..strokeWidth = 0.9
+        ..strokeWidth = 0.72
         ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFF7FFB0).withOpacity(0.12 + (0.22 * pulse));
+        ..color = const Color(0xFFF7FFB0).withOpacity(0.06 + (0.11 * pulse));
       canvas.drawLine(
         Offset(c.dx - radius, c.dy),
         Offset(c.dx + radius, c.dy),
@@ -7986,8 +7988,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               constraints.maxWidth,
               constraints.maxHeight,
             );
-            final Rect? artboardRect =
+            final Rect? rawArtboardRect =
                 _aiCanvasGeneratingArtboardRect(canvasSize);
+            final Rect? artboardRect = rawArtboardRect == null
+                ? null
+                : Rect.fromLTRB(
+                    rawArtboardRect.left.floorToDouble(),
+                    rawArtboardRect.top.floorToDouble(),
+                    rawArtboardRect.right.ceilToDouble(),
+                    rawArtboardRect.bottom.ceilToDouble(),
+                  );
             final Size panelSize = artboardRect?.size ?? const Size(148, 148);
             if (minimalCounterOnly) {
               final Widget counter = TweenAnimationBuilder<double>(
@@ -8030,7 +8040,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                Container(color: const Color(0x12111418)),
+                Container(color: const Color(0x08111418)),
                 if (artboardRect != null)
                   Positioned.fromRect(
                     rect: artboardRect,
