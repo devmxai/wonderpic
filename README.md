@@ -620,6 +620,41 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - After expand completes, composition stays visually stable instead of snapping farther away.
 - Any required correction now happens with a professional animated settle.
 
+### 0.26 Latest Handoff (March 2, 2026 - Selection Tool Bottom Sheet Workflow)
+
+#### Reported issue
+- Pressing `Selection Tool` (Marquee) did not show a usable control surface for mode/action selection in the current UX flow.
+- Requirement: open a bottom sheet directly from the Selection tool button with shape modes and core actions (`Copy`, `Paste`, `Cut`, `Delete`).
+
+#### Root cause
+- Marquee button tap only called `_setActiveTool(EditorTool.marquee)` with no sheet launcher.
+- Marquee controls existed in `_buildMarqueeSettingsPanel()`, but they were tied to the sidebar path, not the Selection tool tap flow.
+
+#### Fix applied
+- Added dedicated Selection tap handler:
+  - `_onMarqueeToolTap()`
+  - activates `EditorTool.marquee` and opens a new marquee bottom sheet.
+- Added marquee bottom sheet flow:
+  - `_openMarqueeBottomSheet()`
+  - opens modal sheet with:
+    - selection shape modes (rectangle / ellipse / freehand / object)
+    - core actions only: `Copy`, `Cut`, `Paste`, `Delete`
+- Refactored marquee settings builder for reuse:
+  - `_buildMarqueeSettingsPanel({ includeAdvancedActions, requestRebuild })`
+  - sidebar keeps full actions, bottom sheet uses compact core actions.
+- Added modal-state sync for marquee actions:
+  - `_runMarqueeAction(..., onStateChanged: ...)`
+  - keeps loading/enable state visually in sync while sheet is open.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - top toolbar marquee button tap
+  - `_onMarqueeToolTap`
+  - `_openMarqueeBottomSheet`
+  - `_buildMarqueeSettingsPanel` (reusable modes/actions composition)
+  - `_runMarqueeAction` (modal refresh hook)
+  - `_setActiveTool` (marquee sheet state reset when leaving tool)
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

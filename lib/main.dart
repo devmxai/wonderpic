@@ -6881,6 +6881,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   PencilSettings? _pencilSettingsFloatingBaseline;
   bool _isCloneSettingsFloatingOpen = false;
   bool _isCloneSettingsBottomSheetOpen = false;
+  bool _isMarqueeSettingsBottomSheetOpen = false;
   bool _isBlurSettingsBottomSheetOpen = false;
   bool _isLayersMergeInProgress = false;
   String? _blurError;
@@ -7175,7 +7176,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             _toolButton(
               icon: Icons.crop_din_rounded,
               filled: _isToolEnabled && _activeTool == EditorTool.marquee,
-              onTap: () => _setActiveTool(EditorTool.marquee),
+              onTap: _onMarqueeToolTap,
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
@@ -8334,6 +8335,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _marqueeSelection != null) {
         _marqueeSelection = null;
       }
+      if (!_isToolEnabled || tool != EditorTool.marquee) {
+        _isMarqueeSettingsBottomSheetOpen = false;
+      }
       if (!_isToolEnabled || tool != EditorTool.crop) {
         _isCropFloatingOpen = false;
       }
@@ -8459,6 +8463,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _closeToolSettingsSidebarIfOpen();
   }
 
+  void _onMarqueeToolTap() {
+    if (_isMarqueeSettingsBottomSheetOpen) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    _setActiveTool(EditorTool.marquee, toggleWhenSame: false);
+    _closeToolSettingsSidebarIfOpen();
+    unawaited(_openMarqueeBottomSheet());
+  }
+
   void _onRegenerateToolTap() {
     final EditorLayer? selectedImage = _selectedImageLayer();
     if (selectedImage == null) {
@@ -8475,6 +8489,110 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _setActiveTool(EditorTool.regenerate, toggleWhenSame: false);
     _closeToolSettingsSidebarIfOpen();
     unawaited(_openRegenerateBottomSheet());
+  }
+
+  Future<void> _openMarqueeBottomSheet() async {
+    if (_isMarqueeSettingsBottomSheetOpen) return;
+
+    setState(() {
+      _isMarqueeSettingsBottomSheetOpen = true;
+      _isCloneSettingsBottomSheetOpen = false;
+      _isBlurSettingsBottomSheetOpen = false;
+      _isCloneSettingsFloatingOpen = false;
+      _isPencilSettingsFloatingOpen = false;
+      _pencilSettingsFloatingBaseline = null;
+      _isCropFloatingOpen = false;
+      _resetTextQuickFloatingPanels();
+      _activeTextEffectFloatingPanel = null;
+      _isOverlayImageShadowFloatingOpen = false;
+      _overlayImageShadowFloatingBaseline = null;
+      _overlayImageShadowFloatingLayerId = null;
+      _isPhotoRoomRemoveBgFloatingOpen = false;
+      _isPhotoRoomRemoveBgProcessing = false;
+    });
+    _closeToolSettingsSidebarIfOpen();
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.transparent,
+        builder: (BuildContext sheetContext) {
+          final double keyboardInset =
+              MediaQuery.viewInsetsOf(sheetContext).bottom;
+          final double contentBottomInset =
+              MediaQuery.viewPaddingOf(sheetContext).bottom + 12;
+          return Padding(
+            padding: EdgeInsets.only(bottom: keyboardInset),
+            child: StatefulBuilder(
+              builder: (context, modalSetState) {
+                return ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.38,
+                  ),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: WonderPicEditorScreen._pageBg,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        10,
+                        12,
+                        contentBottomInset,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 44,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: const Color(0x665A616B),
+                                borderRadius: BorderRadius.circular(99),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Selection Tool',
+                            style: TextStyle(
+                              color: Color(0xFFF3F3F2),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          _buildMarqueeSettingsPanel(
+                            includeAdvancedActions: false,
+                            requestRebuild: (callback) {
+                              modalSetState(callback);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMarqueeSettingsBottomSheetOpen = false;
+        });
+      }
+    }
   }
 
   List<_RegenerateQualityPreset> _regenerateQualityOptionsForModel(
@@ -14755,13 +14873,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
   }
 
-  Widget _buildMarqueeSettingsPanel() {
+  Widget _buildMarqueeSettingsPanel({
+    bool includeAdvancedActions = true,
+    void Function(VoidCallback callback)? requestRebuild,
+  }) {
     final EditorLayer? selectedImageLayer = _selectedMarqueeLayer();
     final bool imageReady = selectedImageLayer != null;
     final bool hasSelection = _marqueeSelection != null &&
         _marqueeSelection!.hasUsableArea &&
         _marqueeSelection!.layerId == selectedImageLayer?.id;
     final bool canPaste = imageReady && _marqueeClipboard != null;
+    void repaintSheetIfNeeded() {
+      requestRebuild?.call(() {});
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -14800,6 +14924,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                         _marqueeMode = mode;
                         _marqueeSelection = null;
                       });
+                      repaintSheetIfNeeded();
                     },
                   );
                 }).toList(),
@@ -14815,54 +14940,76 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final double tileWidth = (constraints.maxWidth - 8) / 2;
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _MarqueeActionTile(
-                      width: tileWidth,
-                      icon: Icons.copy_rounded,
-                      label: 'Copy',
-                      enabled: hasSelection,
-                      onTap: () => _runMarqueeAction(_copyMarqueeSelection),
+                final List<Widget> actionTiles = <Widget>[
+                  _MarqueeActionTile(
+                    width: tileWidth,
+                    icon: Icons.copy_rounded,
+                    label: 'Copy',
+                    enabled: hasSelection,
+                    onTap: () => _runMarqueeAction(
+                      _copyMarqueeSelection,
+                      onStateChanged: repaintSheetIfNeeded,
                     ),
-                    _MarqueeActionTile(
-                      width: tileWidth,
-                      icon: Icons.content_cut_rounded,
-                      label: 'Cut',
-                      enabled: hasSelection,
-                      onTap: () => _runMarqueeAction(_cutMarqueeSelection),
+                  ),
+                  _MarqueeActionTile(
+                    width: tileWidth,
+                    icon: Icons.content_cut_rounded,
+                    label: 'Cut',
+                    enabled: hasSelection,
+                    onTap: () => _runMarqueeAction(
+                      _cutMarqueeSelection,
+                      onStateChanged: repaintSheetIfNeeded,
                     ),
-                    _MarqueeActionTile(
-                      width: tileWidth,
-                      icon: Icons.paste_rounded,
-                      label: 'Paste',
-                      enabled: canPaste,
-                      onTap: () => _runMarqueeAction(_pasteMarqueeClipboard),
+                  ),
+                  _MarqueeActionTile(
+                    width: tileWidth,
+                    icon: Icons.paste_rounded,
+                    label: 'Paste',
+                    enabled: canPaste,
+                    onTap: () => _runMarqueeAction(
+                      _pasteMarqueeClipboard,
+                      onStateChanged: repaintSheetIfNeeded,
                     ),
-                    _MarqueeActionTile(
-                      width: tileWidth,
-                      icon: Icons.delete_outline_rounded,
-                      label: 'Delete',
-                      enabled: hasSelection,
-                      onTap: () => _runMarqueeAction(_deleteMarqueeSelection),
+                  ),
+                  _MarqueeActionTile(
+                    width: tileWidth,
+                    icon: Icons.delete_outline_rounded,
+                    label: 'Delete',
+                    enabled: hasSelection,
+                    onTap: () => _runMarqueeAction(
+                      _deleteMarqueeSelection,
+                      onStateChanged: repaintSheetIfNeeded,
                     ),
+                  ),
+                ];
+                if (includeAdvancedActions) {
+                  actionTiles.addAll(<Widget>[
                     _MarqueeActionTile(
                       width: tileWidth,
                       icon: Icons.layers_outlined,
                       label: 'New Layer',
                       enabled: hasSelection,
-                      onTap: () =>
-                          _runMarqueeAction(_createLayerFromMarqueeSelection),
+                      onTap: () => _runMarqueeAction(
+                        _createLayerFromMarqueeSelection,
+                        onStateChanged: repaintSheetIfNeeded,
+                      ),
                     ),
                     _MarqueeActionTile(
                       width: tileWidth,
                       icon: Icons.crop_rounded,
                       label: 'Crop',
                       enabled: hasSelection,
-                      onTap: () => _runMarqueeAction(_cropToMarqueeSelection),
+                      onTap: () => _runMarqueeAction(
+                        _cropToMarqueeSelection,
+                        onStateChanged: repaintSheetIfNeeded,
+                      ),
                     ),
-                  ],
+                  ]);
+                }
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: actionTiles,
                 );
               },
             ),
@@ -17159,11 +17306,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
   }
 
-  Future<void> _runMarqueeAction(Future<void> Function() action) async {
+  Future<void> _runMarqueeAction(
+    Future<void> Function() action, {
+    VoidCallback? onStateChanged,
+  }) async {
     if (_isMarqueeActionInProgress) return;
     setState(() {
       _isMarqueeActionInProgress = true;
     });
+    onStateChanged?.call();
     try {
       await action();
     } finally {
@@ -17171,6 +17322,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         setState(() {
           _isMarqueeActionInProgress = false;
         });
+        onStateChanged?.call();
       }
     }
   }
