@@ -11749,12 +11749,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         normalizeOrientation: false,
         preferStreamUpload: true,
       );
-      final int upscaleFactor = amount == _UpscaleAmount.k2 ? 2 : 4;
       final String taskId = await _createKieRecraftUpscaleTask(
         imageUrl: imageUrl,
-        upscaleFactor: upscaleFactor,
       );
-      return _pollKieTaskAndDownload(taskId: taskId);
+      return _pollKieTaskAndDownload(
+        taskId: taskId,
+        maxAttempts: 90,
+        pollDelayResolver: _kieUpscalePollDelay,
+      );
     }
 
     try {
@@ -11772,9 +11774,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required bool conservative,
   }) {
     if (amount == _UpscaleAmount.k4) {
-      return conservative ? 1024 : 1180;
+      return conservative ? 1024 : 1200;
     }
-    return conservative ? 1280 : 1536;
+    return conservative ? 1120 : 1360;
   }
 
   int _upscaleUploadJpegQuality({
@@ -11782,9 +11784,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required bool conservative,
   }) {
     if (amount == _UpscaleAmount.k4) {
-      return conservative ? 82 : 86;
+      return conservative ? 80 : 84;
     }
-    return conservative ? 84 : 88;
+    return conservative ? 82 : 86;
   }
 
   Future<Uint8List> _encodeBytesForUpscaleUpload(
@@ -11813,8 +11815,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _shouldRetryUpscaleWithConservativePayload(Object error) {
     final String text = error.toString().toLowerCase();
     return text.contains('internal image processing error') ||
+        text.contains('kie task timeout') ||
         text.contains('task completed but output url is missing') ||
         text.contains('returned a non-image file');
+  }
+
+  Duration _kieUpscalePollDelay(int attempt) {
+    if (attempt < 10) {
+      return const Duration(milliseconds: 500);
+    }
+    if (attempt < 36) {
+      return const Duration(milliseconds: 700);
+    }
+    return const Duration(milliseconds: 900);
   }
 
   Future<Uint8List> _encodeUiImageToPngBytes(ui.Image sourceImage) async {
@@ -20371,7 +20384,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   Future<String> _createKieRecraftUpscaleTask({
     required String imageUrl,
-    required int upscaleFactor,
   }) async {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
@@ -20392,7 +20404,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               'model': 'recraft/crisp-upscale',
               'input': <String, dynamic>{
                 'image': imageUrl,
-                'upscale_factor': upscaleFactor.clamp(2, 4),
               },
             },
           ),
@@ -20561,6 +20572,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Future<Uint8List> _pollKieTaskAndDownload({
     required String taskId,
     bool verifyOutputIsImage = false,
+    int maxAttempts = 150,
+    Duration Function(int attempt)? pollDelayResolver,
   }) async {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
@@ -20570,9 +20583,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
     final Uri uri =
         Uri.parse('https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$taskId');
-    const int maxAttempts = 150;
+    final int safeMaxAttempts = math.max(20, maxAttempts);
+    final Duration Function(int) delayResolver =
+        pollDelayResolver ?? _kiePollDelay;
 
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+    for (int attempt = 0; attempt < safeMaxAttempts; attempt++) {
       final http.Response response = await http.get(
         uri,
         headers: <String, String>{
@@ -20583,7 +20598,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
       if (response.statusCode == 429 ||
           (response.statusCode >= 500 && response.statusCode < 600)) {
-        await Future.delayed(_kiePollDelay(attempt));
+        await Future.delayed(delayResolver(attempt));
         continue;
       }
 
@@ -20605,7 +20620,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           ? decoded['data'] as Map<String, dynamic>
           : null;
       if (data == null) {
-        await Future.delayed(_kiePollDelay(attempt));
+        await Future.delayed(delayResolver(attempt));
         continue;
       }
       final String state =
@@ -20639,7 +20654,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         throw StateError('KIE generation failed: $failMsg');
       }
 
-      await Future.delayed(_kiePollDelay(attempt));
+      await Future.delayed(delayResolver(attempt));
     }
 
     throw TimeoutException('KIE task timeout. Please try again.');
@@ -35279,63 +35294,20 @@ class _UpscaleToolIcon extends StatelessWidget {
     return SizedBox(
       width: 20,
       height: 20,
-      child: CustomPaint(
-        painter: _UpscaleToolPainter(color),
+      child: Center(
+        child: Text(
+          'UP',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: color,
+            fontSize: 8.8,
+            height: 1.0,
+            letterSpacing: 0.18,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
     );
-  }
-}
-
-class _UpscaleToolPainter extends CustomPainter {
-  _UpscaleToolPainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final Paint outline = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.55
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..isAntiAlias = true;
-
-    final RRect smallFrame = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        size.width * 0.17,
-        size.height * 0.42,
-        size.width * 0.42,
-        size.height * 0.42,
-      ),
-      Radius.circular(size.width * 0.09),
-    );
-    final RRect largeFrame = RRect.fromRectAndRadius(
-      Rect.fromLTWH(
-        size.width * 0.36,
-        size.height * 0.17,
-        size.width * 0.47,
-        size.height * 0.47,
-      ),
-      Radius.circular(size.width * 0.10),
-    );
-    canvas.drawRRect(smallFrame, outline);
-    canvas.drawRRect(largeFrame, outline);
-
-    final Offset start = Offset(size.width * 0.44, size.height * 0.56);
-    final Offset end = Offset(size.width * 0.62, size.height * 0.38);
-    canvas.drawLine(start, end, outline);
-
-    final Path arrowHead = Path()
-      ..moveTo(size.width * 0.62, size.height * 0.30)
-      ..lineTo(size.width * 0.62, size.height * 0.38)
-      ..lineTo(size.width * 0.54, size.height * 0.38);
-    canvas.drawPath(arrowHead, outline);
-  }
-
-  @override
-  bool shouldRepaint(covariant _UpscaleToolPainter oldDelegate) {
-    return oldDelegate.color != color;
   }
 }
 

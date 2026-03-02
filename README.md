@@ -730,6 +730,37 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_shouldRetryUpscaleWithConservativePayload`
   - `_UpscaleToolIcon` / `_UpscaleToolPainter`
 
+### 0.29 Latest Handoff (March 2, 2026 - API-Only Recraft Upscale + Faster Polling)
+
+#### User direction
+- Upscale must stay API-based (no on-device path).
+- Use the same model: `recraft/crisp-upscale` (KIE).
+- Keep icon compact and professional (`UP` style).
+
+#### Root-cause review for slowness/failures
+- Heavy source payloads still increase cloud processing time.
+- Polling window was too long for upscale UX and could wait excessively before timeout.
+- Upscale task payload included extra input fields not required by the Recraft Crisp Upscale API docs.
+
+#### Fix applied (API path only)
+- Removed on-device upscale path entirely.
+- Kept Upscale strictly on KIE API model:
+  - `model: recraft/crisp-upscale`
+- Updated create-task payload to match documented input contract:
+  - `input.image` only.
+- Added dedicated faster polling profile for upscale calls:
+  - shorter interval strategy + capped attempts for quicker failure/return behavior.
+- Kept stream upload preference and aggressive pre-upload compression for speed.
+- Refined toolbar icon to compact `UP` text style (smaller + consistent with top tool icon scale).
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_upscaleImageWithKieRecraftCrisp`
+  - `_createKieRecraftUpscaleTask`
+  - `_pollKieTaskAndDownload` (optional polling strategy args)
+  - `_kieUpscalePollDelay`
+  - `_UpscaleToolIcon`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
