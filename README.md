@@ -201,6 +201,54 @@ This subsection is now the latest checkpoint and supersedes older regenerate blo
   2. push the updated code + README to GitHub
 - Purpose: any new model/session can continue immediately from README without missing behavior changes.
 
+### 0.8 Latest Handoff (March 2, 2026 - AI Generate Canvas Progress UX)
+
+This subsection is the latest checkpoint for `+` -> `Generate Image` loading UX.
+
+#### Issue that was fixed
+- During `Generate Image`, the loading card was centered on the full screen, not on the canvas/artboard area.
+- The loading card used a fixed square size (`148x148`) and did not reflect the selected generation size preset (`Square/Portrait/Story`).
+- No rotating wait-status messages were shown during progress.
+
+#### Root cause
+- `_buildAiCanvasGeneratingOverlay` was attached at root-screen stack level and rendered with `Center(...)`, so alignment followed the screen center, not canvas center.
+- `_AiMagicProgressIndicator` had hard-coded dimensions (`148x148`) instead of using the active artboard size.
+
+#### Fixes applied
+- Moved AI generating overlay rendering into `_buildEditorCanvasPanel` stack so placement is tied to the canvas viewport.
+- Added dynamic artboard targeting for loading state:
+  - if workspace exists: use workspace source size
+  - if workspace does not exist yet: use the selected generate preset size
+  - compute display rect via `_computeArtboardRect(...)`
+- Upgraded `_AiMagicProgressIndicator` to accept:
+  - `panelSize` (dynamic width/height)
+  - `statusText` (dynamic status copy)
+- Added staged status text updates by progress:
+  - `Preparing your image...`
+  - `Uploading references...`
+  - `Generating image details...`
+  - `Refining composition...`
+  - `Almost done, your image is on the way...`
+  - `Finalizing output...`
+- Kept existing shimmer + `%` behavior, now centered on the canvas/artboard target.
+- Embedded API key constants were cleared to satisfy GitHub push protection; runtime keys must now be supplied via `--dart-define` environment values.
+
+#### State wiring updates
+- Added `_aiCanvasGeneratingSizePreset` to preserve requested size while generation is running.
+- Set/reset this state in:
+  - `_runAiImageGenerateRequest`
+  - `_runRegenerateRequest`
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_buildEditorCanvasPanel`
+  - `_buildAiCanvasGeneratingOverlay`
+  - `_AiMagicProgressIndicator`
+  - `_aiCanvasGeneratingArtboardRect`
+  - `_aiCanvasGeneratingStatusText`
+  - `_runAiImageGenerateRequest`
+  - `_runRegenerateRequest`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
