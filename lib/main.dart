@@ -9660,6 +9660,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     });
     _startAiCanvasGeneratingProgressEstimator();
 
+    bool expandSucceeded = false;
     try {
       final Uint8List sourcePayloadBytes = await _prepareExpandSourcePayload(
         sourceImage: sourceImage,
@@ -9755,8 +9756,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           }
           _layers = nextLayers;
         }
-        _expandToolConfig = _defaultExpandConfig(selectedLayer.id);
+        // Auto-close Expand tool after successful apply to avoid leaving
+        // resize handles/indicators visible on canvas.
+        _expandToolConfig = null;
+        _isToolEnabled = false;
       });
+      expandSucceeded = true;
       _showExportMessage('Expand completed successfully.');
     } catch (error) {
       if (!mounted) return;
@@ -9772,6 +9777,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _expandGeneratingConfigSnapshot = null;
           _expandGeneratingWorkspaceSizeSnapshot = null;
         });
+        if (expandSucceeded) {
+          _closeToolSettingsSidebarIfOpen();
+        }
       } else {
         _aiCanvasGeneratingProgressTimer?.cancel();
         _aiCanvasGeneratingProgressTimer = null;

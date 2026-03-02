@@ -466,6 +466,26 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - `%` counter and status text stay centered in that same area.
 - Overlay disappears cleanly when generation completes and the final image is shown.
 
+### 0.19 Latest Handoff (March 2, 2026 - Auto-Close Expand Tool After Success)
+
+#### Reported issue
+- After `Expand` completed, Expand mode stayed active and an extra resize indicator/handle remained visible.
+
+#### Root cause
+- On success, code was reassigning a fresh expand config (`_defaultExpandConfig(...)`) instead of exiting tool state.
+- This kept Expand interaction UI alive after output had already been applied.
+
+#### Fix applied
+- After successful Expand apply:
+  - clear expand config (`_expandToolConfig = null`)
+  - disable active tool mode (`_isToolEnabled = false`)
+  - close tool settings sidebar if open
+- Result is a clean post-expand state with no lingering expand indicators.
+
+#### Result
+- Expand indicator/handle no longer remains after generation success.
+- UI returns to neutral state (no active tool) once Expand is done.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
