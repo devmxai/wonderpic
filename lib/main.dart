@@ -8087,9 +8087,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 _expandGeneratingLayerSnapshot != null &&
                 _expandGeneratingConfigSnapshot != null &&
                 _expandGeneratingWorkspaceSizeSnapshot != null;
-            final Rect? rawArtboardRect = isExpandOverlay
+            Rect? rawArtboardRect = isExpandOverlay
                 ? _expandGeneratingTargetRect(canvasSize)
                 : _aiCanvasGeneratingArtboardRect(canvasSize);
+            rawArtboardRect ??= _aiCanvasGeneratingArtboardRect(canvasSize);
             final Rect? artboardRect = rawArtboardRect == null
                 ? null
                 : Rect.fromLTRB(
@@ -8140,7 +8141,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                Container(color: const Color(0x08111418)),
+                if (!isExpandOverlay) Container(color: const Color(0x08111418)),
                 if (artboardRect != null)
                   Positioned.fromRect(
                     rect: artboardRect,
@@ -8274,6 +8275,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   _ExpandToolConfig? _activeExpandConfigForCanvas() {
+    if (_isExpandGenerating) return null;
     if (!_isToolEnabled || _activeTool != EditorTool.expand) return null;
     final EditorLayer? selectedImage = _selectedExpandLayer();
     if (selectedImage == null) return null;

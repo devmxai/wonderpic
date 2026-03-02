@@ -449,6 +449,23 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Expand loading is visually consistent with Regenerate.
 - The expanded region receives moving blur + shimmer while waiting for API completion.
 
+### 0.18 Latest Handoff (March 2, 2026 - Expand Overlay Scope Fix)
+
+#### Reported issue
+- Expand shimmer/blur still looked like it covered too much canvas.
+- Counter should stay centered in the final expand frame region, not screen-center.
+
+#### Fix applied
+- Expand overlay now skips global full-canvas dim layer.
+- During Expand generation, shimmer magic is rendered only inside the computed final expand target rect.
+- Added fallback targeting to artboard only if expand-target rect cannot be resolved.
+- Expand on-canvas handles/preview are hidden while generation is running, so the loading visual is locked to the final expand region only.
+
+#### Result
+- Blur + shimmer appear only on the final expand frame area.
+- `%` counter and status text stay centered in that same area.
+- Overlay disappears cleanly when generation completes and the final image is shown.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
