@@ -842,6 +842,36 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_encodeUiImageForUpscaleUpload` (new helper)
   - selected-layer upscale call path in `_openUpscaleBottomSheet` / `runUpscale`
 
+### 0.33 Latest Handoff (March 2, 2026 - Upscale UX Flow Completion)
+
+#### Request addressed
+- Upscale top icon should use active yellow style instead of black-on-active look.
+- After pressing Upscale action, bottom sheet must close immediately and shimmer appears on canvas.
+- After completion, Upscale should return to unselected state.
+- When upscaling the background layer, canvas workspace should adopt the new upscaled size fully.
+
+#### Fix applied
+- Reworked top Upscale button styling:
+  - active state now uses yellow icon + yellow border on dark button surface.
+  - removed black active icon appearance.
+- Updated Upscale run flow:
+  - validates input in sheet, then starts processing and closes sheet immediately.
+  - shimmer/progress now appears directly on the canvas during upscale.
+  - errors after sheet close are surfaced via editor message, not sheet-local state.
+- Updated selected-layer upscale apply logic:
+  - if selected layer is background, workspace size is upgraded to upscaled dimensions.
+  - non-background layers are remapped with workspace-resize transform preservation to keep layout stable.
+- End-state cleanup remains enforced:
+  - `_isUpscaleLayerProcessing = false`
+  - `_upscaleEffectLayerId = null`
+  - `_isUpscaleBottomSheetOpen = false`
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_buildTopTools` / `_buildUpscaleTopToolButton`
+  - `_openUpscaleBottomSheet` -> `runUpscale`
+  - selected-background branch in upscale result apply
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

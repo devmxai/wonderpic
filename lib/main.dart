@@ -7221,15 +7221,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               onTap: _onExpandToolTap,
             ),
             const SizedBox(width: _topToolSpacing),
-            _toolButton(
-              filled: _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing,
-              onTap: _onUpscaleToolTap,
-              customChild: _UpscaleToolIcon(
-                color: _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing
-                    ? kActiveAccentForeground
-                    : WonderPicEditorScreen._iconColor,
-              ),
-            ),
+            _buildUpscaleTopToolButton(),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
               icon: Icons.auto_mode_rounded,
@@ -7301,6 +7293,33 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       child: InkWell(
         customBorder: const CircleBorder(),
         onTap: onTap,
+        child: button,
+      ),
+    );
+  }
+
+  Widget _buildUpscaleTopToolButton() {
+    final bool active = _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing;
+    final Widget button = Container(
+      width: _topToolButtonSize,
+      height: _topToolButtonSize,
+      decoration: BoxDecoration(
+        color: WonderPicEditorScreen._panelBg,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: active ? kActiveAccent : const Color(0x3345484D),
+          width: active ? 1.2 : 1.0,
+        ),
+      ),
+      child: _UpscaleToolIcon(
+        color: active ? kActiveAccent : WonderPicEditorScreen._iconColor,
+      ),
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: _onUpscaleToolTap,
         child: button,
       ),
     );
@@ -19365,7 +19384,29 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         isUpscaling = true;
         sheetError = null;
       });
+
+      String normalizeError(Object error) {
+        final String message = error.toString().trim();
+        return message.startsWith('StateError: ')
+            ? message.substring('StateError: '.length)
+            : message;
+      }
+
+      Future<void> closeSheetIfOpen() async {
+        if (!sheetOpen) return;
+        sheetOpen = false;
+        if (sheetContext.mounted) {
+          Navigator.of(sheetContext).pop();
+        }
+      }
+
       try {
+        EditorLayer? selectedLayerForProcess;
+        ui.Image? selectedLayerImageForProcess;
+        Uint8List? uploadBytesForProcess;
+        Size? uploadWorkspaceSizeForProcess;
+        String? shimmerLayerId;
+
         if (sourceMode == _UpscaleSourceMode.selectedLayer) {
           final EditorLayer? selectedLayer = _selectedImageLayer();
           if (selectedLayer == null || selectedLayer.image == null) {
@@ -19374,40 +19415,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             });
             return;
           }
-          final ui.Image sourceImage = selectedLayer.image!;
-          setState(() {
-            _isUpscaleLayerProcessing = true;
-            _upscaleEffectLayerId = selectedLayer.id;
-          });
-
-          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-            sourceImage: sourceImage,
-            amount: selectedAmount,
-          );
-          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
-          if (!mounted) return;
-          _pushUndoSnapshot();
-          setState(() {
-            final int targetIndex =
-                _layers.indexWhere((layer) => layer.id == selectedLayer.id);
-            if (targetIndex >= 0) {
-              final List<EditorLayer> nextLayers =
-                  List<EditorLayer>.from(_layers);
-              final EditorLayer current = nextLayers[targetIndex];
-              final Size preservedLogicalSize = current.solidSize ??
-                  Size(
-                    sourceImage.width.toDouble(),
-                    sourceImage.height.toDouble(),
-                  );
-              nextLayers[targetIndex] = current.copyWith(
-                image: upscaledImage,
-                thumbnailBytes: resultBytes,
-                solidSize: preservedLogicalSize,
-              );
-              _layers = nextLayers;
-              _selectedLayerId = current.id;
-            }
-          });
+          selectedLayerForProcess = selectedLayer;
+          selectedLayerImageForProcess = selectedLayer.image!;
+          shimmerLayerId = selectedLayer.id;
         } else {
           if (uploadSourceBytes == null || uploadSourceImage == null) {
             setSheetState(() {
@@ -19424,13 +19434,83 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             });
             return;
           }
-          setState(() {
-            _isUpscaleLayerProcessing = true;
-            _upscaleEffectLayerId = _selectedImageLayer()?.id;
-          });
+          uploadBytesForProcess = uploadSourceBytes!;
+          uploadWorkspaceSizeForProcess = workspaceSize;
+          shimmerLayerId = _selectedImageLayer()?.id;
+        }
 
+        if (!mounted) return;
+        setState(() {
+          _isUpscaleLayerProcessing = true;
+          _upscaleEffectLayerId = shimmerLayerId;
+        });
+
+        // Close immediately so shimmer magic effect appears on the canvas.
+        await closeSheetIfOpen();
+
+        if (selectedLayerForProcess != null &&
+            selectedLayerImageForProcess != null) {
+          final EditorLayer selectedLayer = selectedLayerForProcess;
+          final ui.Image sourceImage = selectedLayerImageForProcess;
           final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-            sourceBytes: uploadSourceBytes!,
+            sourceImage: sourceImage,
+            amount: selectedAmount,
+          );
+          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
+          if (!mounted) return;
+          _pushUndoSnapshot();
+          setState(() {
+            final int targetIndex =
+                _layers.indexWhere((layer) => layer.id == selectedLayer.id);
+            if (targetIndex >= 0) {
+              final List<EditorLayer> nextLayers =
+                  List<EditorLayer>.from(_layers);
+              final EditorLayer current = nextLayers[targetIndex];
+              final Size oldWorkspaceSize = current.solidSize ??
+                  Size(
+                    sourceImage.width.toDouble(),
+                    sourceImage.height.toDouble(),
+                  );
+              final Size nextWorkspaceSize = Size(
+                upscaledImage.width.toDouble(),
+                upscaledImage.height.toDouble(),
+              );
+              final Map<String, _WorkspaceResizeLayerTransform>
+                  preservedLayerTransforms = current.isBackground
+                      ? _captureNonBackgroundTransformsForWorkspaceResize(
+                          oldWorkspaceSize: oldWorkspaceSize,
+                          newWorkspaceSize: nextWorkspaceSize,
+                          backgroundLayerId: current.id,
+                        )
+                      : const <String, _WorkspaceResizeLayerTransform>{};
+              nextLayers[targetIndex] = current.copyWith(
+                image: upscaledImage,
+                thumbnailBytes: resultBytes,
+                // Background upscale upgrades workspace size to match
+                // the new full-resolution canvas dimensions.
+                solidSize:
+                    current.isBackground ? nextWorkspaceSize : oldWorkspaceSize,
+              );
+              if (preservedLayerTransforms.isNotEmpty) {
+                for (int i = 0; i < nextLayers.length; i++) {
+                  final EditorLayer layer = nextLayers[i];
+                  final _WorkspaceResizeLayerTransform? transform =
+                      preservedLayerTransforms[layer.id];
+                  if (transform == null) continue;
+                  nextLayers[i] = layer.copyWith(
+                    position: transform.position,
+                    layerScale: transform.layerScale,
+                  );
+                }
+              }
+              _layers = nextLayers;
+              _selectedLayerId = current.id;
+            }
+          });
+        } else if (uploadBytesForProcess != null &&
+            uploadWorkspaceSizeForProcess != null) {
+          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
+            sourceBytes: uploadBytesForProcess,
             amount: selectedAmount,
           );
           final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
@@ -19440,24 +19520,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             _addOverlayImageLayer(
               image: upscaledImage,
               thumbnailBytes: resultBytes,
-              workspaceSize: workspaceSize,
+              workspaceSize: uploadWorkspaceSizeForProcess!,
             );
           });
         }
 
         _showExportMessage('Upscale ${selectedAmount.label} completed.');
-        if (sheetContext.mounted && sheetOpen) {
-          sheetOpen = false;
-          Navigator.of(sheetContext).pop();
-        }
       } catch (error) {
-        if (!sheetContext.mounted || !sheetOpen) return;
-        setSheetState(() {
-          final String message = error.toString().trim();
-          sheetError = message.startsWith('StateError: ')
-              ? message.substring('StateError: '.length)
-              : message;
-        });
+        if (sheetOpen && sheetContext.mounted) {
+          setSheetState(() {
+            sheetError = normalizeError(error);
+          });
+        } else {
+          _showExportMessage(normalizeError(error), isError: true);
+        }
       } finally {
         if (mounted) {
           setState(() {
