@@ -4877,6 +4877,19 @@ extension _UpscaleAmountUi on _UpscaleAmount {
   }
 }
 
+enum _UpscaleSourceMode { selectedLayer, uploadImage }
+
+extension _UpscaleSourceModeUi on _UpscaleSourceMode {
+  String get label {
+    switch (this) {
+      case _UpscaleSourceMode.selectedLayer:
+        return 'Selected Layer';
+      case _UpscaleSourceMode.uploadImage:
+        return 'Upload Image';
+    }
+  }
+}
+
 enum _RemoveBgEngine { briaPro, mlKitLogo }
 
 enum _AiVectorKind { icon, logo, symbol, illustration }
@@ -6849,6 +6862,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isPickingImage = false;
   bool _isExporting = false;
   bool _isUpscaleLayerProcessing = false;
+  bool _isUpscaleBottomSheetOpen = false;
   String? _upscaleEffectLayerId;
   EditorTool _activeTool = EditorTool.move;
   bool _isToolEnabled = false;
@@ -7205,6 +7219,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               icon: Icons.open_in_full_rounded,
               filled: _isToolEnabled && _activeTool == EditorTool.expand,
               onTap: _onExpandToolTap,
+            ),
+            const SizedBox(width: _topToolSpacing),
+            _toolButton(
+              filled: _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing,
+              onTap: _onUpscaleToolTap,
+              customChild: _UpscaleToolIcon(
+                color: _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing
+                    ? kActiveAccentForeground
+                    : WonderPicEditorScreen._iconColor,
+              ),
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
@@ -8461,6 +8485,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     _setActiveTool(EditorTool.expand, toggleWhenSame: false);
     _closeToolSettingsSidebarIfOpen();
+  }
+
+  void _onUpscaleToolTap() {
+    if (_isUpscaleBottomSheetOpen) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    _closeToolSettingsSidebarIfOpen();
+    unawaited(_openUpscaleBottomSheet());
   }
 
   void _onMarqueeToolTap() {
@@ -19115,73 +19148,155 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<void> _openUpscaleBottomSheet() async {
-    final EditorLayer? initialLayer = _selectedImageLayer();
-    if (initialLayer == null || initialLayer.image == null) {
-      _showExportMessage('Select an image layer first.', isError: true);
-      return;
-    }
+    if (_isUpscaleBottomSheetOpen) return;
 
     bool sheetOpen = true;
     _UpscaleAmount selectedAmount = _UpscaleAmount.k2;
+    _UpscaleSourceMode sourceMode = _selectedImageLayer() == null
+        ? _UpscaleSourceMode.uploadImage
+        : _UpscaleSourceMode.selectedLayer;
     bool isUpscaling = false;
+    bool isPickingSource = false;
     String? sheetError;
+    Uint8List? uploadSourceBytes;
+    ui.Image? uploadSourceImage;
+    String? uploadSourceName;
+
+    setState(() {
+      _isUpscaleBottomSheetOpen = true;
+    });
+
+    Future<void> pickSourceImage(StateSetter setSheetState) async {
+      if (isPickingSource || isUpscaling) return;
+      setSheetState(() {
+        isPickingSource = true;
+        sheetError = null;
+      });
+      try {
+        final XFile? file = await _picker.pickImage(
+          source: ImageSource.gallery,
+          requestFullMetadata: false,
+        );
+        if (file == null) return;
+        final Uint8List bytes = await file.readAsBytes();
+        final ui.Image image = await _decodeUiImage(bytes);
+        if (!mounted || !sheetOpen) return;
+        setSheetState(() {
+          uploadSourceBytes = bytes;
+          uploadSourceImage = image;
+          uploadSourceName =
+              file.name.trim().isEmpty ? 'Uploaded image' : file.name;
+        });
+      } on PlatformException {
+        if (!sheetOpen) return;
+        setSheetState(() {
+          sheetError = 'Gallery access failed. Please allow photo access.';
+        });
+      } catch (_) {
+        if (!sheetOpen) return;
+        setSheetState(() {
+          sheetError = 'Could not load uploaded image.';
+        });
+      } finally {
+        if (sheetOpen) {
+          setSheetState(() {
+            isPickingSource = false;
+          });
+        }
+      }
+    }
 
     Future<void> runUpscale(
       BuildContext sheetContext,
       StateSetter setSheetState,
     ) async {
       if (isUpscaling) return;
-      final int layerIndex =
-          _layers.indexWhere((layer) => layer.id == initialLayer.id);
-      if (layerIndex < 0 ||
-          _layers[layerIndex].type != EditorLayerType.image ||
-          _layers[layerIndex].image == null) {
-        setSheetState(() {
-          sheetError = 'Selected layer is no longer available.';
-        });
-        return;
-      }
-      final EditorLayer sourceLayer = _layers[layerIndex];
-      final ui.Image sourceImage = sourceLayer.image!;
       setSheetState(() {
         isUpscaling = true;
         sheetError = null;
       });
-      setState(() {
-        _isUpscaleLayerProcessing = true;
-        _upscaleEffectLayerId = sourceLayer.id;
-      });
       try {
-        final Uint8List sourceBytes =
-            await _encodeUiImageToPngBytes(sourceImage);
-        final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-          sourceBytes: sourceBytes,
-          amount: selectedAmount,
-        );
-        final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
-        if (!mounted) return;
-        _pushUndoSnapshot();
-        setState(() {
-          final int targetIndex =
-              _layers.indexWhere((layer) => layer.id == sourceLayer.id);
-          if (targetIndex >= 0) {
-            final List<EditorLayer> nextLayers =
-                List<EditorLayer>.from(_layers);
-            final EditorLayer current = nextLayers[targetIndex];
-            final Size preservedLogicalSize = current.solidSize ??
-                Size(
-                  sourceImage.width.toDouble(),
-                  sourceImage.height.toDouble(),
-                );
-            nextLayers[targetIndex] = current.copyWith(
+        if (sourceMode == _UpscaleSourceMode.selectedLayer) {
+          final EditorLayer? selectedLayer = _selectedImageLayer();
+          if (selectedLayer == null || selectedLayer.image == null) {
+            setSheetState(() {
+              sheetError = 'Select an image layer first.';
+            });
+            return;
+          }
+          final ui.Image sourceImage = selectedLayer.image!;
+          setState(() {
+            _isUpscaleLayerProcessing = true;
+            _upscaleEffectLayerId = selectedLayer.id;
+          });
+
+          final Uint8List sourceBytes =
+              await _encodeUiImageToPngBytes(sourceImage);
+          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
+            sourceBytes: sourceBytes,
+            amount: selectedAmount,
+          );
+          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
+          if (!mounted) return;
+          _pushUndoSnapshot();
+          setState(() {
+            final int targetIndex =
+                _layers.indexWhere((layer) => layer.id == selectedLayer.id);
+            if (targetIndex >= 0) {
+              final List<EditorLayer> nextLayers =
+                  List<EditorLayer>.from(_layers);
+              final EditorLayer current = nextLayers[targetIndex];
+              final Size preservedLogicalSize = current.solidSize ??
+                  Size(
+                    sourceImage.width.toDouble(),
+                    sourceImage.height.toDouble(),
+                  );
+              nextLayers[targetIndex] = current.copyWith(
+                image: upscaledImage,
+                thumbnailBytes: resultBytes,
+                solidSize: preservedLogicalSize,
+              );
+              _layers = nextLayers;
+              _selectedLayerId = current.id;
+            }
+          });
+        } else {
+          if (uploadSourceBytes == null || uploadSourceImage == null) {
+            setSheetState(() {
+              sheetError = 'Upload an image first.';
+            });
+            return;
+          }
+          final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+          final Size? workspaceSize =
+              workspace == null ? null : _workspaceSourceSize(workspace);
+          if (workspaceSize == null) {
+            setSheetState(() {
+              sheetError = 'Create or upload a workspace image first.';
+            });
+            return;
+          }
+          setState(() {
+            _isUpscaleLayerProcessing = true;
+            _upscaleEffectLayerId = _selectedImageLayer()?.id;
+          });
+
+          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
+            sourceBytes: uploadSourceBytes!,
+            amount: selectedAmount,
+          );
+          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
+          if (!mounted) return;
+          _pushUndoSnapshot();
+          setState(() {
+            _addOverlayImageLayer(
               image: upscaledImage,
               thumbnailBytes: resultBytes,
-              solidSize: preservedLogicalSize,
+              workspaceSize: workspaceSize,
             );
-            _layers = nextLayers;
-            _selectedLayerId = current.id;
-          }
-        });
+          });
+        }
+
         _showExportMessage('Upscale ${selectedAmount.label} completed.');
         if (sheetContext.mounted && sheetOpen) {
           sheetOpen = false;
@@ -19212,7 +19327,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
     await showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: false,
+      isScrollControlled: true,
       barrierColor: Colors.transparent,
       backgroundColor: const Color(0xFF1E1F22),
       shape: const RoundedRectangleBorder(
@@ -19223,10 +19338,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           top: false,
           child: StatefulBuilder(
             builder: (sheetContext, setSheetState) {
+              final EditorLayer? selectedLayer = _selectedImageLayer();
+              final bool hasSelectedLayer =
+                  selectedLayer != null && selectedLayer.image != null;
+              final bool hasUploadSource =
+                  uploadSourceBytes != null && uploadSourceImage != null;
+              final String sourceSubtitle =
+                  sourceMode == _UpscaleSourceMode.selectedLayer
+                      ? (hasSelectedLayer
+                          ? selectedLayer.name
+                          : 'No image layer selected')
+                      : (hasUploadSource
+                          ? (uploadSourceName ?? 'Uploaded image')
+                          : 'No uploaded source');
               return SizedBox(
-                height: MediaQuery.sizeOf(sheetContext).height * 0.30,
+                height: MediaQuery.sizeOf(sheetContext).height * 0.42,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  padding: EdgeInsets.fromLTRB(
+                    14,
+                    10,
+                    14,
+                    14 + MediaQuery.viewPaddingOf(sheetContext).bottom,
+                  ),
                   child: Column(
                     children: [
                       Container(
@@ -19242,7 +19375,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                         children: [
                           const Expanded(
                             child: Text(
-                              'Upscale Layer',
+                              'Upscale',
                               style: TextStyle(
                                 color: Color(0xFFF3F3F2),
                                 fontWeight: FontWeight.w800,
@@ -19269,18 +19402,117 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          initialLayer.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Color(0xFFB8B7B5),
-                            fontSize: 12.4,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: _UpscaleSourceMode.values.map((mode) {
+                          final bool selected = sourceMode == mode;
+                          return Expanded(
+                            child: Padding(
+                              padding: EdgeInsets.only(
+                                right: mode == _UpscaleSourceMode.selectedLayer
+                                    ? 5
+                                    : 0,
+                                left: mode == _UpscaleSourceMode.uploadImage
+                                    ? 5
+                                    : 0,
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: isUpscaling
+                                    ? null
+                                    : () {
+                                        setSheetState(() {
+                                          sourceMode = mode;
+                                          sheetError = null;
+                                        });
+                                      },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 120),
+                                  curve: Curves.easeOut,
+                                  height: 40,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? kActiveAccent
+                                        : const Color(0xFF1E1F22),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: selected
+                                          ? Colors.transparent
+                                          : const Color(0xFF605E5E),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    mode.label,
+                                    style: TextStyle(
+                                      color: selected
+                                          ? kActiveAccentForeground
+                                          : const Color(0xFF5E6775),
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12.6,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(growable: false),
+                      ),
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF24262B),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFF42454C)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                sourceSubtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFFB8B7B5),
+                                  fontSize: 12.4,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (sourceMode == _UpscaleSourceMode.uploadImage)
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: isUpscaling || isPickingSource
+                                    ? null
+                                    : () => pickSourceImage(setSheetState),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 6,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF1E1F22),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: const Color(0xFF605E5E),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    isPickingSource ? 'Picking...' : 'Upload',
+                                    style: const TextStyle(
+                                      color: Color(0xFFF3F3F2),
+                                      fontSize: 11.8,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -19354,7 +19586,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: _buildTextEffectFloatingActionButton(
-                          label: isUpscaling ? 'Upscaling...' : 'Upscale',
+                          label: isUpscaling
+                              ? 'Upscaling...'
+                              : sourceMode == _UpscaleSourceMode.selectedLayer
+                                  ? 'Upscale Layer'
+                                  : 'Upscale as Overlay',
                           onTap: isUpscaling
                               ? () {}
                               : () => runUpscale(sheetContext, setSheetState),
@@ -19370,10 +19606,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       },
     ).whenComplete(() {
       sheetOpen = false;
-      if (mounted && _isUpscaleLayerProcessing) {
+      if (mounted) {
         setState(() {
-          _isUpscaleLayerProcessing = false;
-          _upscaleEffectLayerId = null;
+          _isUpscaleBottomSheetOpen = false;
+          if (_isUpscaleLayerProcessing) {
+            _isUpscaleLayerProcessing = false;
+            _upscaleEffectLayerId = null;
+          }
         });
       }
     });
@@ -23122,13 +23361,6 @@ Hard requirements:
               icon: Icons.polyline_rounded,
               label: 'Vectors',
               onTap: _openVectorGeneratorBottomSheet,
-            ),
-          ),
-          Expanded(
-            child: _NavItem(
-              icon: Icons.auto_fix_high_rounded,
-              label: 'Upscale',
-              onTap: _openUpscaleBottomSheet,
             ),
           ),
           Expanded(
@@ -34965,6 +35197,58 @@ class _CloneStampToolIcon extends StatelessWidget {
             painter: _CloneStampToolPainter(color),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _UpscaleToolIcon extends StatelessWidget {
+  const _UpscaleToolIcon({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 1.2,
+            bottom: 1.2,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(1.8),
+                border: Border.all(color: color, width: 1.5),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 0.8,
+            top: 0.8,
+            child: Container(
+              width: 11.5,
+              height: 11.5,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(2.2),
+                border: Border.all(color: color, width: 1.7),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 5.8,
+            top: 5.4,
+            child: Icon(
+              Icons.north_east_rounded,
+              size: 9.8,
+              color: color,
+            ),
+          ),
+        ],
       ),
     );
   }

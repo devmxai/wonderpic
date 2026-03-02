@@ -655,6 +655,46 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_runMarqueeAction` (modal refresh hook)
   - `_setActiveTool` (marquee sheet state reset when leaving tool)
 
+### 0.27 Latest Handoff (March 2, 2026 - Upscale Moved To Top Tools + Dual Source Sheet)
+
+#### Request addressed
+- Move `Upscale` from bottom nav to top tools bar.
+- Update the icon to an upscale-style glyph.
+- On tap, open a bottom sheet with two modes:
+  - upscale selected layer in canvas
+  - upload an image, upscale it, then insert as overlay layer.
+
+#### Root cause
+- `Upscale` was wired only as a bottom-nav item.
+- Existing `_openUpscaleBottomSheet()` only supported selected-layer upscale and replaced the same layer in place.
+
+#### Fix applied
+- Added top tools Upscale button with custom glyph icon:
+  - small square + outward arrow + larger square visual.
+- Removed Upscale button from bottom navigation.
+- Added top-button handler:
+  - `_onUpscaleToolTap()`
+  - opens/closes Upscale bottom sheet from top toolbar.
+- Reworked Upscale bottom sheet to support source mode switching:
+  - `Selected Layer`
+  - `Upload Image`
+- Upload mode flow:
+  - pick image from gallery inside sheet
+  - run KIE Recraft Crisp Upscale
+  - insert result into canvas as a new overlay layer (uses current workspace bounds).
+- Selected-layer mode keeps previous behavior:
+  - run upscale on selected image layer
+  - replace that same layer image while preserving logical transform sizing.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_buildTopTools` (Upscale moved to top bar)
+  - `_buildBottomNav` (Upscale removed)
+  - `_onUpscaleToolTap`
+  - `_openUpscaleBottomSheet` (dual source workflow)
+  - `_UpscaleToolIcon` (new top-bar icon)
+  - `_UpscaleSourceMode` enum
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
