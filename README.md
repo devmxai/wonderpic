@@ -337,6 +337,21 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Visual style is now much closer and more consistent across tools.
 - While dragging handles (up/right/left), shimmer movement is more stable and less jumpy.
 
+### 0.13 Latest Handoff (March 2, 2026 - Generate Shimmer Soft Visual)
+
+#### UI refinement request addressed
+- Generate shimmer card after `+` -> `Generate Image` was too heavy and had an unwanted gold border look.
+
+#### Adjustments applied (Generate card only)
+- Removed orbit/border painter from generate progress card (no gold edge/ring effect).
+- Reduced card visual weight:
+  - softer shadow
+  - lower background alpha
+  - lower shimmer alpha
+  - lighter star sparkle opacity
+- Reduced global dim overlay behind the generate card for cleaner transparent look.
+- Kept progress `%` + status text + subtle blur behavior.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

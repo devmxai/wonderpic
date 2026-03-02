@@ -5424,10 +5424,10 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
                 borderRadius: BorderRadius.circular(cornerRadius),
                 boxShadow: const <BoxShadow>[
                   BoxShadow(
-                    color: Color(0x44111418),
-                    blurRadius: 28,
-                    spreadRadius: 2,
-                    offset: Offset(0, 14),
+                    color: Color(0x1E111418),
+                    blurRadius: 14,
+                    spreadRadius: 0,
+                    offset: Offset(0, 6),
                   ),
                 ],
               ),
@@ -5437,9 +5437,9 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
                   fit: StackFit.expand,
                   children: [
                     BackdropFilter(
-                      filter: ui.ImageFilter.blur(sigmaX: 9, sigmaY: 9),
+                      filter: ui.ImageFilter.blur(sigmaX: 5.4, sigmaY: 5.4),
                       child: Container(
-                        color: const Color(0xCC1E1F22),
+                        color: const Color(0x561E1F22),
                       ),
                     ),
                     Container(
@@ -5449,18 +5449,11 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
                           end: Alignment(-0.7 + (phase * 3.2), 0.15),
                           colors: const <Color>[
                             Color(0x00FFFFFF),
-                            Color(0x30FFFFFF),
+                            Color(0x22FFFFFF),
                             Color(0x00FFFFFF),
                           ],
                           stops: const <double>[0.0, 0.52, 1.0],
                         ),
-                      ),
-                    ),
-                    CustomPaint(
-                      painter: _ExportOrbitPainter(
-                        phase: phase,
-                        progress: smoothProgress,
-                        indeterminate: false,
                       ),
                     ),
                     CustomPaint(
@@ -5532,7 +5525,7 @@ class _AiMagicSparklesPainter extends CustomPainter {
       final Paint core = Paint()
         ..style = PaintingStyle.fill
         ..isAntiAlias = true
-        ..color = const Color(0xFFE6F24A).withOpacity(0.24 + (0.38 * pulse));
+        ..color = const Color(0xFFE6F24A).withOpacity(0.1 + (0.18 * pulse));
       canvas.drawCircle(c, radius * 0.48, core);
 
       final Paint cross = Paint()
@@ -5540,7 +5533,7 @@ class _AiMagicSparklesPainter extends CustomPainter {
         ..isAntiAlias = true
         ..strokeWidth = 0.9
         ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFF7FFB0).withOpacity(0.28 + (0.46 * pulse));
+        ..color = const Color(0xFFF7FFB0).withOpacity(0.12 + (0.22 * pulse));
       canvas.drawLine(
         Offset(c.dx - radius, c.dy),
         Offset(c.dx + radius, c.dy),
@@ -8037,7 +8030,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                Container(color: const Color(0x2A111418)),
+                Container(color: const Color(0x12111418)),
                 if (artboardRect != null)
                   Positioned.fromRect(
                     rect: artboardRect,
