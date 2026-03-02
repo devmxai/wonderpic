@@ -318,6 +318,25 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Generate loader targets a real workspace rect instead of relying on inferred fallback only.
 - This removes a major source of runtime instability in blank-first generate scenarios.
 
+### 0.12 Latest Handoff (March 2, 2026 - Unified Magic Shimmer + Jitter Smoothing)
+
+#### Request addressed
+- Use one consistent "magic shimmer" style across:
+  - Generate progress card
+  - Upscale/Remove Background layer magic effect
+  - Expand preview shimmer
+
+#### Changes applied
+- Generate progress card shimmer tone now matches the same glass sweep style used in floating magic panels (neutral white sweep, same movement profile).
+- Upscale/Remove Background layer shimmer motion was stabilized:
+  - switched from rect-fraction interpolation to beam-travel motion (`beamWidth` + `beamTravel`) for smoother movement while layer geometry changes.
+  - softened sparkle pulse intensity to reduce perceived flicker/jitter.
+- Expand preview shimmer motion was stabilized with the same beam-travel approach and smoother twinkle frequency.
+
+#### Practical result
+- Visual style is now much closer and more consistent across tools.
+- While dragging handles (up/right/left), shimmer movement is more stable and less jumpy.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

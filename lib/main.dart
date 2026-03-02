@@ -5445,11 +5445,11 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
                     Container(
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          begin: Alignment(-1.6 + (phase * 3.2), -0.18),
-                          end: Alignment(-0.75 + (phase * 3.2), 0.18),
+                          begin: Alignment(-1.6 + (phase * 3.2), -0.15),
+                          end: Alignment(-0.7 + (phase * 3.2), 0.15),
                           colors: const <Color>[
                             Color(0x00FFFFFF),
-                            Color(0x32F5FFBC),
+                            Color(0x30FFFFFF),
                             Color(0x00FFFFFF),
                           ],
                           stops: const <double>[0.0, 0.52, 1.0],
@@ -33294,15 +33294,16 @@ class _SkiaCanvasPainter extends CustomPainter {
     );
     canvas.restore();
 
-    final double shimmerCenter = ui.lerpDouble(
-        layerRect.left - (layerRect.width * 0.58),
-        layerRect.right + (layerRect.width * 0.58),
-        p)!;
-    final Rect shimmerRect = Rect.fromLTWH(
-      shimmerCenter - (layerRect.width * 0.34),
-      layerRect.top,
-      layerRect.width * 0.68,
-      layerRect.height,
+    final double beamWidth = (96.0 / safeViewScale)
+        .clamp(layerRect.width * 0.24, layerRect.width * 0.72)
+        .toDouble();
+    final double beamTravel = layerRect.width + (beamWidth * 2.0);
+    final double beamStart = layerRect.left - beamWidth;
+    final double shimmerCenter = beamStart + ((p * beamTravel) % beamTravel);
+    final Rect shimmerRect = Rect.fromCenter(
+      center: Offset(shimmerCenter, layerRect.center.dy),
+      width: beamWidth,
+      height: layerRect.height * 1.35,
     );
     final Paint shimmerPaint = Paint()
       ..blendMode = BlendMode.plus
@@ -33311,7 +33312,7 @@ class _SkiaCanvasPainter extends CustomPainter {
         end: Alignment.centerRight,
         colors: const <Color>[
           Color(0x00FFFFFF),
-          Color(0x66FFFFFF),
+          Color(0x54FFFFFF),
           Color(0x00FFFFFF),
         ],
         stops: const <double>[0.0, 0.5, 1.0],
@@ -33329,19 +33330,19 @@ class _SkiaCanvasPainter extends CustomPainter {
           layerRect.bottom - (layerRect.height * 0.24)),
     ];
     for (int i = 0; i < stars.length; i++) {
-      final double t = ((p + (i * 0.17)) % 1.0) * (2 * math.pi);
-      final double pulse = 0.42 + (0.58 * ((math.sin(t) + 1) / 2));
+      final double t = ((p * 0.72) + (i * 0.16)) * (2 * math.pi);
+      final double pulse = 0.76 + (0.24 * ((math.sin(t) + 1) / 2));
       final double starRadius = starBase * pulse;
       final Offset c = stars[i];
       final Paint corePaint = Paint()
         ..style = PaintingStyle.fill
-        ..color = const Color(0xFFE6F24A).withOpacity(0.34 + (0.44 * pulse));
+        ..color = const Color(0xFFE6F24A).withOpacity(0.24 + (0.26 * pulse));
       canvas.drawCircle(c, starRadius * 0.36, corePaint);
       final Paint crossPaint = Paint()
         ..style = PaintingStyle.stroke
         ..strokeWidth = (0.95 / safeViewScale).clamp(0.35, 1.35)
         ..strokeCap = StrokeCap.round
-        ..color = const Color(0xFFF7FFB0).withOpacity(0.36 + (0.5 * pulse));
+        ..color = const Color(0xFFF7FFB0).withOpacity(0.26 + (0.32 * pulse));
       canvas.drawLine(
         Offset(c.dx - starRadius, c.dy),
         Offset(c.dx + starRadius, c.dy),
@@ -33592,11 +33593,17 @@ class _SkiaCanvasPainter extends CustomPainter {
     );
     canvas.save();
     canvas.clipPath(generatedAreaPath);
-    final double shimmerCenterX = expandedRect.left +
-        (expandedRect.width * ((animationPhase * 1.15) % 1.0));
+    final double safeViewScale = scale.clamp(0.2, 8.0).toDouble();
+    final double beamWidth = (120.0 / safeViewScale)
+        .clamp(expandedRect.width * 0.22, expandedRect.width * 0.72)
+        .toDouble();
+    final double beamTravel = expandedRect.width + (beamWidth * 2.0);
+    final double beamStart = expandedRect.left - beamWidth;
+    final double shimmerCenterX =
+        beamStart + ((animationPhase * beamTravel) % beamTravel);
     final Rect shimmerRect = Rect.fromCenter(
       center: Offset(shimmerCenterX, expandedRect.center.dy),
-      width: expandedRect.width * 0.5,
+      width: beamWidth,
       height: expandedRect.height * 1.4,
     );
     final Paint shimmer = Paint()
@@ -33605,7 +33612,7 @@ class _SkiaCanvasPainter extends CustomPainter {
         shimmerRect.topRight,
         const <Color>[
           Color(0x00FFFFFF),
-          Color(0x66E8F1FF),
+          Color(0x54FFFFFF),
           Color(0x00FFFFFF),
         ],
         const <double>[0.0, 0.52, 1.0],
@@ -33619,12 +33626,9 @@ class _SkiaCanvasPainter extends CustomPainter {
           expandedRect.left + (_hash01(seed * 1.91) * expandedRect.width);
       final double y =
           expandedRect.top + (_hash01(seed * 3.73) * expandedRect.height);
-      final double twinkle = 0.35 +
-          (0.65 *
-              (0.5 +
-                  (0.5 *
-                      math.sin((animationPhase * 2 * math.pi * 2.1) +
-                          (seed * 0.92)))));
+      final double twinkle = 0.5 +
+          (0.5 *
+              math.sin((animationPhase * 2 * math.pi * 1.25) + (seed * 0.92)));
       final double radius =
           ((0.7 + (_hash01(seed * 5.27) * 1.3)) * sparkleInvScale)
               .clamp(0.35, 1.9);
@@ -33634,7 +33638,8 @@ class _SkiaCanvasPainter extends CustomPainter {
         Paint()
           ..isAntiAlias = true
           ..style = PaintingStyle.fill
-          ..color = const Color(0xFFEAF1FF).withOpacity(0.12 + (0.3 * twinkle)),
+          ..color =
+              const Color(0xFFEAF1FF).withOpacity(0.14 + (0.18 * twinkle)),
       );
     }
     canvas.restore();
