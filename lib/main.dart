@@ -7004,6 +7004,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isTextSettingsDockEnabled = false;
   bool _isTextSettingsBottomSheetOpen = false;
   String _textFontSearchQuery = '';
+  int _fontWarmupRequestToken = 0;
   _TextEffectFloatingPanel? _activeTextEffectFloatingPanel;
   bool _isPencilSettingsFloatingOpen = false;
   PencilSettings? _pencilSettingsFloatingBaseline;
@@ -12917,20 +12918,63 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _applyTextFontOption(_TextFontOption option) {
+    unawaited(_applyTextFontOptionAsync(option));
+  }
+
+  Future<void> _applyTextFontOptionAsync(_TextFontOption option) async {
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
-    final int currentWeight = selectedTextLayer.textFontWeight ?? 400;
-    final int requestedWeight =
-        option.defaultWeight > 0 ? option.defaultWeight : currentWeight;
-    final int nextWeight =
-        _resolveSupportedWeight(option.family, requestedWeight);
+    final String layerId = selectedTextLayer.id;
+    final int initialWeight = selectedTextLayer.textFontWeight ?? 400;
+    final int initialRequestedWeight =
+        option.defaultWeight > 0 ? option.defaultWeight : initialWeight;
+    final int initialNextWeight =
+        _resolveSupportedWeight(option.family, initialRequestedWeight);
+    final int requestToken = ++_fontWarmupRequestToken;
+    await _ensureFontReady(
+      family: option.family,
+      weight: initialNextWeight,
+    );
+    if (!mounted || requestToken != _fontWarmupRequestToken) {
+      return;
+    }
+    final int liveIndex = _layers.indexWhere((layer) => layer.id == layerId);
+    if (liveIndex < 0 || _layers[liveIndex].type != EditorLayerType.text) {
+      return;
+    }
+    final EditorLayer liveLayer = _layers[liveIndex];
+    final int liveCurrentWeight = liveLayer.textFontWeight ?? 400;
+    final int liveRequestedWeight =
+        option.defaultWeight > 0 ? option.defaultWeight : liveCurrentWeight;
+    final int liveNextWeight =
+        _resolveSupportedWeight(option.family, liveRequestedWeight);
     _syncTextLocaleFromFamily(option.family);
     _updateTextLayer(
-      selectedTextLayer.id,
+      layerId,
       textFontFamily: option.family,
-      textFontWeight: nextWeight,
+      textFontWeight: liveNextWeight,
       recordHistory: false,
     );
+  }
+
+  Future<void> _ensureFontReady({
+    required String family,
+    required int weight,
+  }) async {
+    final String normalizedFamily = family.trim();
+    if (normalizedFamily.isEmpty ||
+        !_kGoogleFontFamilies.contains(normalizedFamily)) {
+      return;
+    }
+    try {
+      GoogleFonts.getFont(
+        normalizedFamily,
+        fontWeight: _fontWeightFromNumeric(weight),
+      );
+      await GoogleFonts.pendingFonts();
+    } catch (_) {
+      // Keep current font when runtime fetch fails; avoid forced visual swap.
+    }
   }
 
   void _jumpTextFontSelection(
@@ -13239,10 +13283,25 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _onTextLayerDoubleTap(String layerId) {
+    unawaited(_startInlineTextEditingFromDoubleTap(layerId));
+  }
+
+  Future<void> _startInlineTextEditingFromDoubleTap(String layerId) async {
     final int index = _layers.indexWhere((layer) => layer.id == layerId);
     if (index < 0) return;
     final EditorLayer layer = _layers[index];
     if (layer.type != EditorLayerType.text) return;
+    final int requestToken = ++_fontWarmupRequestToken;
+    await _ensureFontReady(
+      family: layer.textFontFamily ?? '',
+      weight: layer.textFontWeight ?? 400,
+    );
+    if (!mounted || requestToken != _fontWarmupRequestToken) return;
+    final int liveIndex =
+        _layers.indexWhere((candidate) => candidate.id == layerId);
+    if (liveIndex < 0 || _layers[liveIndex].type != EditorLayerType.text) {
+      return;
+    }
     setState(() {
       _selectedLayerId = layerId;
       _activeTool = EditorTool.text;
@@ -26663,12 +26722,16 @@ class _InlineTextEditorLayout {
     required this.rect,
     required this.rotation,
     required this.fontSize,
+    required this.textDirection,
+    required this.textAlign,
   });
 
   final EditorLayer layer;
   final Rect rect;
   final double rotation;
   final double fontSize;
+  final TextDirection textDirection;
+  final TextAlign textAlign;
 }
 
 class _InlineTextEditorSession {
@@ -26679,6 +26742,8 @@ class _InlineTextEditorSession {
     required this.fontSizeScene,
     required this.widthScene,
     required this.heightScene,
+    required this.textDirection,
+    required this.textAlign,
   });
 
   final String layerId;
@@ -26687,6 +26752,8 @@ class _InlineTextEditorSession {
   final double fontSizeScene;
   final double widthScene;
   final double heightScene;
+  final TextDirection textDirection;
+  final TextAlign textAlign;
 }
 
 class _SkiaEditorCanvas extends StatefulWidget {
@@ -27105,11 +27172,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     if (layout == null) {
       return const SizedBox.shrink();
     }
-    final String currentText = _inlineTextController.text;
-    final bool isArabic = _containsArabicCharacters(currentText);
-    final TextDirection direction =
-        isArabic ? TextDirection.rtl : TextDirection.ltr;
-    final TextAlign align = isArabic ? TextAlign.right : TextAlign.left;
     final MediaQueryData noScaleMedia =
         MediaQuery.of(context).copyWith(textScaler: TextScaler.noScaling);
     return Positioned.fromRect(
@@ -27131,8 +27193,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
             enableInteractiveSelection: true,
             showCursor: true,
             scrollPadding: EdgeInsets.zero,
-            textAlign: align,
-            textDirection: direction,
+            textAlign: layout.textAlign,
+            textDirection: layout.textDirection,
             textAlignVertical: TextAlignVertical.center,
             cursorColor: const Color(0xFF334155),
             cursorWidth: 2.0,
@@ -27158,8 +27220,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
             ),
             decoration: const InputDecoration(
               border: InputBorder.none,
+              isCollapsed: true,
               isDense: true,
-              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+              contentPadding: EdgeInsets.zero,
             ),
           ),
         ),
@@ -27218,6 +27281,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       rect: rect,
       rotation: session.rotation,
       fontSize: fontSize,
+      textDirection: session.textDirection,
+      textAlign: session.textAlign,
     );
   }
 
@@ -27233,16 +27298,18 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         ((layer.textFontSize ?? 92) * unitScale * layer.layerScale)
             .clamp(8, 500)
             .toDouble();
+    final String seedText = layer.textValue ?? '';
+    final bool isArabic = _containsArabicCharacters(seedText);
+    final TextDirection direction =
+        isArabic ? TextDirection.rtl : TextDirection.ltr;
+    final TextAlign align = isArabic ? TextAlign.right : TextAlign.left;
     final double widthScene = math.max(
-      72 / _scale,
-      data.width + (28 / _scale),
+      24 / _scale,
+      data.width + (2 / _scale),
     );
     final double heightScene = math.max(
-      44 / _scale,
-      math.max(
-        data.height + (18 / _scale),
-        (fontSizeScene * 1.42) + (8 / _scale),
-      ),
+      18 / _scale,
+      math.max(data.height + (2 / _scale), fontSizeScene * 1.08),
     );
     return _InlineTextEditorSession(
       layerId: layerId,
@@ -27251,6 +27318,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       fontSizeScene: fontSizeScene,
       widthScene: widthScene,
       heightScene: heightScene,
+      textDirection: direction,
+      textAlign: align,
     );
   }
 

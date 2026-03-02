@@ -975,6 +975,51 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - `pubspec.yaml`
 - `pubspec.lock`
 
+### 0.38 Latest Handoff (March 2, 2026 - Stable Font Switching + Inline Text Position Lock)
+
+#### Reported UX issues
+- Font switching was visually unstable:
+  - selected text briefly rendered with a fallback/default font, then switched again to target font.
+- Inline text edit (double tap) was not position-stable:
+  - text appeared to shift while editing, then returned after commit.
+
+#### Root causes
+- Google Fonts families were being requested at selection time without waiting for font readiness, allowing a transient fallback render before final font paint.
+- Inline editor box was oversized and padded (`+28/+18` scene padding with extra `TextField` content padding), so the editing glyph origin did not match the canvas text origin.
+- Inline edit alignment could re-evaluate dynamically from current input, creating additional visual drift risk.
+
+#### Fix applied
+- Added targeted font warm-up before applying a selected text font:
+  - new `_ensureFontReady(...)` helper uses `GoogleFonts.getFont(...)` + `GoogleFonts.pendingFonts()`.
+  - `_applyTextFontOption(...)` now routes through async warm-up flow before layer update.
+  - request-token guard added to avoid stale/racing font apply operations.
+- Added the same font warm-up guard before entering inline edit on double tap:
+  - `_onTextLayerDoubleTap(...)` now starts async inline-edit bootstrap with token protection.
+- Locked inline editor geometry/style to canvas text metrics:
+  - reduced inline editor width/height padding to near-zero metric padding (`+2` scene units only).
+  - removed `TextField` content padding (`EdgeInsets.zero`) with collapsed decoration.
+  - locked text direction/alignment for each inline edit session (`textDirection` / `textAlign`) to keep layout stable during edit.
+
+#### Verification
+- Static check:
+  - `flutter analyze lib/main.dart`
+  - no new compile errors introduced; existing legacy warnings remain.
+- Tests:
+  - `flutter test` still fails on pre-existing baseline test assertion (`widget_test.dart` expects text `Layers`), unrelated to this change.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_applyTextFontOption`
+  - `_applyTextFontOptionAsync`
+  - `_ensureFontReady`
+  - `_onTextLayerDoubleTap`
+  - `_startInlineTextEditingFromDoubleTap`
+  - `_InlineTextEditorLayout`
+  - `_InlineTextEditorSession`
+  - `_buildInlineTextEditor`
+  - `_resolveInlineTextEditorLayout`
+  - `_createInlineTextEditorSession`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
