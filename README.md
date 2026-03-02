@@ -5,6 +5,202 @@ WonderPic is a Flutter-based mobile photo editor prototype focused on a professi
 This README is a full handoff document for engineers and AI models.
 If a new model/session takes over, this file should be enough to continue development without losing context.
 
+## 0. Latest Continuation Notes (March 1, 2026)
+
+This section is the **latest handoff checkpoint** and has higher priority than older notes when conflicts appear.
+
+### 0.1 Recent integrations
+- Firebase bootstrap files were added:
+  - `lib/firebase_options.dart`
+  - `android/app/google-services.json`
+  - `ios/Runner/GoogleService-Info.plist`
+- Auth flow wiring was added in `lib/main.dart`:
+  - Email/Password sign-up + login UI
+  - Google sign-in button and handling
+- iOS Google callback integration is present in:
+  - `ios/Runner/AppDelegate.swift`
+  - `ios/Runner/Info.plist` (`GIDClientID` + URL schemes)
+- iOS keychain/session entitlement integration was added:
+  - `ios/Runner/Runner.entitlements`
+  - `ios/Runner.xcodeproj/project.pbxproj` with `CODE_SIGN_ENTITLEMENTS` for Debug/Release/Profile
+
+### 0.2 Known active issue (high priority)
+- Android Google sign-in works after SHA setup + refreshed `google-services.json`.
+- iOS auth can still fail with:
+  - `Google sign-in failed ... com.google.GIDSignIn ... keychain error`
+  - similar keychain error for email/password session persistence.
+- This points to iOS runtime signing/keychain environment consistency (not only UI logic).
+
+### 0.3 Mandatory iOS auth resume checklist
+1. Verify bundle ID consistency across:
+   - Firebase iOS app
+   - Runner target
+   - `GoogleService-Info.plist`
+2. Verify `Runner.entitlements` is included by `CODE_SIGN_ENTITLEMENTS` in all Runner configs.
+3. In Xcode Runner target, ensure:
+   - Signing: Automatic
+   - Valid Team selected
+   - Keychain Sharing capability enabled
+4. Rebuild from clean state before retest:
+   - `flutter clean`
+   - `flutter pub get`
+   - `cd ios && pod install`
+   - remove app from simulator/device
+5. Re-test Google + email/password auth on iOS.
+
+### 0.4 Thread continuity rule
+- Starting a new chat/thread does **not** change project files.
+- Assistant memory from prior thread is not guaranteed.
+- Continue from:
+  - latest git commit
+  - current working tree
+  - this README section.
+
+### 0.5 Latest Handoff (March 2, 2026) - Regenerate Tool
+
+This subsection is the newest checkpoint for the next thread.
+
+#### What was implemented in this session
+- `Regenerate` now closes its bottom sheet immediately on submit, then runs generation outside the sheet (to avoid lifecycle/state crashes).
+- Regenerate now uses the same KIE generation pipeline used by the `+` -> `Generate Image` flow (`createTask` -> `recordInfo` -> output download).
+- During regenerate:
+  - canvas keeps magic shimmer on selected layer
+  - center progress is now a plain `%` text over canvas (no big boxed card UI)
+- Image upload path was hardened:
+  - retries with backoff
+  - stream-upload fallback when large payloads fail base64 upload
+
+#### Current unresolved issue (still active)
+- Regenerate is still unstable in real runs:
+  - slow requests (long wait)
+  - then upload/network failure in some attempts
+- Most recent reproducible error from device/simulator:
+  - `ClientException with SocketException: Connection reset by peer ... kieai.redpandaai.co/api/file-base64-upload`
+
+#### Critical note for next thread
+- Do **not** re-architect UI first.
+- First, stabilize the KIE upload + task path for regenerate with concrete request/response logging and endpoint verification against current KIE docs.
+- Focus specifically on model behavior for:
+  - `Nano Banana 2`
+  - `Flux 2 Pro`
+  - `Seedream 5 Lite` (highest priority)
+
+#### Exact code areas touched for regenerate
+- `lib/main.dart`:
+  - `_openRegenerateBottomSheet`
+  - `_runRegenerateRequest`
+  - `_resolveRegenerateQuality`
+  - `_buildAiCanvasGeneratingOverlay`
+  - `_startAiCanvasGeneratingProgressEstimator`
+  - `_uploadKieReferenceFile` (retry + stream/base64 fallback)
+  - `_generateImageWithKie`
+
+#### Next-thread first checklist (strict order)
+1. Add temporary debug logging for regenerate only:
+   - upload endpoint chosen (base64 vs stream)
+   - upload response code/body snippet
+   - createTask payload (sanitized) and response code/body snippet
+   - recordInfo state transitions and failMsg
+2. Re-test each model separately with:
+   - one reference (selected layer only)
+   - two references (selected layer + uploaded image)
+3. Confirm final payload keys for image-to-image for each model according to latest KIE docs.
+4. After API stability is confirmed, tune latency and keep current UI behavior.
+
+### 0.6 Thread-Split Handoff (March 2, 2026 - Latest)
+
+This subsection supersedes older regenerate notes when conflicts appear.
+
+#### Current blocker (still unresolved)
+- `Regenerate` is not production-stable yet:
+  - often very slow
+  - sometimes fails after long wait
+  - inconsistent failures across models
+
+#### Latest observed errors (must reproduce first)
+- Network/upload failure:
+  - `ClientException with SocketException: Connection reset by peer ... /api/file-base64-upload`
+- Server/model processing failure:
+  - `Internal image processing error. Please try again.`
+- Prior UI/runtime assertion seen during regenerate flow:
+  - `'package:flutter/src/widgets/framework.dart': Failed assertion: line 5917 ... '_dependents.isEmpty': is not true.`
+
+#### Confirmed UX requirement (do not regress)
+- On pressing `Regenerate`:
+  - close bottom sheet immediately
+  - show magic shimmer on canvas layer
+  - show a small center `%` counter from `0` to `100` (no boxed loader card)
+
+#### Likely root-cause zones
+- KIE reference upload path (`base64` vs stream fallback) is still unstable for some payloads.
+- Model-specific image-to-image payload mapping may still be incorrect/incomplete for:
+  - `Nano Banana 2`
+  - `Flux 2 Pro`
+  - `C Dream 5 Lite`
+- Some failures are likely transport-level (connection reset), not only UI logic.
+
+#### Mandatory first steps in the next thread
+1. Add scoped debug logs for regenerate only:
+   - upload strategy used
+   - upload status code + short response snippet
+   - createTask payload shape (sanitized) + response snippet
+   - polling transitions/fail reason
+2. Test matrix per model:
+   - base layer only
+   - base layer + uploaded reference image
+3. Validate exact KIE payload keys per model against current docs before more UI changes.
+4. Keep current shimmer/percent UX while fixing backend reliability and latency.
+
+#### Files to start from
+- `lib/main.dart` (regenerate + KIE upload/generate/poll path)
+- `README.md` (this handoff section)
+
+### 0.7 Latest Handoff (March 2, 2026 - Model Stability Update)
+
+This subsection is now the latest checkpoint and supersedes older regenerate blocker notes when conflicts appear.
+
+#### Current status (verified)
+- `Regenerate` is working for all three models:
+  - `Nano Banana 2`
+  - `Flux 2 Pro`
+  - `Seedream 5 Lite`
+- The tool works on any selected `image` layer:
+  - `Background` image layer
+  - `Overlay` image layer
+
+#### Root cause found for Nano Banana 2
+- The Nano 2 path was not enforcing strict second-reference transfer behavior in prompt instructions.
+- With two references, Nano treated image 2 more like optional style guidance in practice, not mandatory source transfer.
+- Nano path also benefited from stricter upload/input stability controls:
+  - `google_search: false`
+  - preserve reference format when possible
+  - prefer stream upload for references
+
+#### Fixes applied (Nano 2 only)
+- Strengthened Nano two-reference prompt contract to force strict merge behavior:
+  - image 1 = base scene
+  - image 2 = required source reference
+  - if text conflicts with image 2 appearance, image 2 wins
+- For regenerate with Nano + second reference:
+  - keep uploaded second reference bytes as-is (avoid extra recompress in that path)
+- Kept existing regenerate UX unchanged:
+  - close sheet immediately
+  - magic shimmer on selected layer
+  - center `%` progress text
+
+#### Implementation pointers
+- `lib/main.dart`
+  - `_buildNanoBananaPrompt`
+  - `_runRegenerateRequest`
+  - `_buildKieImageInput` (`google_search: false` for Nano)
+  - `_uploadKieReferenceFile` / `_generateImageWithKie` (stream-first toggle support)
+
+#### Workflow rule for next threads (mandatory)
+- After any behavior change to generation/regenerate/models:
+  1. update `README.md` handoff section in the same work session
+  2. push the updated code + README to GitHub
+- Purpose: any new model/session can continue immediately from README without missing behavior changes.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
@@ -12,13 +208,13 @@ Status captured from codebase on **February 18, 2026**.
 Implemented and working:
 - Custom editor UI (thin top toolbar + thin bottom navigation).
 - Selection/Move tool in top toolbar now uses a directional move icon style (`open_with_rounded`) instead of pointer-style icon.
-- Dynamic right settings sidebar (75% width overlay, does not relayout canvas).
+- Dynamic right settings sidebar (80% width overlay, does not relayout canvas).
 - Settings sidebar + all editor bottom sheets now use the app light style (white surfaces, light cards, dark text).
 - Workspace/artboard creation through:
   - `Add image` (gallery picker)
   - `Add solid layer` presets: Square, Story, Portrait
 - Layer system foundation with layer list bottom sheet.
-- Text tool with live editing, EN/AR fonts, weight controls, and color palette.
+- Text tool with live editing, EN/AR fonts, weight controls, color palette, outline stroke, and drop shadow controls.
 - Selection/transform for text layers and image overlay layers:
   - move
   - resize (corner handles)
@@ -34,12 +230,43 @@ Implemented and working:
 - Marquee Selection tool for image layers with modes: Rectangle, Ellipse, Free, and Object (manual box).
 - Selection actions in sidebar: Copy, Cut, Paste, Delete, New Layer, Crop.
 - Clone Stamp tool for image layers with source picking and brush settings.
+- Dedicated Remove Background tool (PhotoRoom) as a standalone top-toolbar tool (not inside Selection sidebar).
+- Remove Background now uses an embedded PhotoRoom Sandbox key by default (free mode), with optional runtime override via `--dart-define=PHOTOROOM_API_KEY=...`.
+- Remove Background endpoint is configured to `https://sdk.photoroom.com/v1/segment` (PhotoRoom Segment API).
+- Remove Background now supports dual engines in one professional flow:
+  - PhotoRoom (Cloud): highest quality cutout.
+  - ML Kit On-device Logo mode: fixed no-slider background removal tuned for logos/icons/vector-style assets with solid white/black backgrounds.
+- Crop tool (new top toolbar tool next to Clone) with floating controls.
+- Crop overlay workflow with real-time preview:
+  - dimmed outside area
+  - rule-of-thirds grid
+  - drag-to-move crop area
+  - resize from corners and edges
+- Crop ratio presets in floating panel: `Free Size`, `1:1`, `4:5`, `16:9 Portrait`.
+- Crop transform controls in floating panel:
+  - rotate canvas (90° steps left/right)
+  - straighten angle slider (-30°..+30°)
+- Crop apply pipeline:
+  - optional rotate/straighten processing
+  - final pixel crop commit to selected image layer
+  - done/cancel behavior via floating panel actions
+- AI Vector PNG generator (OpenAI + Gemini APIs) from short prompt:
+  - Vectors bottom-nav action opens generator sheet
+  - prompt + engine/model/type/style/quality/size/background options
+  - Gemini cheapest mode added: `gemini-2.5-flash-image` (Nano Banana)
+  - background color options are enabled only when workspace/background exists; otherwise generation is forced transparent
+  - defaults to `GPT Image 1.5` with auto-fallback to `GPT Image 1` if account access is limited
+  - prompt is tuned for clean flat icon output by default, with other styles available
+  - in-sheet live generation preview with shimmer loading state
+  - action flow: `Generate` -> `Regenerate` / `Use`
+  - selected result is inserted directly into canvas as layer
 - Clone performance pipeline for high-resolution images (preview + deferred full-res commit).
 - Undo/redo history system with snapshot stacks and circular controls in the Layers bottom sheet.
+- Pencil strokes are now persisted in history snapshots, so Pencil supports Undo/Redo like other edit operations.
 
 Not implemented yet (planned/incomplete):
 - Save/export pipeline.
-- Search/Home actions.
+- Vectors/Stickers browsing libraries (currently UI placeholders; AI generation path is implemented for Vectors).
 - Full vector/mask editing pipeline.
 - General transform controls for non-text foreground layers (future layer types).
 
@@ -49,7 +276,11 @@ Not implemented yet (planned/incomplete):
 
 - Flutter (Material 3)
 - Dart SDK constraint: `>=3.2.6 <4.0.0`
-- Main dependency: `image_picker: ^1.0.8`
+- Main dependencies:
+  - `image_picker: ^1.0.8`
+  - `image_gallery_saver_plus: ^3.0.5`
+  - `image: ^4.2.0`
+  - `http: ^1.2.0` (PhotoRoom API calls)
 
 Project path used during development:
 - `/Users/mx/Documents/my app pro/wonderpic`
@@ -95,7 +326,7 @@ Important note:
   - visibility/role: `isVisible`, `isBackground`
   - image data: `image`, `thumbnailBytes`
   - solid data: `solidColor`, `solidSize`
-  - text data: `textValue`, `textColor`, `textFontSize`, `textFontFamily`, `textFontWeight`
+  - text data: `textValue`, `textColor`, `textFontSize`, `textFontFamily`, `textFontWeight`, `textStrokeColor`, `textStrokeWidth`, `textShadowColor`, `textShadowOffsetX`, `textShadowOffsetY`, `textShadowBlur`, `textShadowSpread`, `textShadowOpacity`
   - transform: `position`, `layerScale`, `layerRotation`
 
 ---
@@ -126,6 +357,8 @@ Contains:
 - pencil tool
 - marquee selection tool (square selection icon)
 - clone stamp tool (custom painted icon)
+- crop tool (`crop_rounded`)
+- remove background tool (`auto_awesome_rounded`)
 - settings button (opens right sidebar)
 - Left menu and right settings remain fixed; center tool rail is horizontally scrollable for future tool expansion.
 - Vertical separators are rendered between fixed side actions and the scrollable center tool rail.
@@ -133,19 +366,20 @@ Contains:
 ### 6.2 Bottom nav
 Contains:
 - Layers
-- Home (placeholder)
 - Add
 - Text
-- Search (placeholder)
+- Vectors (AI PNG generation entry)
+- Stickers (placeholder)
 - Save (placeholder)
 
 ### 6.3 Right settings sidebar
-- Implemented as `endDrawer`, width = `75%` of screen.
+- Implemented as `endDrawer`, width = `80%` of screen.
 - Visual style is light: white base background, light card surfaces, dark typography/icons.
 - Dynamic content based on active tool context:
   - `pencil` -> Pencil settings
   - `text` -> Text settings
   - `clone` -> Clone settings
+  - `crop` -> Crop settings (opens crop floating controls)
   - `marquee` -> Selection mode + actions (`Copy/Cut/Paste/Delete/New Layer/Crop`)
   - `move` -> no direct selection-tool settings; resolves to selected layer context
 - For `move` + selected text layer, text settings are shown.
@@ -163,6 +397,7 @@ Contains:
 Coordinate systems:
 - Screen/local gesture coordinates -> scene coordinates via `_toScenePoint`.
 - Clone uses normalized UV coordinates (`0..1`) on artboard.
+- Crop uses normalized UV rect (`Rect` in `0..1`) per selected image layer.
 
 ---
 
@@ -233,11 +468,29 @@ On creation:
 
 ### 10.2 Sidebar behavior
 Text sidebar includes:
-- editable text field (live updates to canvas)
+- fixed top text block (not scrollable) containing a lightweight text input field
+  - this field is for editing only (no heavy local effect preview rendering)
+  - font family/weight selection is reflected in this field for quick font preview
+  - text effects preview/rendering happens on canvas only for smoother sidebar performance
+- only lower text controls are scrollable
+- compact spacing/typography sizing (~25% smaller) to preserve workspace inside sidebar
 - locale toggle: English / Arabic
-- font list area showing 5 visible cards with scrolling
+- font list area showing 4 visible cards with scrolling
 - weight selector (`B` cards) based on font-supported weights
-- color palette for text color
+- text color strip: rectangular swatches with horizontal scrolling
+- stroke section: outline width slider + rectangular color strip with horizontal scrolling
+- drop shadow section:
+  - opacity slider
+  - blur slider
+  - vertical slider (up/down)
+  - horizontal slider (left/right)
+  - rectangular shadow color strip with horizontal scrolling
+- stroke/shadow floating-edit mode:
+  - header button opens a fixed floating panel above bottom nav
+  - floating panel uses a glass-style surface (semi-transparent + blur) with light borders
+  - sidebar closes while floating panel is active to maximize canvas visibility
+  - `Cancel` reverts effect values to the state before opening the panel and closes it
+  - `Done` keeps current effect values and closes the panel
 
 ### 10.3 Font system
 - 20 English fonts + 20 Arabic fonts are registered in `pubspec.yaml`.
@@ -279,6 +532,7 @@ Behavior:
 - Draws only when active tool is `pencil`.
 - Single-finger draws.
 - Two-finger gesture pans/zooms canvas.
+- Each finished stroke is committed as one history step, so Undo/Redo works per stroke.
 
 ---
 
@@ -302,16 +556,27 @@ Behavior:
 ### 13.4 Behavior details
 - Source pointer is maintained per image layer.
 - Source selection is not reset when changing brush settings.
+- After source tap, clone immediately exits source-arming mode locally in canvas (no delayed mode switch between taps).
 - Canvas message snackbars for clone are currently suppressed by design (`_showToolMessage` is no-op).
 - Clone tap behavior is immediate on mobile: first tap can set source (when armed) or place a single clone stamp without requiring drag.
+- Clone sampling uses a per-stroke source snapshot (separate read buffer) to avoid smear/distortion from read-write overlap.
+- Clone settings support floating panel mode (matching text effects pattern):
+  - floating popup includes source button (icon + `Select Source`) and sliders (`Brush Size`, `Hardness`, `Opacity`)
+  - `Done` keeps current values
+  - `Cancel` restores values captured before opening floating mode
+- While clone floating popup is open, a live white brush preview indicator is shown at canvas center:
+  - diameter follows `Brush Size`
+  - edge softness follows `Hardness`
+  - indicator density/visibility follows `Opacity`
 
 ### 13.5 Performance pipeline (important)
 To handle high-resolution images smoothly:
 - Editable image buffers are prepared in RGBA.
 - If image max side > 2048, a preview buffer is generated (downscaled nearest).
 - Brush paint applies immediately to preview buffer.
-- Preview redraw is throttled (~42ms timer).
+- Preview redraw is throttled by frame callbacks (one visual update per frame).
 - After stroke end, a queued full-resolution replay commits changes back to full image.
+- Full-resolution replay runs in isolate and applies each stroke from a per-stroke source snapshot for stable results.
 
 This design is key for reducing lag on large images.
 
@@ -351,7 +616,7 @@ This design is key for reducing lag on large images.
 
 History model:
 - Snapshot-based history stored in-memory.
-- Each snapshot stores: `layers`, `selectedLayerId`, `activeTool`, `nextLayerId`, clone-source armed state, text locale, marquee mode, and marquee selection.
+- Each snapshot stores: `layers`, `pencilStrokes`, `selectedLayerId`, `activeTool`, `nextLayerId`, clone-source armed state, text locale, marquee mode, and marquee selection.
 - Two stacks are used: `undoStack` and `redoStack` (with size cap).
 
 Recorded operations:
@@ -360,6 +625,7 @@ Recorded operations:
 - Add/delete/toggle layer visibility.
 - Text content/style updates.
 - Text transform gestures (move/resize/rotate), grouped at gesture start/end.
+- Pencil stroke commits (one undo step per completed stroke).
 - Image updates from clone commits.
 - Marquee destructive pixel edits (cut/delete/crop) and selection layer creation/paste.
 
@@ -390,8 +656,9 @@ Configured:
 - `NSPhotoLibraryAddUsageDescription`
 
 ### Android
-- Uses `image_picker` default integration.
-- Manifest is currently default template.
+- `READ_MEDIA_IMAGES`
+- `READ_EXTERNAL_STORAGE` (max SDK 32)
+- `WRITE_EXTERNAL_STORAGE` (max SDK 29)
 
 ---
 
@@ -423,8 +690,7 @@ flutter analyze
 1. `test/widget_test.dart` is still default boilerplate and currently broken (`MyApp` reference).
 2. Editor logic is concentrated in a single large file (`lib/main.dart`), needs modularization.
 3. `vector` and `mask` are data-model placeholders only (no full editing pipeline yet).
-4. `Save`, `Search`, `Home` actions are UI placeholders.
-5. No export/render pipeline yet.
+4. `Search` and `Home` actions are still UI placeholders.
 
 ---
 
@@ -492,8 +758,141 @@ Before production release:
 
 ## 22. Immediate Next Product Milestones
 
-1. Export/save edited result to device gallery.
+1. Add explicit export progress details (estimated size/file size before save).
 2. Undo/redo command history.
 3. Modular refactor of `main.dart` with parity tests.
 4. Add real non-background image layers and transform handles.
 5. Add vector/mask pipelines and corresponding tool settings.
+
+---
+
+## 23. Export Pipeline (Implemented)
+
+Export entry:
+- Bottom nav `Save` opens a white render sheet.
+- User chooses:
+  - Format: `PNG` or `JPG`
+  - Quality preset: `Low`, `Medium`, `High`, `Ultra`
+
+Render strategy:
+- Uses Skia (`ui.PictureRecorder` + `Canvas`) to render the full composition, not a screen screenshot.
+- Renders background + visible layers (image/text/solid overlays) in layer order.
+- Replays committed pencil strokes in export output.
+- Applies transforms (`position`, `layerScale`, `layerRotation`) consistently with canvas rendering.
+
+Quality behavior:
+- `Low` caps longest edge to ~1280.
+- `Medium` caps longest edge to ~2048.
+- `High` caps longest edge to ~3072.
+- `Ultra` keeps full workspace resolution.
+
+Encoding and save:
+- `PNG`: encoded directly from `ui.ImageByteFormat.png`.
+- `JPG`: encoded from RGBA pixels via `package:image` with preset-based JPEG quality.
+- Saves directly to system gallery via `image_gallery_saver_plus`.
+- iOS save uses add-only mode (`isReturnImagePathOfIOS: false`) to avoid plugin hangs tied to reading `fullSizeImageURL`.
+- Export save call is guarded with timeout fallback to prevent indefinite `Saving` state.
+
+Export UI reliability:
+- Export progress overlay is responsive-width and text-ellipsis safe.
+- Fixed iOS overflow warning (`RenderFlex overflowed by 2.5px`) in the export status chip.
+
+Packages added:
+- `image_gallery_saver_plus`
+- `image`
+
+Android build baseline for export plugins:
+- `compileSdkVersion 34`
+- `minSdkVersion 21`
+
+---
+
+## 24. Overlay Shape Cut (Implemented)
+
+Scope:
+- Available only when selected layer is an `Image` overlay (non-background).
+- Shown from Settings Sidebar while Move/selection context is active.
+
+Flow:
+1. Select overlay image layer.
+2. Open `Settings` sidebar.
+3. Use `Shape Cut` and open floating panel.
+4. Pick shape + position/size.
+5. Press `Cut` to apply non-destructive intent as destructive pixel mask on the selected overlay.
+
+Shapes added:
+- Circle Sharp
+- Circle Rounded
+- Rect Sharp
+- Rect Rounded
+- Triangle
+
+Behavior:
+- Default preview appears centered at 50% size.
+- Shape preview is drawn live on top of selected overlay.
+- `Cancel` restores floating baseline and closes panel.
+- `Cut` applies mask (outside becomes transparent), closes popup, and records Undo snapshot.
+
+Technical notes:
+- Cut uses RGBA pixel processing on selected overlay layer only.
+- Background and other layers are untouched.
+- Preview path and pixel mask share the same shape geometry helper to keep visual/result parity.
+
+---
+
+## 25. Add Image Behavior (Fixed)
+
+Previous issue:
+- Adding a second image replaced the first image and incorrectly reset workspace/background.
+
+Current behavior:
+- First image added becomes the `Background / Work Area`.
+- Any later image added becomes an `Image Overlay` layer (non-background).
+- Background remains unchanged.
+
+Overlay insertion behavior:
+- New overlay is centered in workspace.
+- If overlay is larger than workspace, initial scale is auto-fitted (`contain`) so it appears inside the canvas.
+- New overlay is auto-selected after insertion.
+
+---
+
+## 26. Overlay Cut UX Upgrade + Sidebar Decoupling (Implemented)
+
+Layer settings access:
+- Settings sidebar no longer requires `Move` tool to be enabled just to access selected-layer context.
+- When no active tool is enabled:
+  - If an overlay image layer is selected, sidebar shows `Overlay Layer Settings`.
+  - If another layer type is selected, sidebar shows layer-context guidance.
+
+Overlay Shape Cut floating panel:
+- Reworked to a thinner floating style to preserve workspace visibility.
+- Shape options are now a horizontal scrolling strip of chips.
+- Removed size/position sliders from floating panel.
+
+Overlay Shape Cut on-canvas interaction:
+- While floating panel is open, shape editing is done directly on canvas:
+  - Drag inside shape: move shape.
+  - Drag corner handles (4 corners): resize shape.
+- Selection transform handles are hidden during active shape-cut editing to avoid gesture conflicts.
+- `Cancel` closes popup and restores baseline; `Cut` applies mask and closes popup.
+
+---
+
+## 27. Overlay Cut Handle System Upgrade (Implemented)
+
+The on-canvas Overlay Shape Cut transform now supports 8 handles:
+- 4 corner handles
+- 4 edge-middle handles (left/right/top/bottom)
+
+Behavior:
+- Corner drag: proportional resize (locked ratio behavior).
+- Edge-middle drag:
+  - Left/Right handle changes width only.
+  - Top/Bottom handle changes height only.
+- Drag inside shape: move shape.
+
+Implementation notes:
+- Edge drag resizes from the dragged side while opposite side remains anchored.
+- Shape bounds remain clamped inside overlay image bounds.
+- Selection layer transform handles are still hidden while Overlay Cut editing is active to prevent gesture conflicts.
