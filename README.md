@@ -403,6 +403,25 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Regenerate animation path is lighter and smoother.
 - Canvas content under the generate overlay is now visibly blurred with a moving blur sweep, matching the requested style direction.
 
+### 0.16 Latest Handoff (March 2, 2026 - Shimmer Magic Effect Reference + Text Pulse)
+
+#### Reference locked
+- The current blur + shimmer loading style is now the canonical shared reference:
+  - Name: `Shimmer Magic Effect`
+  - Primary reference implementation: `_AiMagicProgressIndicator` in `lib/main.dart`
+- This reference should be reused for any future loading surfaces that need the same visual language.
+
+#### UI text refinement
+- Progress `%` and status text were tuned to be slightly smaller.
+- Added soft luminous pulse behavior to both texts:
+  - subtle scale pulse
+  - adaptive glow/shadow pulse
+  - preserved center alignment and existing UX flow
+
+#### Result
+- Text reads cleaner at high progress values while feeling more alive.
+- Glow pulse is smooth and professional without becoming distracting.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

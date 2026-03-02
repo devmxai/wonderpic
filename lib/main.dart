@@ -5366,6 +5366,7 @@ class _FloatingGlassShimmerState extends State<_FloatingGlassShimmer>
 }
 
 class _AiMagicProgressIndicator extends StatefulWidget {
+  // Canonical "Shimmer Magic Effect" reference for AI loading overlays.
   const _AiMagicProgressIndicator({
     required this.progress,
     required this.panelSize,
@@ -5400,9 +5401,9 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
     final Size panelSize = widget.panelSize;
     final double minSide = math.min(panelSize.width, panelSize.height);
     final double percentFontSize =
-        (minSide * 0.14).clamp(16.0, 29.0).toDouble();
+        (minSide * 0.128).clamp(14.8, 26.4).toDouble();
     final double statusFontSize =
-        (minSide * 0.075).clamp(11.0, 15.0).toDouble();
+        (minSide * 0.067).clamp(10.4, 13.8).toDouble();
     final double horizontalPadding =
         (panelSize.width * 0.08).clamp(12.0, 28.0).toDouble();
     return TweenAnimationBuilder<double>(
@@ -5416,6 +5417,24 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
             final double phase = _controller.value;
             final int percent =
                 (smoothProgress * 100).round().clamp(0, 100).toInt();
+            final double textPulse =
+                ((math.sin((phase * 2 * math.pi) - (math.pi / 2)) + 1) / 2)
+                    .clamp(0.0, 1.0)
+                    .toDouble();
+            final double percentScale = 0.965 + (0.035 * textPulse);
+            final double statusScale = 0.972 + (0.028 * textPulse);
+            final Color percentColor = Color.lerp(
+                  const Color(0xFFE3E7EF),
+                  const Color(0xFFFFFFFF),
+                  0.32 + (0.68 * textPulse),
+                ) ??
+                const Color(0xFFF3F3F2);
+            final Color statusColor = Color.lerp(
+                  const Color(0xFFC9CDD5),
+                  const Color(0xFFE8ECF4),
+                  0.24 + (0.62 * textPulse),
+                ) ??
+                const Color(0xFFD4D4D3);
             final double blurBandWidth =
                 (panelSize.width * 0.34).clamp(72.0, 260.0).toDouble();
             final double blurBandTravel = panelSize.width + blurBandWidth;
@@ -5500,25 +5519,65 @@ class _AiMagicProgressIndicatorState extends State<_AiMagicProgressIndicator>
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                '$percent%',
-                                style: TextStyle(
-                                  color: const Color(0xFFF3F3F2),
-                                  fontSize: percentFontSize,
-                                  fontWeight: FontWeight.w800,
+                              Transform.scale(
+                                scale: percentScale,
+                                child: Text(
+                                  '$percent%',
+                                  style: TextStyle(
+                                    color: percentColor,
+                                    fontSize: percentFontSize,
+                                    fontWeight: FontWeight.w800,
+                                    shadows: <Shadow>[
+                                      Shadow(
+                                        color: Colors.white.withOpacity(
+                                            0.08 + (0.24 * textPulse)),
+                                        blurRadius: 2.6 + (8.2 * textPulse),
+                                        offset: const Offset(0, 0),
+                                      ),
+                                      Shadow(
+                                        color:
+                                            const Color(0xCC111418).withOpacity(
+                                          0.34 + (0.15 * (1 - textPulse)),
+                                        ),
+                                        blurRadius:
+                                            7.0 + (2.2 * (1 - textPulse)),
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(
-                                widget.statusText,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: const Color(0xFFD4D4D3),
-                                  fontSize: statusFontSize,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.25,
+                              const SizedBox(height: 5),
+                              Transform.scale(
+                                scale: statusScale,
+                                child: Text(
+                                  widget.statusText,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontSize: statusFontSize,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.25,
+                                    shadows: <Shadow>[
+                                      Shadow(
+                                        color: Colors.white.withOpacity(
+                                            0.05 + (0.17 * textPulse)),
+                                        blurRadius: 1.8 + (5.0 * textPulse),
+                                        offset: const Offset(0, 0),
+                                      ),
+                                      Shadow(
+                                        color:
+                                            const Color(0xC8111418).withOpacity(
+                                          0.28 + (0.14 * (1 - textPulse)),
+                                        ),
+                                        blurRadius:
+                                            5.8 + (1.8 * (1 - textPulse)),
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ],
