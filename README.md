@@ -286,7 +286,7 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - In some transition states (sheet close / route lifecycle), that `context` can be deactivated and ancestor lookup asserts in debug mode.
 
 #### Fix applied
-- Replaced editor snackbar lookups to use active scaffold context via `_scaffoldKey.currentContext` + `ScaffoldMessenger.maybeOf(...)`.
+- Replaced editor snackbar lookups to use a dedicated `ScaffoldMessenger` key (no inherited-context lookup in async paths).
 - Updated all direct editor snackbar call sites:
   - `_showExportMessage`
   - `_createTextLayer` (no-workspace warning)
