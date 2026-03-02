@@ -949,6 +949,32 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - `pubspec.yaml`
   - added `google_fonts`
 
+### 0.37 Latest Handoff (March 2, 2026 - Hot Restart Failure Fix for Fonts)
+
+#### Reported issue
+- App failed to resume after hot restart/build with compile error from `google_fonts`:
+  - `Type 'FontFeature' not found`
+  - source path inside pub cache: `google_fonts-6.2.0`
+
+#### Root cause
+- Project is running on Flutter `3.16.9`.
+- `google_fonts 6.2.0` introduced API usage not compatible with this runtime toolchain during app compile/hot-restart.
+
+#### Fix applied
+- Pinned dependency to an older compatible version (exact pin, no caret):
+  - `google_fonts: 6.1.0`
+- Regenerated lockfile.
+
+#### Verification
+- `flutter pub get` resolved `google_fonts 6.1.0`.
+- Android debug build completed successfully:
+  - `flutter build apk --debug`
+  - output: `build/app/outputs/flutter-apk/app-debug.apk`
+
+#### Primary code touchpoints
+- `pubspec.yaml`
+- `pubspec.lock`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
