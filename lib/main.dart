@@ -7978,82 +7978,87 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _isUpscaleLayerProcessing && _upscaleEffectLayerId != null;
     final double normalizedProgress =
         _aiCanvasGeneratingProgress.clamp(0.0, 1.0).toDouble();
-    final Rect? artboardRect = _aiCanvasGeneratingArtboardRect();
-    final Size panelSize = artboardRect?.size ?? const Size(148, 148);
     final String statusText = _aiCanvasGeneratingStatusText(normalizedProgress);
-    if (minimalCounterOnly) {
-      final Widget counter = TweenAnimationBuilder<double>(
-        tween: Tween<double>(end: normalizedProgress),
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        builder: (context, smooth, _) {
-          final int smoothPercent = (smooth * 100).round().clamp(0, 100);
-          return Text(
-            '$smoothPercent%',
-            style: const TextStyle(
-              color: Color(0xFFF3F3F2),
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              shadows: <Shadow>[
-                Shadow(
-                  color: Color(0xAA111418),
-                  blurRadius: 16,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-      return Positioned.fill(
-        child: IgnorePointer(
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (artboardRect != null)
-                Positioned.fromRect(
-                  rect: artboardRect,
-                  child: Center(child: counter),
-                )
-              else
-                Center(child: counter),
-            ],
-          ),
-        ),
-      );
-    }
     return Positioned.fill(
       child: IgnorePointer(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Container(color: const Color(0x2A111418)),
-            if (artboardRect != null)
-              Positioned.fromRect(
-                rect: artboardRect,
-                child: _AiMagicProgressIndicator(
-                  progress: _aiCanvasGeneratingProgress,
-                  panelSize: panelSize,
-                  statusText: statusText,
-                ),
-              )
-            else
-              Center(
-                child: _AiMagicProgressIndicator(
-                  progress: _aiCanvasGeneratingProgress,
-                  panelSize: panelSize,
-                  statusText: statusText,
-                ),
-              ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final Size canvasSize = Size(
+              constraints.maxWidth,
+              constraints.maxHeight,
+            );
+            final Rect? artboardRect =
+                _aiCanvasGeneratingArtboardRect(canvasSize);
+            final Size panelSize = artboardRect?.size ?? const Size(148, 148);
+            if (minimalCounterOnly) {
+              final Widget counter = TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: normalizedProgress),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder: (context, smooth, _) {
+                  final int smoothPercent =
+                      (smooth * 100).round().clamp(0, 100);
+                  return Text(
+                    '$smoothPercent%',
+                    style: const TextStyle(
+                      color: Color(0xFFF3F3F2),
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      shadows: <Shadow>[
+                        Shadow(
+                          color: Color(0xAA111418),
+                          blurRadius: 16,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (artboardRect != null)
+                    Positioned.fromRect(
+                      rect: artboardRect,
+                      child: Center(child: counter),
+                    )
+                  else
+                    Center(child: counter),
+                ],
+              );
+            }
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(color: const Color(0x2A111418)),
+                if (artboardRect != null)
+                  Positioned.fromRect(
+                    rect: artboardRect,
+                    child: _AiMagicProgressIndicator(
+                      progress: _aiCanvasGeneratingProgress,
+                      panelSize: panelSize,
+                      statusText: statusText,
+                    ),
+                  )
+                else
+                  Center(
+                    child: _AiMagicProgressIndicator(
+                      progress: _aiCanvasGeneratingProgress,
+                      panelSize: panelSize,
+                      statusText: statusText,
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
   }
 
-  Rect? _aiCanvasGeneratingArtboardRect() {
-    final Size? canvasSize = _currentCanvasViewportSize();
-    if (canvasSize == null) return null;
+  Rect? _aiCanvasGeneratingArtboardRect(Size canvasSize) {
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) return null;
     final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
     final Size? workspaceSize =
         workspace == null ? null : _workspaceSourceSize(workspace);
@@ -8926,6 +8931,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       preset: request.qualityPreset,
       baseImage: sourceImage,
     );
+    final String apiKey = _kieApiKey.trim();
+    if (apiKey.isEmpty) {
+      _showExportMessage(
+        'KIE API key missing. Add --dart-define=KIE_API_KEY=...',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() {
       _lastRegeneratePrompt = request.prompt;
@@ -9357,8 +9370,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Size? _currentCanvasViewportSize() {
-    final Size? canvasSize = _canvasViewportKey.currentContext?.size;
-    if (canvasSize == null || canvasSize.width <= 0 || canvasSize.height <= 0) {
+    final BuildContext? viewportContext = _canvasViewportKey.currentContext;
+    if (viewportContext == null) return null;
+    final RenderObject? renderObject = viewportContext.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return null;
+    }
+    final Size canvasSize = renderObject.size;
+    if (canvasSize.width <= 0 || canvasSize.height <= 0) {
       return null;
     }
     return canvasSize;
@@ -20802,6 +20821,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _AiImageGenerateRequest request,
   ) async {
     if (_isAiCanvasGenerating || !mounted) return;
+    final String apiKey = _kieApiKey.trim();
+    if (apiKey.isEmpty) {
+      _showExportMessage(
+        'KIE API key missing. Add --dart-define=KIE_API_KEY=...',
+        isError: true,
+      );
+      return;
+    }
 
     setState(() {
       _defaultKieAiImageModel = request.model;

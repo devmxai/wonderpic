@@ -249,6 +249,30 @@ This subsection is the latest checkpoint for `+` -> `Generate Image` loading UX.
   - `_runAiImageGenerateRequest`
   - `_runRegenerateRequest`
 
+### 0.9 Latest Handoff (March 2, 2026 - Generate Crash + API Key Guard)
+
+This subsection supersedes the unstable part of 0.8 related to runtime crash.
+
+#### Crash root cause
+- The AI generate overlay was computing artboard bounds through `_currentCanvasViewportSize()` during widget build.
+- That path used `BuildContext.size`, which can assert (`Element.size`) when read in build timing before stable layout.
+
+#### Hotfix applied
+- `_buildAiCanvasGeneratingOverlay` now computes canvas size via `LayoutBuilder` constraints (build-safe).
+- `_aiCanvasGeneratingArtboardRect` now receives explicit `canvasSize` instead of reading viewport context size internally.
+- `_currentCanvasViewportSize()` was hardened to use `RenderBox` + `hasSize` check (no `context.size` direct read).
+
+#### API key behavior adjustment
+- Added early guard in both:
+  - `_runAiImageGenerateRequest`
+  - `_runRegenerateRequest`
+- If `KIE_API_KEY` is missing, flow exits before entering generating state and shows clear message:
+  - `KIE API key missing. Add --dart-define=KIE_API_KEY=...`
+
+#### Important runtime note
+- Embedded keys are intentionally empty for repository push protection.
+- Generation now requires runtime key injection via `--dart-define`.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
