@@ -581,6 +581,25 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
 - Viewport no longer snaps back unexpectedly after pressing `Expand`.
 - Expand loading remains scoped to the final expand frame with stable visual behavior.
 
+### 0.24 Latest Handoff (March 2, 2026 - Expand Overlay Rect Uses Real Viewport Pan/Zoom)
+
+#### Reported issue
+- Expand loading blur/shimmer could appear almost on the whole canvas instead of the exact expand target when user had changed camera (pan/zoom).
+
+#### Root cause
+- Parent overlay rect calculation was using static artboard coordinates and did not include live canvas transform (`pan` + `scale`) from `_SkiaEditorCanvasState`.
+- This caused mismatch between rendered image location and overlay target rect.
+
+#### Fix applied
+- Added canvas-state helper:
+  - `expandGeneratingTargetRectInViewport(...)`
+  - computes expand target bounds in scene space, then transforms to viewport using current `_pan` and `_scale`, then clips to visible canvas.
+- Updated parent expand overlay targeting to use this live viewport rect first, with old math kept only as fallback.
+
+#### Result
+- Expand shimmer/blur now tracks the exact expanded frame location under current camera transform.
+- Overlay is constrained to the new expand bounds (including image area inside that frame), not a broad near-full-canvas region.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.

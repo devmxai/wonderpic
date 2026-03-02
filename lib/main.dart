@@ -8208,6 +8208,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         workspaceSize.height <= 0) {
       return null;
     }
+    final Rect? viewportResolved = _editorCanvasStateKey.currentState
+        ?.expandGeneratingTargetRectInViewport(
+      layer: layer,
+      config: config,
+      workspaceSize: workspaceSize,
+    );
+    if (viewportResolved != null) {
+      return viewportResolved;
+    }
 
     final Rect artboard = _computeArtboardRect(
       canvasSize: canvasSize,
@@ -26736,6 +26745,80 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
 
   void _repaintCanvas() {
     _canvasRepaintTick.value++;
+  }
+
+  Rect? expandGeneratingTargetRectInViewport({
+    required EditorLayer layer,
+    required _ExpandToolConfig config,
+    required Size workspaceSize,
+  }) {
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return null;
+    }
+    if (workspaceSize.width <= 0 || workspaceSize.height <= 0) {
+      return null;
+    }
+    if (layer.type != EditorLayerType.image) return null;
+    final ui.Image? layerImage = layer.image;
+    if (layerImage == null) return null;
+
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _ImageLayerSceneData? layerData = _buildImageLayerSceneData(
+      layer: layer,
+      image: layerImage,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+      rotateHandleDistance: _topRotateHandleDistance,
+      moveHandleDistance: _bottomMoveHandleDistance,
+    );
+    if (layerData == null) return null;
+
+    double clampSide(double value) => value.clamp(0.0, 3.0).toDouble();
+    final Rect expandedRectLocal = Rect.fromLTRB(
+      (-layerData.width / 2) - (clampSide(config.leftExpand) * layerData.width),
+      (-layerData.height / 2) -
+          (clampSide(config.topExpand) * layerData.height),
+      (layerData.width / 2) + (clampSide(config.rightExpand) * layerData.width),
+      (layerData.height / 2) +
+          (clampSide(config.bottomExpand) * layerData.height),
+    );
+    final List<Offset> sceneCorners = <Offset>[
+      expandedRectLocal.topLeft,
+      expandedRectLocal.topRight,
+      expandedRectLocal.bottomRight,
+      expandedRectLocal.bottomLeft,
+    ].map((point) {
+      return layerData.center + _rotateVector(point, layerData.rotation);
+    }).toList(growable: false);
+    if (sceneCorners.isEmpty) return null;
+
+    final double viewScale = _scale;
+    final List<Offset> viewportCorners = sceneCorners.map((scenePoint) {
+      return Offset(
+        (scenePoint.dx * viewScale) + _pan.dx,
+        (scenePoint.dy * viewScale) + _pan.dy,
+      );
+    }).toList(growable: false);
+    double minX = viewportCorners.first.dx;
+    double maxX = viewportCorners.first.dx;
+    double minY = viewportCorners.first.dy;
+    double maxY = viewportCorners.first.dy;
+    for (final Offset point in viewportCorners) {
+      if (point.dx < minX) minX = point.dx;
+      if (point.dx > maxX) maxX = point.dx;
+      if (point.dy < minY) minY = point.dy;
+      if (point.dy > maxY) maxY = point.dy;
+    }
+    final Rect bounds = Rect.fromLTRB(minX, minY, maxX, maxY);
+    final Rect canvasRect = Offset.zero & _lastCanvasSize;
+    final Rect clipped = bounds.intersect(canvasRect);
+    if (clipped.width <= 1 || clipped.height <= 1) {
+      return null;
+    }
+    return clipped;
   }
 
   void commitExpandViewportAfterApply({
