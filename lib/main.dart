@@ -11735,15 +11735,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Future<Uint8List> _upscaleImageWithKieRecraftCrisp({
-    required Uint8List sourceBytes,
+    Uint8List? sourceBytes,
+    ui.Image? sourceImage,
     required _UpscaleAmount amount,
   }) async {
-    Future<Uint8List> runSinglePass({required bool conservative}) async {
-      final Uint8List uploadBytes = await _encodeBytesForUpscaleUpload(
-        sourceBytes,
-        amount: amount,
-        conservative: conservative,
+    if (sourceBytes == null && sourceImage == null) {
+      throw ArgumentError(
+        'Either sourceBytes or sourceImage is required for upscale.',
       );
+    }
+
+    Future<Uint8List> runSinglePass({required bool conservative}) async {
+      final Uint8List uploadBytes = sourceImage != null
+          ? await _encodeUiImageForUpscaleUpload(
+              sourceImage,
+              amount: amount,
+              conservative: conservative,
+            )
+          : await _encodeBytesForUpscaleUpload(
+              sourceBytes!,
+              amount: amount,
+              conservative: conservative,
+            );
       final String imageUrl = await _uploadKieReferenceFile(
         uploadBytes,
         normalizeOrientation: false,
@@ -11755,17 +11768,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       try {
         return await _pollKieTaskAndDownload(
           taskId: taskId,
-          maxAttempts: 120,
+          maxAttempts: 180,
           pollDelayResolver: _kieUpscalePollDelay,
-          requestTimeout: const Duration(seconds: 18),
+          requestTimeout: const Duration(seconds: 12),
         );
       } on TimeoutException {
         // Keep polling the same task instead of creating a new one.
         return _pollKieTaskAndDownload(
           taskId: taskId,
-          maxAttempts: 90,
+          maxAttempts: 360,
           pollDelayResolver: _kieUpscaleExtendedPollDelay,
-          requestTimeout: const Duration(seconds: 18),
+          requestTimeout: const Duration(seconds: 12),
         );
       }
     }
@@ -11817,6 +11830,46 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return Isolate.run<Uint8List>(
       () => _encodeJpgFromBytesForAiUploadIsolate(
         encodedBytes: safeBytes,
+        quality: jpegQuality,
+        maxLongEdge: maxLongEdge,
+      ),
+    );
+  }
+
+  Future<Uint8List> _encodeUiImageForUpscaleUpload(
+    ui.Image sourceImage, {
+    required _UpscaleAmount amount,
+    required bool conservative,
+  }) async {
+    final int jpegQuality = _upscaleUploadJpegQuality(
+      amount: amount,
+      conservative: conservative,
+    );
+    final int maxLongEdge = _upscaleUploadMaxLongEdge(
+      amount: amount,
+      conservative: conservative,
+    );
+    final ByteData? rawData = await sourceImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+    if (rawData == null) {
+      final Uint8List fallbackPng = await _encodeUiImageToPngBytes(sourceImage);
+      return _encodeBytesForUpscaleUpload(
+        fallbackPng,
+        amount: amount,
+        conservative: conservative,
+      );
+    }
+    final Uint8List rgba = Uint8List.fromList(
+      rawData.buffer.asUint8List(0, rawData.lengthInBytes),
+    );
+    final int width = sourceImage.width;
+    final int height = sourceImage.height;
+    return Isolate.run<Uint8List>(
+      () => _encodeJpgFromRgbaForAiUploadIsolate(
+        rgba: rgba,
+        width: width,
+        height: height,
         quality: jpegQuality,
         maxLongEdge: maxLongEdge,
       ),
@@ -19327,10 +19380,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             _upscaleEffectLayerId = selectedLayer.id;
           });
 
-          final Uint8List sourceBytes =
-              await _encodeUiImageToPngBytes(sourceImage);
           final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-            sourceBytes: sourceBytes,
+            sourceImage: sourceImage,
             amount: selectedAmount,
           );
           final ui.Image upscaledImage = await _decodeUiImage(resultBytes);

@@ -811,6 +811,37 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_pollKieTaskAndDownload`
   - `_UpscaleToolIcon`
 
+### 0.32 Latest Handoff (March 2, 2026 - Upscale Deep Latency Diagnosis + Pipeline Trim)
+
+#### Reported issue
+- Upscale is still perceived as too slow (`~45s` to `1+ min`) and sometimes ends in error after long wait.
+
+#### Deep diagnosis (confirmed with live KIE API checks)
+- Model/API path is correct and unchanged:
+  - `model: recraft/crisp-upscale`
+  - `createTask` -> `recordInfo`
+- Real provider-side latency can spike much higher than previous assumptions:
+  - observed `costTime` around `338s` / `341s` on live `recordInfo` payloads.
+- Root bottleneck is mostly cloud task execution/backlog on KIE for this model (not UI shimmer, not icon, not local animation).
+- A secondary local overhead existed for selected-layer upscale:
+  - selected layer was encoded to PNG first, then re-decoded/re-encoded for upload.
+
+#### Fix applied
+- Kept same API/model (no on-device fallback, no model swap).
+- Reduced local selected-layer overhead:
+  - selected `ui.Image` now goes directly through one RAW RGBA -> JPEG upload-prep path.
+  - removed redundant PNG intermediate step for selected-layer upscale.
+- Increased timeout resilience for current provider conditions:
+  - primary upscale poll window expanded.
+  - extended same-task polling window expanded further.
+  - request timeout tuned for faster retry cadence on transient network stalls.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_upscaleImageWithKieRecraftCrisp`
+  - `_encodeUiImageForUpscaleUpload` (new helper)
+  - selected-layer upscale call path in `_openUpscaleBottomSheet` / `runUpscale`
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
