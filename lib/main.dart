@@ -7300,27 +7300,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   Widget _buildUpscaleTopToolButton() {
     final bool active = _isUpscaleBottomSheetOpen || _isUpscaleLayerProcessing;
-    final Widget button = Container(
-      width: _topToolButtonSize,
-      height: _topToolButtonSize,
-      decoration: BoxDecoration(
-        color: WonderPicEditorScreen._panelBg,
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: active ? kActiveAccent : const Color(0x3345484D),
-          width: active ? 1.2 : 1.0,
-        ),
-      ),
-      child: _UpscaleToolIcon(
-        color: active ? kActiveAccent : WonderPicEditorScreen._iconColor,
-      ),
-    );
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _onUpscaleToolTap,
-        child: button,
+    return _toolButton(
+      filled: active,
+      onTap: _onUpscaleToolTap,
+      customChild: _UpscaleToolIcon(
+        color:
+            active ? kActiveAccentForeground : WonderPicEditorScreen._iconColor,
       ),
     );
   }
@@ -19833,10 +19818,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       if (mounted) {
         setState(() {
           _isUpscaleBottomSheetOpen = false;
-          if (_isUpscaleLayerProcessing) {
-            _isUpscaleLayerProcessing = false;
-            _upscaleEffectLayerId = null;
-          }
         });
       }
     });

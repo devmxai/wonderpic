@@ -872,6 +872,26 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_openUpscaleBottomSheet` -> `runUpscale`
   - selected-background branch in upscale result apply
 
+### 0.34 Latest Handoff (March 2, 2026 - Upscale Shimmer Visibility Fix)
+
+#### Reported regression
+- After pressing Upscale action, bottom sheet closed but shimmer/progress did not appear on canvas.
+
+#### Root cause
+- Bottom sheet `.whenComplete` cleanup was force-resetting:
+  - `_isUpscaleLayerProcessing = false`
+  - `_upscaleEffectLayerId = null`
+- Because the sheet now closes immediately on Upscale start, that cleanup fired right away and canceled shimmer state before processing ended.
+
+#### Fix applied
+- Removed forced processing reset from Upscale bottom-sheet `whenComplete`.
+- Kept only `_isUpscaleBottomSheetOpen = false` there.
+- Processing state is now cleared only in the actual Upscale `finally` block, so shimmer stays visible through the whole job.
+
+#### Primary code touchpoint
+- `lib/main.dart`
+  - `_openUpscaleBottomSheet` (`showModalBottomSheet(...).whenComplete`)
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
