@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>347599680331-vlt4n9qusl9aa74p5ee3oqqe5l8psa39.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.347599680331-vlt4n9qusl9aa74p5ee3oqqe5l8psa39</string>
+	<key>API_KEY</key>
+	<string>AIzaSyAjcCJk-VbOKU7aEGUlBZgXHgU8dhii0ls</string>
+	<key>GCM_SENDER_ID</key>
+	<string>347599680331</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.wonderpic</string>
+	<key>PROJECT_ID</key>
+	<string>you-fusion</string>
+	<key>STORAGE_BUCKET</key>
+	<string>you-fusion.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:347599680331:ios:6bce38f8eee8ec628caece</string>
+	<key>DATABASE_URL</key>
+	<string>https://you-fusion-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

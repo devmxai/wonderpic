@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "347599680331",
+    "firebase_url": "https://you-fusion-default-rtdb.firebaseio.com",
+    "project_id": "you-fusion",
+    "storage_bucket": "you-fusion.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:347599680331:android:a07e778d3c4f42958caece",
+        "android_client_info": {
+          "package_name": "com.example.wonderpic"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "347599680331-juo59p8jk3gaagednlbano25rtj3u5rf.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.wonderpic",
+            "certificate_hash": "cef8d0ba4bdb5585c24c4b4beb5f1cecf67cce65"
+          }
+        },
+        {
+          "client_id": "347599680331-7u47pefsv6f8j489v81cbf027sd0jsk7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1_aVuLu-iH_SsXYp1GmxksBjrBMmSbrQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "347599680331-7u47pefsv6f8j489v81cbf027sd0jsk7.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "347599680331-vlt4n9qusl9aa74p5ee3oqqe5l8psa39.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.wonderpic"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

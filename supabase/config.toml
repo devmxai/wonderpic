@@ -1,0 +1,25 @@
+project_id = "pamlemagzhikexxmaxfz"
+
+[functions.account-session]
+verify_jwt = false
+
+[functions.account-status]
+verify_jwt = false
+
+[functions.credits-reserve]
+verify_jwt = false
+
+[functions.credits-commit]
+verify_jwt = false
+
+[functions.credits-refund]
+verify_jwt = false
+
+[functions.kie-proxy]
+verify_jwt = false
+
+[functions.elevenlabs-proxy]
+verify_jwt = false
+
+[functions.elements-catalog]
+verify_jwt = false

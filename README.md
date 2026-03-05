@@ -5,9 +5,80 @@ WonderPic is a Flutter-based mobile photo editor prototype focused on a professi
 This README is a full handoff document for engineers and AI models.
 If a new model/session takes over, this file should be enough to continue development without losing context.
 
-## 0. Latest Continuation Notes (March 1, 2026)
+## 0. Latest Continuation Notes (March 5, 2026)
 
 This section is the **latest handoff checkpoint** and has higher priority than older notes when conflicts appear.
+
+### 0.53 Latest Handoff (March 5, 2026 - Photo-Only Release Mode + Add Sheet Height)
+
+This subsection is now the newest checkpoint for runtime entry flow and Add (`+`) sheet sizing in Photo Editing.
+
+#### What was completed in this thread
+- Enabled a temporary **Photo Editing only** runtime mode:
+  - after auth/guest continue, app opens Photo Editor directly
+  - onboarding/workspace picker is bypassed
+  - Video Editing / One Space / Generate Video are hidden from entry flow (not deleted)
+- Reduced Photo Editor `+` add bottom sheet root-page height to remove excessive empty space.
+
+#### Implementation details
+- Added feature flag in `lib/main.dart`:
+  - `_kPhotoEditingOnlyMode = true`
+- Updated auth bootstrap return path:
+  - when user is authenticated (or guest), route to `WonderPicEditorScreen` directly if flag is enabled.
+- Updated add-sheet max height in `_openAddBottomSheet`:
+  - from `0.64 * screenHeight`
+  - to `0.36 * screenHeight`
+
+#### Files touched (this thread)
+- `lib/main.dart`
+- `README.md`
+
+#### Next-thread note
+- To restore normal multi-workspace entry, set:
+  - `_kPhotoEditingOnlyMode = false`
+
+### 0.52 Latest Handoff (March 5, 2026 - Crop Fidelity + Quick Presets + Android Package/Release)
+
+This is an additive handoff block for today only.  
+Older subsections below are kept intact for historical context (no overlap/rewrite).
+
+#### What was completed in this thread
+- Crop color-shift issue was fixed by removing the `rawRgba -> package:image -> decodeImageFromPixels` apply path for crop.
+- Crop apply now uses direct `Canvas/Skia` image transforms/crop to preserve visual fidelity.
+- A quick crop preset strip was added above the bottom navbar when Crop tool is active.
+- Quick presets now include:
+  - `Instagram Post (4:5)`
+  - `Story (9:16)`
+  - `Square (1:1)`
+  - `Facebook Post (1.91:1)`
+  - `Free`
+- Crop interaction behavior was refined:
+  - `Free` and `Square (1:1)` keep handle-based resize/move behavior.
+  - fixed aspect presets are locked to ratio (no handle-resize mode), with frame move behavior.
+
+#### Android identity/version updates completed
+- Android package/application ID was updated to:
+  - `com.fusionai.app`
+- `versionCode` was set explicitly to:
+  - `1`
+- Kotlin package path for `MainActivity` was updated to match the new package.
+- `android/app/google-services.json` package references were updated to `com.fusionai.app`.
+
+#### Build/validation status (latest)
+- `flutter build apk --release` completed successfully.
+- Release artifact:
+  - `build/app/outputs/flutter-apk/app-release.apk`
+
+#### Files touched (this thread)
+- `lib/main.dart` (crop apply pipeline + crop quick presets + crop interaction mode split)
+- `android/app/build.gradle` (namespace/applicationId/versionCode)
+- `android/app/src/main/kotlin/com/fusionai/app/MainActivity.kt` (package declaration/path)
+- `android/app/google-services.json` (Android package mapping)
+
+#### Next-thread resume checklist
+1. Start from this subsection (`0.52`) first.
+2. Keep old subsections for audit only; do not back-port conflicting logic from older notes without verification.
+3. If release is rebuilt again, verify artifact path and package in manifest/APK metadata before device install.
 
 ### 0.1 Recent integrations
 - Firebase bootstrap files were added:
@@ -1056,6 +1127,583 @@ This subsection supersedes the unstable part of 0.8 related to runtime crash.
   - `_jumpTextFontSelection`
   - text-font list highlight/index usage in bottom sheet and floating panel
 
+### 0.40 Latest Handoff (March 3, 2026 - Nano Banana 2 UI Simplification)
+
+#### Request addressed
+- Reduce Nano controls to only essential options and compact the AI bottom-sheet layout for easier mobile use.
+
+#### Fixes applied
+- Nano aspect ratio choices are now limited to exactly 3:
+  - `Square (1:1)`
+  - `Portrait 3:4`
+  - `Story 9:16`
+- Removed Nano-only UI controls that were not needed:
+  - output format selector
+  - Google Search toggle
+- Nano request payload now sends:
+  - `output_format: png` (fixed)
+  - `google_search: false` (fixed)
+- Nano reference images now capped at `3` max.
+- Reference picker layout is now compact and single-row.
+- Generate page field order updated to:
+  - Prompt
+  - Quality
+  - Size
+  - References
+- Choice chips were compacted and aligned as single horizontal rows to save vertical space.
+
+#### Primary code touchpoints
+- `lib/main.dart`
+  - `_KieNanoAspectRatio`
+  - `_kieMaxReferenceImages`
+  - `_buildKieImageInput`
+  - `_openAddBottomSheet` (AI field order + compact single-row selectors/references)
+  - `_runAiImageGenerateRequest`
+
+### 0.41 UI Reference (March 3, 2026 - Generate Image Bottom Sheet Style Baseline)
+
+Use this as the design reference for upcoming bottom-sheet UI updates:
+
+- Sheet height: slightly taller (`~64%` of screen max height in this implementation).
+- Sheet surface: slightly lighter than editor background for clear visual separation.
+- Sheet shape: stronger top corner radius.
+- Drag handle: always visible at top center of the AI page.
+- Top edge: subtle border + animated soft pulse glow line.
+- Header chrome removed on AI page:
+  - no page title
+  - no back arrow
+  - no close button
+- AI page order:
+  1. Prompt input
+  2. Model choices
+  3. Resolution choices (`1K/2K/4K` when available)
+  4. Size choices
+  5. Reference image upload row
+  6. Actions (`Refresh` then accent `Generate`)
+- Row-leading helper icons for model/quality/size/references are removed for cleaner compact layout.
+- Reference upload tiles are reduced in height to preserve vertical space.
+- `Generate` action button uses active accent yellow styling.
+
+### 0.42 UI Reference (March 3, 2026 - Inline Dropdown Bottom Sheet Pattern)
+
+Latest approved interaction pattern for Generate Image bottom sheet:
+
+- Keep action row at the bottom with clearer spacing:
+  - `Refresh`
+  - `Generate` (accent yellow)
+- Keep top drag handle visible.
+- Keep top-edge pulse line and subtle top border treatment.
+- Control order:
+  1. Prompt
+  2. Model (inline dropdown field)
+  3. Resolution (inline dropdown field)
+  4. Writer/Size (inline dropdown field)
+  5. References (3-image row remains fixed style)
+- Dropdown behavior:
+  - expands inline from the same rectangle
+  - not floating, not pop-up
+  - rounded dark panel for options
+  - smooth expand/collapse animation
+  - selected option highlighted in yellow
+- Row-leading icons for model/resolution/size are removed for cleaner center-aligned layout.
+
+### 0.43 Latest Handoff (March 3, 2026 - Voice Module Upgrade + v3 Model Policy + Backend Direction)
+
+This is the latest checkpoint for the `Generate Voice` track and backend planning.
+When this section conflicts with older notes, this section wins.
+
+#### 0.43.1 Voice entry wiring (current)
+- Onboarding now includes a dedicated `Generate Voice` card.
+- `Generate Voice` navigation uses:
+  - `lib/main.dart` -> `WonderPicElevenLabsVoiceScreen()`
+  - screen implementation file: `lib/voice_generate_elevenlabs_screen.dart`
+- Voice flow is isolated from the editor canvas flow (separate screen).
+
+#### 0.43.2 ElevenLabs integration state (current)
+- Integration is on official ElevenLabs endpoints (`/v1/models`, `/v1/voices`, `/v1/text-to-speech`, clone endpoints).
+- Voice sources are split in UI:
+  - `My Voices` (account-owned)
+  - `Voice Library`
+- Arabic accent filtering is available in voice picker, including Iraqi hinting when metadata indicates Iraqi voice/accent.
+
+#### 0.43.3 Strict model policy implemented: v3+ only
+- TTS model loading now enforces modern models only:
+  - helper: `_extractModelMajorVersion(...)`
+  - filter: `_isModernTtsModel(...) => version >= 3`
+- Any `v2/v2.5` model is excluded from runtime model options.
+- Default selected model remains `eleven_v3`.
+- Recommended model selection now sorts by major version and language support, then picks best available.
+
+Primary code touchpoints:
+- `lib/voice_generate_elevenlabs_screen.dart`
+  - `_extractModelMajorVersion`
+  - `_isModernTtsModel`
+  - `_compareTtsModels`
+  - `_fetchTtsModels`
+  - `_recommendedModelIdForLanguage`
+
+#### 0.43.4 Voice UX improvements implemented
+- Prompt voice typing (mic input) added directly inside prompt field:
+  - mic suffix icon toggles start/stop dictation
+  - locale auto-pick by language:
+    - Arabic priority: `ar-IQ` -> `ar-SA` -> `ar-AE` -> `ar-EG` -> any `ar*`
+    - English priority: `en-US` -> `en-GB` -> any `en*`
+  - partial recognition updates prompt text in place
+  - active locale label shown under the field
+- Preview replay freeze fix:
+  - if preview already ended, player now seeks to `0` before `resume`
+  - prevents the “first play works, second play freezes” behavior
+- Iraqi enhancement action added:
+  - new `Iraqi Enhance` button appears when Arabic is selected
+  - rewrites Arabic text toward Iraqi colloquial phrasing before generation
+  - automatically switches accent filter to `iraqi` when available
+- Existing manual `Enhance` tag sheet remains available and unchanged.
+
+Primary code touchpoints:
+- `lib/voice_generate_elevenlabs_screen.dart`
+  - `_togglePromptVoiceTyping`
+  - `_pickSpeechLocaleId`
+  - `_ensureSpeechReady`
+  - `_toggleVoicePreview`
+  - `_rewriteToIraqiDialect`
+  - `_applyIraqiEnhance`
+
+#### 0.43.5 Permissions and dependency updates
+- Added speech recognition package:
+  - `pubspec.yaml`: `speech_to_text: ^6.6.0`
+- iOS permissions updated:
+  - `NSMicrophoneUsageDescription`
+  - `NSSpeechRecognitionUsageDescription`
+- Android permissions already include:
+  - `android.permission.RECORD_AUDIO`
+  - `android.permission.READ_MEDIA_AUDIO`
+
+#### 0.43.6 Latest APK outputs (verified)
+- Latest successful Release build time:
+  - `2026-03-03 22:29:02 +0300`
+- Output paths (both generated):
+  - `build/app/outputs/flutter-apk/app-release.apk`
+  - `build/app/outputs/apk/release/app-release.apk`
+- File size:
+  - `37,703,407 bytes` (`~36 MB`)
+
+#### 0.43.7 Important voice limitations (known, by design)
+- ElevenLabs API does not provide a direct official parameter like `dialect=iraqi`.
+- Iraqi quality currently depends on:
+  - selecting an Arabic/Iraqi-capable voice
+  - text style quality (including `Iraqi Enhance`)
+  - model voice performance
+- `Iraqi Enhance` is currently app-side text rewriting logic (not a native ElevenLabs dialect switch).
+
+#### 0.43.8 Technical debt notes (do not ignore)
+- `lib/main.dart` still contains older embedded voice-related code paths/widgets from previous iterations.
+- Active onboarding route now uses `lib/voice_generate_elevenlabs_screen.dart`, but legacy in-file voice code should be cleaned later to reduce maintenance risk.
+
+#### 0.43.9 Backend strategy decision checkpoint (discussion only, no code merged yet)
+- Goal decided in discussion:
+  - keep Firebase for authentication/account identity
+  - use Supabase for secure backend runtime + storage (`Edge Functions` + `Storage`)
+- Security rule for target architecture:
+  - do not expose Supabase `service_role` key in mobile app
+  - app sends Firebase ID token to server function
+  - server verifies token, then issues signed upload/download operations and executes credit logic
+- Production note:
+  - Firestore-only credit mutation from client can be used only for short pilot testing and is not secure for production-grade credit accounting.
+
+#### 0.43.10 Next-thread strict checklist
+1. Decide final backend execution layer for credit operations (`Supabase Edge` vs `Firebase Cloud Functions`) before coding ledger.
+2. Freeze credit ledger schema first (append-only transactions + idempotency key).
+3. Implement server-side credit reserve/commit/refund path before exposing in-app purchase buttons.
+4. Keep Firebase Auth as identity source and verify tokens in backend on every protected endpoint.
+5. After each backend milestone, update this README in the same session.
+
+### 0.44 Latest Handoff (March 4, 2026 - Supabase Credits + Account Lifecycle Foundation)
+
+This subsection is now the latest backend checkpoint and supersedes 0.43.9/0.43.10 as implementation state.
+
+#### 0.44.1 What was implemented (backend foundation)
+- Added Supabase migration with secure credits/account schema:
+  - `supabase/migrations/202603040001_credit_backend_foundation.sql`
+- Implemented private DB model under `app_private` schema:
+  - `accounts` (Firebase UID identity + account status)
+  - `credit_holds` (reserve lifecycle)
+  - `credit_ledger` (append-only balance history with idempotency)
+- Implemented DB functions for:
+  - account upsert/state
+  - reserve / commit / refund credits
+  - admin credit grant
+  - account status transitions (`active` / `suspended` / `deleted`)
+- Added public RPC wrappers callable via service-role path only.
+
+#### 0.44.2 Security model implemented
+- Firebase remains identity source.
+- Supabase handles backend logic/storage.
+- RLS enabled on private tables with no anon/authenticated direct access.
+- Public RPC functions are revoked from `anon`/`authenticated` and granted to `service_role` only.
+- Edge Functions are configured with `verify_jwt = false` because auth is Firebase-token based (verified inside function).
+
+#### 0.44.3 Edge Functions added
+- Shared helpers:
+  - `supabase/functions/_shared/cors.ts`
+  - `supabase/functions/_shared/env.ts`
+  - `supabase/functions/_shared/firebase.ts`
+  - `supabase/functions/_shared/supabase.ts`
+  - `supabase/functions/_shared/rpc.ts`
+- Deployed-function sources:
+  - `supabase/functions/account-session/index.ts`
+  - `supabase/functions/account-status/index.ts`
+  - `supabase/functions/credits-reserve/index.ts`
+  - `supabase/functions/credits-commit/index.ts`
+  - `supabase/functions/credits-refund/index.ts`
+- Supabase function config:
+  - `supabase/config.toml`
+
+#### 0.44.4 Flutter integration prep (no runtime build done)
+- Added backend service client:
+  - `lib/services/wonderpic_backend_client.dart`
+- Service behavior:
+  - gets Firebase ID token from `FirebaseAuth.currentUser`
+  - calls Supabase Edge Functions with `apikey` + `Authorization: Bearer <firebase-id-token>`
+  - supports account sync/status + reserve/commit/refund + self-delete request
+- Uses `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or fallback `SUPABASE_ANON_KEY`) via `--dart-define`.
+
+#### 0.44.5 Secrets/setup expectations
+- Required function secrets:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY` (or equivalent secret key value)
+  - `FIREBASE_PROJECT_ID` (`you-fusion`)
+  - optional admin gate: `APP_ADMIN_TOKEN`
+- Added reference files:
+  - `supabase/.env.example`
+  - `supabase/functions/README.md`
+
+#### 0.44.6 Important note
+- This session intentionally did not run Flutter build/test.
+- Next thread should run migration + function deploy + integration smoke checks before wiring purchases/UI to credits.
+
+### 0.45 Latest Handoff (March 4, 2026 - Supabase Deployment + Smoke Validation + Auth Sync Hook)
+
+This subsection is now the newest backend checkpoint and supersedes 0.44 for deployment state.
+
+#### 0.45.1 Remote deployment status (completed)
+- Supabase CLI was installed and project was linked.
+- Migrations were pushed to remote DB:
+  - `202603040001_credit_backend_foundation.sql`
+  - `202603040002_account_function_ambiguity_fix.sql`
+  - `202603040003_grant_function_ambiguity_fix.sql`
+  - `202603040004_commit_refund_ambiguity_fix.sql`
+- Edge Functions deployed to project:
+  - `account-session`
+  - `account-status`
+  - `credits-reserve`
+  - `credits-commit`
+  - `credits-refund`
+
+#### 0.45.2 Production-critical bugfixes applied after first push
+- Fixed ambiguous PL/pgSQL identifier collisions (`firebase_uid`, `account_id`, `hold_id`) that surfaced in live RPC calls.
+- Replaced ambiguous `ON CONFLICT (...)` usage in affected functions with explicit constraints where needed.
+- Updated function auth-error mapping so invalid Firebase JWT/JWS now returns `401` consistently (instead of generic `400`).
+
+#### 0.45.3 Smoke tests (completed)
+- RPC credit flow validated end-to-end via service-secret path:
+  1. account ensure
+  2. grant credits
+  3. reserve credits
+  4. commit hold
+  5. refund hold
+  6. final balance check
+- Result: expected balances and hold state transitions verified.
+- Admin account action path validated through `account-status`:
+  - `admin_set_status` and `admin_grant_credits` succeeded.
+- Invalid token call to `credits-reserve` now returns `401` as expected.
+
+#### 0.45.4 App auth integration hook (implemented)
+- `lib/main.dart` auth screen now performs backend account sync after successful Firebase login (email/password and Google):
+  - uses `WonderPicBackendClient.syncAccountSession()`
+  - best-effort mode (does not block sign-in if backend sync fails)
+- New backend client file remains:
+  - `lib/services/wonderpic_backend_client.dart`
+
+#### 0.45.5 Current remaining work (next thread)
+1. Wire reserve/commit/refund into real generation/upscale billing checkpoints in editor flow.
+2. Add visible credit balance UI and status badges (active/suspended/deleted).
+3. Add protected admin workflow (do not expose admin token in client app).
+4. Add integration tests for idempotency and retry behavior.
+5. Rotate all sensitive keys before production rollout.
+
+### 0.46 Latest Handoff (March 4, 2026 - API Key Offload To Edge Proxies)
+
+This subsection is now the latest security/development checkpoint for provider key handling.
+
+#### 0.46.1 Objective completed
+- App-side embedded provider keys were removed for active KIE + ElevenLabs paths.
+- Provider calls now route through Supabase Edge Functions where secrets are stored server-side.
+
+#### 0.46.2 New Edge proxy functions
+- Added and deployed:
+  - `supabase/functions/kie-proxy/index.ts`
+  - `supabase/functions/elevenlabs-proxy/index.ts`
+- Supabase config updated:
+  - `supabase/config.toml` now includes `kie-proxy` and `elevenlabs-proxy` entries.
+
+#### 0.46.3 Secrets state (development)
+- Function secrets were set for current development keys:
+  - `KIE_API_KEY`
+  - `ELEVENLABS_API_KEY`
+- App no longer needs these keys via `--dart-define`.
+
+#### 0.46.4 Client code cleanup done
+- `lib/main.dart`
+  - all KIE endpoint URLs switched from direct provider hosts to `_kieProxyUri(...)`
+  - `_kieEmbeddedApiKey` is now empty
+  - KIE missing-config messages now point to Supabase proxy configuration (`SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`)
+- `lib/voice_generate_elevenlabs_screen.dart`
+  - ElevenLabs URLs switched to `_elevenLabsProxyUri(...)`
+  - `_kEmbeddedElevenLabsApiKey` is now empty
+  - missing-config messages now point to Supabase proxy configuration
+
+#### 0.46.5 Verification summary
+- Proxy smoke checks succeeded:
+  - `elevenlabs-proxy` model list returned `200`
+  - `kie-proxy` recordInfo passthrough returned expected provider JSON response
+- No direct KIE / ElevenLabs API key literals remain in Flutter source for active paths.
+
+#### 0.46.6 Important production note
+- Current proxy functions are intentionally permissive for development speed.
+- Before production, enforce stricter auth/rate-limits on proxy endpoints and rotate all provider keys.
+
+### 0.47 Latest Handoff (March 4, 2026 - Client Switched To Edge Proxies, Embedded Keys Removed)
+
+This subsection is now the latest implementation checkpoint for provider-key handling.
+
+#### 0.47.1 Edge secret + deploy status
+- Added function secrets in Supabase for development:
+  - `KIE_API_KEY`
+  - `ELEVENLABS_API_KEY`
+- Deployed new functions:
+  - `kie-proxy`
+  - `elevenlabs-proxy`
+
+#### 0.47.2 Main app migration (KIE)
+- `lib/main.dart` no longer points to direct KIE provider hosts.
+- All KIE requests now use `_kieProxyUri(...)` targeting Supabase Edge function `kie-proxy`.
+- Embedded KIE key was removed from app code.
+- KIE missing-config text now references Supabase runtime config (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`).
+
+#### 0.47.3 Voice app migration (ElevenLabs)
+- `lib/voice_generate_elevenlabs_screen.dart` now uses `_elevenLabsProxyUri(...)` for:
+  - models
+  - voices / shared voices
+  - text-to-speech
+  - clone create
+- Embedded ElevenLabs key was removed from app code.
+- ElevenLabs missing-config text now references Supabase runtime config (`SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`).
+
+#### 0.47.4 Verification
+- Proxy smoke tests passed after migration:
+  - `elevenlabs-proxy` -> models returned `200`
+  - `kie-proxy` -> recordInfo passthrough returned expected provider response body
+- `flutter analyze` on touched files shows no compile errors (only pre-existing warnings/info).
+
+#### 0.47.5 Next mandatory hardening before production
+1. Add strict auth guard in `kie-proxy` and `elevenlabs-proxy` (Firebase ID token verification + abuse controls).
+2. Add per-user rate limiting / quota checks in proxy layer.
+3. Rotate all provider and infra secrets before release.
+
+### 0.48 Latest Handoff (March 4, 2026 - Credits Wired Into Generate/Regenerate/Upscale)
+
+This subsection is now the latest billing checkpoint for editor AI operations.
+
+#### 0.48.1 What was implemented in app flow
+- Added editor-side backend billing guard in `lib/main.dart` using `WonderPicBackendClient`.
+- Wired real credit lifecycle into editor operations:
+  - `Generate Image` (`_runAiImageGenerateRequest`)
+  - `Regenerate` (`_runRegenerateRequest`)
+  - `Upscale` (`_openUpscaleBottomSheet` -> `runUpscale`)
+- New shared guard method:
+  - `_runWithCreditReservation(...)`
+  - reserve before operation
+  - commit on success
+  - rollback path on failure
+
+#### 0.48.2 Idempotency + rollback behavior
+- Added deterministic operation ids and phase-specific idempotency keys:
+  - reserve / commit / rollback-commit / rollback-refund
+- Added commit retry helper:
+  - `_commitCreditsWithRetry(...)` (retry on 5xx)
+- Because current backend API has no explicit `release reserved hold` endpoint, failure rollback currently uses:
+  1. commit hold
+  2. refund hold
+- This keeps net credit impact zero on failed operations while avoiding long-lived reserved holds.
+
+#### 0.48.3 Credit pricing mapping currently applied (development default)
+- Internal tier mapping in editor:
+  - tier1 = `1.0`
+  - tier2 = `2.0`
+  - tier4 = `4.0`
+- Applied mapping:
+  - generate/regenerate by resolved quality tier
+  - upscale `2K` -> tier2, `4K` -> tier4
+- These values are centralized and easy to adjust later.
+
+#### 0.48.4 Runtime behavior notes
+- If Supabase backend is configured:
+  - credit reservation is enforced
+  - signed-in Firebase user is required for billed actions
+- If backend is not configured:
+  - billing is bypassed in development mode (operation still runs)
+
+#### 0.48.5 Error handling improvements
+- Added unified backend-aware error normalization for editor AI actions:
+  - insufficient credits
+  - expired session
+  - inactive/deleted account
+  - hold-expired finalization cases
+
+#### 0.48.6 Verification
+- `flutter analyze lib/main.dart lib/services/wonderpic_backend_client.dart`
+  - no compile errors
+  - pre-existing warnings/info remain in project
+
+#### 0.48.7 Next hardening tasks (still required)
+1. Add a dedicated backend endpoint for `release reserved hold` to avoid rollback commit+refund workaround.
+2. Add visible credit balance + account status badge in editor UI.
+3. Add server-side rate limits and stricter anti-abuse policy for proxy/billing endpoints before production.
+
+### 0.49 Latest Handoff (March 4, 2026 - Bottom Nav List Button + Account Hub Sidebar)
+
+This subsection is now the latest navigation/layout checkpoint for the editor shell.
+
+#### 0.49.1 Toolbar layout change
+- Removed the top toolbar menu/list icon from `lib/main.dart`.
+- Top toolbar now starts directly with `Move` as the first tool button.
+
+#### 0.49.2 Bottom nav layout change
+- Added a new `list` button in bottom nav using the same circular visual style as the `+` button.
+- Current bottom nav order (left -> right):
+  1. `+`
+  2. `Layers`
+  3. `Text`
+  4. `Vectors`
+  5. `Save`
+  6. `List`
+- This keeps `+` on the left edge and `List` on the right edge as opposite anchors.
+
+#### 0.49.3 Sidebar behavior change
+- Added dedicated method:
+  - `_openMainSidebar()` (opens end drawer and triggers account sync best-effort).
+- `List` button now opens the main sidebar.
+
+#### 0.49.4 Sidebar content expansion (account-focused)
+- Sidebar now includes an `Account` hub section before tool settings:
+  - profile identity (name/email/uid fallback)
+  - account status badge (`Active` / `Suspended` / `Deleted` / `Unknown`)
+  - available credits badge (`cr`)
+  - quick actions:
+    - sync account + credits
+    - AI Generate shortcut
+    - Layers shortcut
+    - Save/Export shortcut
+- Existing tool-specific settings remain available under the `Tool Settings` section in the same drawer.
+
+### 0.50 Latest Handoff (March 4, 2026 - List Sidebar Visual Restyle + Account/Activity/Library Structure)
+
+This subsection supersedes 0.49.4 for the list-sidebar content and styling.
+
+#### 0.50.1 Visual restyle (list sidebar)
+- `endDrawer` was restyled to a darker, bottom-sheet-like look:
+  - deeper dark interior gradient (`blue-black` direction)
+  - subtle white glow strip on the left edge to simulate soft pulse/light spill
+- Header title is now fixed to `Account Hub` instead of showing `View Mode`.
+
+#### 0.50.2 Profile card upgrade
+- Top account block now presents email-first identity:
+  - primary: account email (or fallback text if missing)
+  - secondary: display name + provider / uid summary
+- Profile icon styling was upgraded to a cleaner circular gradient style.
+
+#### 0.50.3 Menu restructuring (as requested)
+- Removed old quick entries from account hub:
+  - `AI Generate`
+  - `Layers`
+  - `Save / Export`
+- New order below profile:
+  1. `Credit Center`
+  2. `Activity & Projects`
+  3. `Library`
+
+#### 0.50.4 Activity/Library behavior currently in app
+- `Activity & Projects` now shows active project/activity summary (workspace + latest generation prompt when available).
+- `Library` now shows current in-editor image item count and placeholders for voice/video counts (`0` for now; sync planned next step).
+- Tool settings section is still available below account hub, but hidden when there is no relevant active tool/layer context (so `View Mode` card no longer appears by default from list entry).
+
+### 0.51 Latest Handoff (March 4, 2026 - Global Bottom Sheet Sync + Tonal Alignment + Admin Keys Pack)
+
+This subsection is now the latest canonical checkpoint for UI color consistency and admin integration handoff.
+
+#### 0.51.1 Bottom sheet reference color is now unified
+- Final shared bottom-sheet surface color: `#26292F` (`Color(0xFF26292F)`).
+- Added/used shared editor constant in `lib/main.dart`:
+  - `_bottomSheetSurface = Color(0xFF26292F)`.
+- All editor `showModalBottomSheet` flows now align to this same reference surface:
+  1. Marquee settings
+  2. Regenerate
+  3. Text settings
+  4. Clone settings
+  5. Blur settings
+  6. Upscale
+  7. Add (`+`) sheet
+  8. AI Vector generator
+  9. Solid layer presets
+  10. Layers
+- App-level fallback was also aligned:
+  - `ThemeData.bottomSheetTheme.backgroundColor = Color(0xFF26292F)`.
+
+#### 0.51.2 Non-editor bottom sheets also aligned
+- `lib/library/wonderpic_library_screen.dart`
+  - Item details bottom sheet surface updated to `#26292F`.
+- `lib/voice_generate_elevenlabs_screen.dart`
+  - Enhance tags bottom sheet background updated to `#26292F`.
+- Result: one consistent bottom-sheet visual language across app modules.
+
+#### 0.51.3 Sidebar and add-sheet tonal consistency
+- Sidebar and `+` sheet remain on the same dark-neutral family to avoid tint mismatch.
+- Final tone intentionally avoids bright blue/green cast and stays close to the app dark palette.
+
+#### 0.51.4 Onboarding/Login tonal normalization
+- Main app scaffold baseline remains: `#23262C`.
+- Pre-entry/auth flow screens were normalized to one-step tonal offset:
+  - `WonderPicAuthScreen` background -> `#24272D`
+  - `WonderPicOnboardingScreen._pageBg` -> `#24272D`
+  - `_FirebaseSetupErrorScreen` background -> `#24272D`
+- This keeps onboarding/login visually from the same family with subtle contrast.
+
+#### 0.51.5 Admin panel keys handoff file added
+- New file added at project root:
+  - `APIkeys.md`
+- Purpose:
+  - one dev-mode reference pack for admin integration without hunting keys across chat/history.
+- Includes:
+  - Admin panel `.env.local` required vars
+  - Supabase Edge Function secrets mapping
+  - optional CLI/DB credentials block
+  - runtime Firebase ID token reminder
+  - generated dev `APP_ADMIN_TOKEN` mirrored for panel + functions consistency
+
+#### 0.51.6 Validation snapshot
+- Ran formatting:
+  - `dart format lib/main.dart lib/library/wonderpic_library_screen.dart lib/voice_generate_elevenlabs_screen.dart`
+- Ran static checks:
+  - `flutter analyze lib/main.dart lib/library/wonderpic_library_screen.dart lib/voice_generate_elevenlabs_screen.dart`
+- Result:
+  - no compile errors introduced in this checkpoint
+  - existing warnings/info (pre-existing in project) remain
+
+#### 0.51.7 Next-thread strict continuation point
+1. Use this `0.51` section as the authoritative start point for the next thread.
+2. If production prep begins, rotate all secrets listed in `APIkeys.md`.
+3. If migrating fully to new Supabase key model, replace legacy anon/service_role usage with `sb_publishable_*` and `sb_secret_*` everywhere.
+
 ## 1. Current Product State (Source of Truth)
 
 Status captured from codebase on **February 18, 2026**.
@@ -1751,3 +2399,21 @@ Implementation notes:
 - Edge drag resizes from the dragged side while opposite side remains anchored.
 - Shape bounds remain clamped inside overlay image bounds.
 - Selection layer transform handles are still hidden while Overlay Cut editing is active to prevent gesture conflicts.
+
+---
+
+## 28. Mandatory APK Release Reveal Step (Do Not Skip)
+
+After every successful Release APK build, always reveal the exact APK file in Finder so it can be copied/uploaded immediately.
+
+Required command:
+
+```bash
+open -R "/Users/mx/Documents/my app pro/wonderpic/build/app/outputs/flutter-apk/app-release.apk"
+```
+
+Optional (open the APK directly):
+
+```bash
+open "/Users/mx/Documents/my app pro/wonderpic/build/app/outputs/flutter-apk/app-release.apk"
+```

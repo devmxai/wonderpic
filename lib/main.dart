@@ -8,6 +8,7 @@ import 'dart:ui' as ui;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/painting.dart' as painting;
 import 'package:flutter/scheduler.dart';
@@ -15,13 +16,41 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:wonderpic/firebase_options.dart';
+import 'package:wonderpic/library/wonderpic_library_screen.dart';
+import 'package:wonderpic/services/wonderpic_backend_client.dart';
+import 'package:wonderpic/services/wonderpic_library_store.dart';
+import 'package:wonderpic/video_editing_screen.dart';
+import 'package:wonderpic/voice_generate_elevenlabs_screen.dart';
 
 const Color kActiveAccent = Color(0xFFE6F24A);
 const Color kActiveAccentForeground = Color(0xFF19191A);
+const bool _kPhotoEditingOnlyMode = true;
+const String _kDefaultSupabaseUrl = 'https://pamlemagzhikexxmaxfz.supabase.co';
+const String _kSupabaseUrl = String.fromEnvironment(
+  'SUPABASE_URL',
+  defaultValue: _kDefaultSupabaseUrl,
+);
+
+bool _isSupabaseEdgeProxyConfigured() {
+  final String raw = _kSupabaseUrl.trim();
+  if (raw.isEmpty) return false;
+  final Uri? uri = Uri.tryParse(raw);
+  if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+    return false;
+  }
+  final String scheme = uri.scheme.toLowerCase();
+  return scheme == 'http' || scheme == 'https';
+}
+
+Uri _kieProxyUri(String upstreamPath) {
+  final Uri base = Uri.parse('$_kSupabaseUrl/functions/v1/kie-proxy');
+  return base.replace(queryParameters: <String, String>{'path': upstreamPath});
+}
 
 Future<String> _buildKieBase64UploadBodyPayload({
   required Uint8List bytes,
@@ -65,7 +94,7 @@ class WonderPicApp extends StatelessWidget {
         brightness: Brightness.dark,
         scaffoldBackgroundColor: const Color(0xFF23262C),
         bottomSheetTheme: const BottomSheetThemeData(
-          backgroundColor: Color(0xFF23262C),
+          backgroundColor: Color(0xFF26292F),
           surfaceTintColor: Colors.transparent,
         ),
         colorScheme: ColorScheme.fromSeed(
@@ -149,6 +178,9 @@ class _WonderPicAuthBootstrapState extends State<WonderPicAuthBootstrap> {
                 onContinueWithoutSignIn: _continueAsGuest,
               );
             }
+            if (_kPhotoEditingOnlyMode) {
+              return const WonderPicEditorScreen();
+            }
             return const WonderPicOnboardingScreen();
           },
         );
@@ -169,7 +201,7 @@ class _FirebaseSetupErrorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF23262C),
+      backgroundColor: const Color(0xFF24272D),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20),
@@ -249,9 +281,11 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
   bool _isBusy = false;
   String? _errorText;
   late final GoogleSignIn _googleSignIn;
+  late final WonderPicBackendClient _backendClient;
 
   @override
   void dispose() {
+    _backendClient.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _confirmController.dispose();
@@ -261,6 +295,7 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
   @override
   void initState() {
     super.initState();
+    _backendClient = WonderPicBackendClient();
     _googleSignIn = GoogleSignIn(
       clientId: defaultTargetPlatform == TargetPlatform.iOS
           ? DefaultFirebaseOptions.ios.iosClientId
@@ -314,6 +349,7 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
           password: password,
         );
       }
+      await _syncBackendAccountBestEffort();
     } on FirebaseAuthException catch (e) {
       _setError(e.message ?? 'Authentication failed.');
     } catch (_) {
@@ -340,6 +376,7 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
       );
 
       await FirebaseAuth.instance.signInWithCredential(credential);
+      await _syncBackendAccountBestEffort();
     } on FirebaseAuthException catch (e) {
       _setError('Google sign-in failed (${e.code}): ${e.message ?? 'Unknown'}');
     } on PlatformException catch (e) {
@@ -355,10 +392,22 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
     }
   }
 
+  Future<void> _syncBackendAccountBestEffort() async {
+    try {
+      await _backendClient.syncAccountSession();
+    } on BackendApiException catch (e) {
+      debugPrint(
+        'Backend account sync skipped: ${e.message} (${e.statusCode})',
+      );
+    } catch (e) {
+      debugPrint('Backend account sync skipped: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF23262C),
+      backgroundColor: const Color(0xFF24272D),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -554,7 +603,7 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
 class WonderPicOnboardingScreen extends StatelessWidget {
   const WonderPicOnboardingScreen({super.key});
 
-  static const Color _pageBg = Color(0xFF26272B);
+  static const Color _pageBg = Color(0xFF24272D);
   static const Color _cardBg = Color(0xFF1E1F22);
   static const Color _titleColor = Color(0xFFF3F3F2);
   static const Color _subColor = Color(0xFFB8B7B5);
@@ -580,7 +629,7 @@ class WonderPicOnboardingScreen extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             const Text(
-              'Choose your workspace to keep Photo Editing, One Space, and Video Generate separated.',
+              'Choose your workspace to keep Photo Editing, Video Editing, One Space, and Video Generate separated.',
               style: TextStyle(
                 fontSize: 14.5,
                 color: _subColor,
@@ -599,6 +648,21 @@ class WonderPicOnboardingScreen extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const WonderPicEditorScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _OnboardingOptionCard(
+              icon: Icons.video_settings_outlined,
+              title: 'Video Editing',
+              subtitle:
+                  'Open a dedicated professional video editing workspace with timeline tracks.',
+              actionLabel: 'Open Video Editing',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WonderPicVideoEditingScreen(),
                   ),
                 );
               },
@@ -629,6 +693,21 @@ class WonderPicOnboardingScreen extends StatelessWidget {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
                     builder: (_) => const WonderPicGenerateVideoScreen(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _OnboardingOptionCard(
+              icon: Icons.record_voice_over_outlined,
+              title: 'Generate Voice',
+              subtitle:
+                  'Generate Text-to-Speech and Instant Voice Clone with ElevenLabs Official API.',
+              actionLabel: 'Open Voice Generate',
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WonderPicElevenLabsVoiceScreen(),
                   ),
                 );
               },
@@ -823,24 +902,7 @@ extension _KieVideoModelVariantUi on _KieVideoModelVariant {
   }
 
   int get costPerVideoCredits {
-    switch (this) {
-      case _KieVideoModelVariant.seedance2Fast:
-        return 90;
-      case _KieVideoModelVariant.seedance2Pro:
-        return 140;
-      case _KieVideoModelVariant.sora2Medium:
-        return 120;
-      case _KieVideoModelVariant.sora2High:
-        return 180;
-      case _KieVideoModelVariant.veo31Fast:
-        return 60;
-      case _KieVideoModelVariant.veo31Pro:
-        return 120;
-      case _KieVideoModelVariant.kling30_720p:
-        return 75;
-      case _KieVideoModelVariant.kling30_1080p:
-        return 120;
-    }
+    return 1;
   }
 
   bool get usesVeoEndpoint {
@@ -966,6 +1028,7 @@ class _WonderPicGenerateVideoScreenState
   static const Color _textSub = Color(0xFFB8B7B5);
 
   final ImagePicker _picker = ImagePicker();
+  final WonderPicLibraryStore _libraryStore = WonderPicLibraryStore();
   final TextEditingController _promptController = TextEditingController();
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
@@ -995,14 +1058,32 @@ class _WonderPicGenerateVideoScreenState
   ];
 
   String get _kieApiKey {
-    const String fromDefine = String.fromEnvironment(
-      'KIE_API_KEY',
-      defaultValue: '',
-    );
-    if (fromDefine.trim().isNotEmpty) {
-      return fromDefine.trim();
+    if (_isSupabaseEdgeProxyConfigured()) {
+      return 'edge-proxy';
     }
-    return _WonderPicEditorScreenState._kieEmbeddedApiKey;
+    return '';
+  }
+
+  Future<void> _recordGeneratedVideoInLibrary({
+    required String prompt,
+    required String remoteUrl,
+    required _KieVideoModelVariant model,
+  }) async {
+    final String title = prompt.trim().isEmpty
+        ? 'Generated video'
+        : (prompt.trim().length <= 52
+            ? prompt.trim()
+            : '${prompt.trim().substring(0, 52)}...');
+    await _libraryStore.addItem(
+      WonderPicLibraryItem(
+        id: 'video_${DateTime.now().microsecondsSinceEpoch}',
+        type: WonderPicLibraryItemType.video,
+        title: title,
+        subtitle: model.label,
+        createdAtIso: DateTime.now().toUtc().toIso8601String(),
+        remoteUrl: remoteUrl.trim().isEmpty ? null : remoteUrl.trim(),
+      ),
+    );
   }
 
   @override
@@ -1211,7 +1292,8 @@ class _WonderPicGenerateVideoScreenState
     }
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
-      _showMessage('KIE API key missing. Add --dart-define=KIE_API_KEY=...',
+      _showMessage(
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
           isError: true);
       return;
     }
@@ -1289,6 +1371,13 @@ class _WonderPicGenerateVideoScreenState
         _resultVideoUrl = outputUrl;
         _statusMessage = 'Video generated successfully.';
       });
+      unawaited(
+        _recordGeneratedVideoInLibrary(
+          prompt: prompt,
+          remoteUrl: outputUrl,
+          model: modelForTask,
+        ),
+      );
       _showMessage('Video generated.');
     } catch (e) {
       if (!mounted) return;
@@ -1348,8 +1437,7 @@ class _WonderPicGenerateVideoScreenState
   }
 
   Future<String> _uploadKieReferenceFile(Uint8List bytes) async {
-    final Uri uri =
-        Uri.parse('https://kieai.redpandaai.co/api/file-base64-upload');
+    final Uri uri = _kieProxyUri('/api/file-base64-upload');
     final String dataUri = _toDataUri(bytes);
     final String fileName =
         'video_ref_${DateTime.now().microsecondsSinceEpoch}.${_dataUriMime(bytes) == 'image/png' ? 'png' : 'jpg'}';
@@ -1414,7 +1502,7 @@ class _WonderPicGenerateVideoScreenState
     required String prompt,
     required List<String> referenceUrls,
   }) async {
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final bool hasRefs = referenceUrls.isNotEmpty;
     final String selectedModel = _resolveKieVideoModel(
       model: model,
@@ -1474,7 +1562,7 @@ class _WonderPicGenerateVideoScreenState
     required int durationSeconds,
     required String aspectRatio,
   }) async {
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/veo/generate');
+    final Uri uri = _kieProxyUri('/api/v1/veo/generate');
     final int maxRefs = mode.imageCount;
     final List<String> refs = referenceUrls.take(maxRefs).toList();
     final String generationType = mode == _KieVeoInputMode.imageToVideo
@@ -1648,8 +1736,7 @@ class _WonderPicGenerateVideoScreenState
   }
 
   Future<String> _pollKieJobTask({required String taskId}) async {
-    final Uri uri =
-        Uri.parse('https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$taskId');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/recordInfo?taskId=$taskId');
     const int maxAttempts = 160;
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       final http.Response response = await http.get(
@@ -1706,8 +1793,7 @@ class _WonderPicGenerateVideoScreenState
   }
 
   Future<String> _pollKieVeoTask({required String taskId}) async {
-    final Uri uri =
-        Uri.parse('https://api.kie.ai/api/v1/veo/record-info?taskId=$taskId');
+    final Uri uri = _kieProxyUri('/api/v1/veo/record-info?taskId=$taskId');
     const int maxAttempts = 160;
     for (int attempt = 0; attempt < maxAttempts; attempt++) {
       final http.Response response = await http.get(
@@ -2616,6 +2702,1329 @@ class _WonderPicGenerateVideoScreenState
                   ),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VoicePreset {
+  final String id;
+  final String label;
+  const _VoicePreset({
+    required this.id,
+    required this.label,
+  });
+}
+
+class WonderPicGenerateVoiceScreen extends StatefulWidget {
+  const WonderPicGenerateVoiceScreen({super.key});
+
+  @override
+  State<WonderPicGenerateVoiceScreen> createState() =>
+      _WonderPicGenerateVoiceScreenState();
+}
+
+class _WonderPicGenerateVoiceScreenState
+    extends State<WonderPicGenerateVoiceScreen> {
+  static const Color _pageBg = Color(0xFF1B1E24);
+  static const Color _cardBg = Color(0xFF141820);
+  static const Color _stroke = Color(0xFF4B4A48);
+  static const Color _textMain = Color(0xFFF3F3F2);
+  static const Color _textSub = Color(0xFFB8B7B5);
+  static const Map<String, String> _languageOptions = <String, String>{
+    'en': 'English',
+    'ar': 'Arabic',
+  };
+  static const String _defaultVoiceId = 'pNInz6obpgDQGcFmaJgB';
+  static final RegExp _voiceIdPattern = RegExp(r'^[A-Za-z0-9]{20,}$');
+  static const Map<String, List<_VoicePreset>> _voiceOptionsByLanguage =
+      <String, List<_VoicePreset>>{
+    'en': <_VoicePreset>[
+      _VoicePreset(id: 'pNInz6obpgDQGcFmaJgB', label: 'Adam'),
+      _VoicePreset(id: 'nPczCjzI2devNBz1zQrb', label: 'Brian'),
+      _VoicePreset(id: 'TX3LPaxmHKxFdv7VOQHJ', label: 'Liam'),
+      _VoicePreset(id: 'iP95p4xoKVk53GoZ742B', label: 'Chris'),
+      _VoicePreset(id: 'FGY2WhTYpPnrIDTdsKH5', label: 'Laura'),
+      _VoicePreset(id: 'cgSgspJ2msm6clMCkdW9', label: 'Jessica'),
+      _VoicePreset(id: '1hlpeD1ydbI2ow0Tt3EW', label: 'Olivia'),
+      _VoicePreset(id: 'ZF6FPAbjXT4488VcRRnw', label: 'Amelia'),
+    ],
+    'ar': <_VoicePreset>[
+      _VoicePreset(id: 'hpp4J3VqNfWAUOO0d1Us', label: 'بيلا'),
+      _VoicePreset(id: '1hlpeD1ydbI2ow0Tt3EW', label: 'أوليفيا'),
+      _VoicePreset(id: 'ZF6FPAbjXT4488VcRRnw', label: 'أميليا'),
+      _VoicePreset(id: 'wJqPPQ618aTW29mptyoc', label: 'آنا ريتا'),
+      _VoicePreset(id: 'Atp5cNFg1Wj5gyKD7HWV', label: 'ناتاشا'),
+      _VoicePreset(id: '1cxc5c3E9K6F1wlqOJGV', label: 'إيميلي'),
+      _VoicePreset(id: 'Qggl4b0xRMiqOwhPtVWT', label: 'كلارا'),
+      _VoicePreset(id: 'TC0Zp7WVFzhA8zpTlRqV', label: 'آريا'),
+    ],
+  };
+  static final Set<String> _supportedVoiceIds = _voiceOptionsByLanguage.values
+      .expand((voices) => voices.map((voice) => voice.id))
+      .toSet();
+  static const Map<String, double> _qualityPresets = <String, double>{
+    'Creative': 0.00,
+    'Balanced': 0.50,
+    'Stable': 1.00,
+  };
+
+  final TextEditingController _textController = TextEditingController();
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  StreamSubscription<PlayerState>? _playerStateSub;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration>? _durationSub;
+
+  bool _isGenerating = false;
+  bool _isDownloading = false;
+  bool _isPreviewGenerating = false;
+  bool _isPlaying = false;
+  bool _audioPlaybackSupported = true;
+  double _stability = 0.50;
+  String _languageCode = 'en';
+  String _selectedVoiceId = _defaultVoiceId;
+  String _selectedQuality = 'Balanced';
+  String? _statusMessage;
+  String? _resultAudioUrl;
+  String? _lastDownloadedFilePath;
+  Duration _audioPosition = Duration.zero;
+  Duration _audioDuration = Duration.zero;
+  String? _loadedAudioUrl;
+
+  String get _kieApiKey {
+    if (_isSupabaseEdgeProxyConfigured()) {
+      return 'edge-proxy';
+    }
+    return '';
+  }
+
+  List<_VoicePreset> get _currentVoiceOptions {
+    return _voiceOptionsForLanguage(_languageCode);
+  }
+
+  String get _previewUrl =>
+      'https://static.aiquickdraw.com/elevenlabs/voice/${Uri.encodeComponent(_selectedVoiceId)}.mp3';
+
+  List<_VoicePreset> _voiceOptionsForLanguage(String languageCode) {
+    final List<_VoicePreset> fallback =
+        _voiceOptionsByLanguage['en'] ?? const <_VoicePreset>[];
+    final List<_VoicePreset> configured =
+        _voiceOptionsByLanguage[languageCode] ?? fallback;
+    final List<_VoicePreset> filtered = configured
+        .where((voice) => _supportedVoiceIds.contains(voice.id))
+        .toList(growable: false);
+    if (filtered.isNotEmpty) {
+      return filtered;
+    }
+    if (fallback.isNotEmpty) {
+      return fallback;
+    }
+    return const <_VoicePreset>[
+      _VoicePreset(id: _defaultVoiceId, label: 'Adam')
+    ];
+  }
+
+  String _fallbackVoiceIdForLanguage(
+    String languageCode, {
+    String? excludingVoiceId,
+  }) {
+    final List<_VoicePreset> options = _voiceOptionsForLanguage(languageCode);
+    final String excluded = excludingVoiceId?.trim().toLowerCase() ?? '';
+    for (final _VoicePreset candidate in options) {
+      if (excluded.isEmpty || candidate.id.toLowerCase() != excluded) {
+        return candidate.id;
+      }
+    }
+    if (options.isNotEmpty) {
+      return options.first.id;
+    }
+    return _defaultVoiceId;
+  }
+
+  String _sanitizeVoiceIdForLanguage(String voiceId, String languageCode) {
+    final String normalized = voiceId.trim();
+    if (_supportedVoiceIds.contains(normalized) ||
+        _voiceIdPattern.hasMatch(normalized)) {
+      return normalized;
+    }
+    return _fallbackVoiceIdForLanguage(
+      languageCode,
+      excludingVoiceId: normalized,
+    );
+  }
+
+  String _labelForVoiceId(String voiceId) {
+    final List<_VoicePreset> preferred =
+        _voiceOptionsForLanguage(_languageCode);
+    for (final _VoicePreset voice in preferred) {
+      if (voice.id == voiceId) {
+        return voice.label;
+      }
+    }
+    for (final List<_VoicePreset> voices in _voiceOptionsByLanguage.values) {
+      for (final _VoicePreset voice in voices) {
+        if (voice.id == voiceId) {
+          return voice.label;
+        }
+      }
+    }
+    return voiceId;
+  }
+
+  bool _isAudioPluginMissingError(Object error) {
+    if (error is MissingPluginException) {
+      return true;
+    }
+    if (error is PlatformException) {
+      final String details = [
+        error.code,
+        error.message ?? '',
+        error.details?.toString() ?? '',
+      ].join(' ').toLowerCase();
+      if (details.contains('audioplayers') ||
+          details.contains('xyz.luan') ||
+          details.contains('no implementation found')) {
+        return true;
+      }
+    }
+    final String text = error.toString().toLowerCase();
+    return text.contains('missingpluginexception') &&
+        text.contains('audioplayers');
+  }
+
+  void _markAudioPreviewUnsupported() {
+    if (_audioPlaybackSupported) {
+      if (mounted) {
+        setState(() {
+          _audioPlaybackSupported = false;
+          _statusMessage =
+              'Voice generated. Preview player unavailable in this build.';
+        });
+      } else {
+        _audioPlaybackSupported = false;
+      }
+    }
+  }
+
+  String? _extractInvalidVoiceFromError(String message) {
+    final RegExpMatch? match = RegExp(
+      r'Invalid voice parameter:\s*([A-Za-z0-9 _-]+)',
+      caseSensitive: false,
+    ).firstMatch(message);
+    return match?.group(1)?.trim();
+  }
+
+  bool get _isCurrentPreviewPlaying {
+    if (_previewUrl.isEmpty) return false;
+    return _isPlaying && _loadedAudioUrl == _previewUrl;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedVoiceId = _fallbackVoiceIdForLanguage(_languageCode);
+    _bindAudioPlayer();
+  }
+
+  void _bindAudioPlayer() {
+    _playerStateSub = _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _isPlaying = state == PlayerState.playing;
+      });
+    });
+    _durationSub = _audioPlayer.onDurationChanged.listen((duration) {
+      if (!mounted) return;
+      setState(() {
+        _audioDuration = duration;
+      });
+    });
+    _positionSub = _audioPlayer.onPositionChanged.listen((position) {
+      if (!mounted) return;
+      setState(() {
+        _audioPosition = position;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _playerStateSub?.cancel();
+    _durationSub?.cancel();
+    _positionSub?.cancel();
+    try {
+      _audioPlayer.dispose();
+    } catch (_) {}
+    _textController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _generateVoice() async {
+    if (_isGenerating) return;
+    final String text = _textController.text.trim();
+    if (text.isEmpty) {
+      _showMessage('Write the text first.', isError: true);
+      return;
+    }
+    final String apiKey = _kieApiKey.trim();
+    if (apiKey.isEmpty) {
+      _showMessage(
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
+          isError: true);
+      return;
+    }
+
+    setState(() {
+      _isGenerating = true;
+      _statusMessage = 'Creating voice task...';
+      _resultAudioUrl = null;
+      _lastDownloadedFilePath = null;
+      _audioPosition = Duration.zero;
+      _audioDuration = Duration.zero;
+    });
+
+    try {
+      final String taskId = await _createKieVoiceTaskWithVoiceRecovery(
+        voice: _selectedVoiceId,
+        text: text,
+        stability: _stability,
+        languageCode: _languageCode,
+      );
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Generating voice audio...';
+      });
+
+      final String audioUrl = await _pollKieVoiceTask(taskId: taskId);
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Voice generated successfully.';
+        _resultAudioUrl = audioUrl;
+      });
+      await _prepareAudio(audioUrl);
+      _showMessage('Voice generated.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Voice generation failed.';
+      });
+      _showMessage(error.toString(), isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGenerating = false;
+        });
+      }
+    }
+  }
+
+  Future<String> _createKieVoiceTaskWithVoiceRecovery({
+    required String voice,
+    required String text,
+    required double stability,
+    required String languageCode,
+  }) async {
+    final String primaryVoiceId =
+        _sanitizeVoiceIdForLanguage(voice, languageCode);
+    if (primaryVoiceId != _selectedVoiceId) {
+      if (mounted) {
+        setState(() {
+          _selectedVoiceId = primaryVoiceId;
+        });
+      } else {
+        _selectedVoiceId = primaryVoiceId;
+      }
+    }
+    try {
+      return await _createKieVoiceTask(
+        voice: primaryVoiceId,
+        text: text,
+        stability: stability,
+        languageCode: languageCode,
+      );
+    } on StateError catch (error) {
+      final String message = error.toString();
+      if (!message.toLowerCase().contains('invalid voice parameter')) {
+        rethrow;
+      }
+      final String invalidVoiceId =
+          _extractInvalidVoiceFromError(message) ?? primaryVoiceId;
+      final String fallbackVoiceId = _fallbackVoiceIdForLanguage(
+        languageCode,
+        excludingVoiceId: invalidVoiceId,
+      );
+      if (fallbackVoiceId.toLowerCase() == primaryVoiceId.toLowerCase()) {
+        rethrow;
+      }
+      if (mounted) {
+        setState(() {
+          _selectedVoiceId = fallbackVoiceId;
+        });
+      } else {
+        _selectedVoiceId = fallbackVoiceId;
+      }
+      final String taskId = await _createKieVoiceTask(
+        voice: fallbackVoiceId,
+        text: text,
+        stability: stability,
+        languageCode: languageCode,
+      );
+      if (mounted) {
+        final String invalidLabel = _labelForVoiceId(invalidVoiceId);
+        final String fallbackLabel = _labelForVoiceId(fallbackVoiceId);
+        _showMessage(
+          'Voice "$invalidLabel" is unsupported. Switched to "$fallbackLabel".',
+        );
+      }
+      return taskId;
+    }
+  }
+
+  Future<String> _createKieVoiceTask({
+    required String voice,
+    required String text,
+    required double stability,
+    required String languageCode,
+  }) async {
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
+    final Map<String, dynamic> input = <String, dynamic>{
+      'dialogue': <Map<String, String>>[
+        <String, String>{
+          'text': text,
+          'voice': voice,
+        },
+      ],
+      'stability': double.parse(stability.toStringAsFixed(2)),
+      'language_code': languageCode,
+    };
+    final http.Response response = await http
+        .post(
+          uri,
+          headers: <String, String>{
+            'Authorization': 'Bearer ${_kieApiKey.trim()}',
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode(
+            <String, dynamic>{
+              'model': 'elevenlabs/text-to-dialogue-v3',
+              'input': input,
+            },
+          ),
+        )
+        .timeout(const Duration(minutes: 2));
+
+    final Map<String, dynamic> decoded = _decodeKieJson(
+      response.bodyBytes,
+      contextLabel: 'KIE createTask (voice)',
+    );
+    final int code = _readKieCode(decoded['code']);
+    final String message =
+        (decoded['msg'] as String?)?.trim() ?? 'Unknown KIE error.';
+    if (response.statusCode < 200 ||
+        response.statusCode >= 300 ||
+        code != 200) {
+      throw StateError(
+        'KIE voice createTask failed (${response.statusCode}): $message',
+      );
+    }
+    final Map<String, dynamic>? data = decoded['data'] is Map<String, dynamic>
+        ? decoded['data'] as Map<String, dynamic>
+        : null;
+    final String taskId = (data?['taskId'] as String?)?.trim() ?? '';
+    if (taskId.isEmpty) {
+      throw const FormatException(
+          'KIE voice createTask returned empty taskId.');
+    }
+    return taskId;
+  }
+
+  Future<String> _pollKieVoiceTask({required String taskId}) async {
+    final Uri uri = _kieProxyUri('/api/v1/jobs/recordInfo?taskId=$taskId');
+    const int maxAttempts = 160;
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      final http.Response response = await http.get(
+        uri,
+        headers: <String, String>{
+          'Authorization': 'Bearer ${_kieApiKey.trim()}',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(const Duration(seconds: 45));
+
+      if (response.statusCode == 429 ||
+          (response.statusCode >= 500 && response.statusCode < 600)) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
+      final Map<String, dynamic> decoded = _decodeKieJson(
+        response.bodyBytes,
+        contextLabel: 'KIE recordInfo (voice)',
+      );
+      final int code = _readKieCode(decoded['code']);
+      final String message =
+          (decoded['msg'] as String?)?.trim() ?? 'Unknown KIE error.';
+      if (response.statusCode < 200 ||
+          response.statusCode >= 300 ||
+          code != 200) {
+        throw StateError(
+          'KIE voice recordInfo failed (${response.statusCode}): $message',
+        );
+      }
+      final Map<String, dynamic>? data = decoded['data'] is Map<String, dynamic>
+          ? decoded['data'] as Map<String, dynamic>
+          : null;
+      if (data == null) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        continue;
+      }
+      final String state =
+          (data['state'] as String? ?? '').toLowerCase().trim();
+      if (state == 'success') {
+        final String url = _extractKieResultUrl(data);
+        if (url.isEmpty) {
+          throw const FormatException(
+            'KIE voice task completed but output URL is missing.',
+          );
+        }
+        return url;
+      }
+      if (state == 'fail') {
+        final String failMsg = (data['failMsg'] as String?)?.trim() ?? message;
+        throw StateError('KIE voice generation failed: $failMsg');
+      }
+      await Future<void>.delayed(const Duration(seconds: 2));
+    }
+    throw TimeoutException('KIE voice timeout. Please try again.');
+  }
+
+  String _extractKieResultUrl(Map<String, dynamic> data) {
+    dynamic resultJson = data['resultJson'];
+    if (resultJson is String && resultJson.trim().isNotEmpty) {
+      try {
+        resultJson = jsonDecode(resultJson);
+      } catch (_) {
+        resultJson = null;
+      }
+    }
+    if (resultJson is Map<String, dynamic>) {
+      final dynamic urls = resultJson['resultUrls'];
+      if (urls is List && urls.isNotEmpty) {
+        final dynamic first = urls.first;
+        if (first is String && first.trim().isNotEmpty) {
+          return first.trim();
+        }
+        if (first is Map<String, dynamic>) {
+          final String nestedUrl = (first['url'] as String?)?.trim() ?? '';
+          if (nestedUrl.isNotEmpty) return nestedUrl;
+        }
+      }
+    }
+    final dynamic directUrls = data['resultUrls'];
+    if (directUrls is List && directUrls.isNotEmpty) {
+      final String first = directUrls.first.toString().trim();
+      if (first.isNotEmpty) return first;
+    }
+    return '';
+  }
+
+  Map<String, dynamic> _decodeKieJson(
+    Uint8List bodyBytes, {
+    required String contextLabel,
+  }) {
+    final dynamic decoded = jsonDecode(utf8.decode(bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw FormatException('$contextLabel response is invalid.');
+    }
+    return decoded;
+  }
+
+  int _readKieCode(dynamic value) {
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? -1;
+    return -1;
+  }
+
+  Future<void> _prepareAudio(String url) async {
+    try {
+      await _loadAudioUrl(url, autoplay: false);
+    } catch (error) {
+      if (_isAudioPluginMissingError(error)) {
+        _markAudioPreviewUnsupported();
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Voice generated but audio preview is unavailable.';
+      });
+    }
+  }
+
+  Future<void> _loadAudioUrl(
+    String url, {
+    required bool autoplay,
+  }) async {
+    await _audioPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _audioPosition = Duration.zero;
+        _audioDuration = Duration.zero;
+      });
+    }
+    await _audioPlayer.setSourceUrl(url);
+    if (mounted) {
+      setState(() {
+        _loadedAudioUrl = url;
+      });
+    } else {
+      _loadedAudioUrl = url;
+    }
+    if (autoplay) {
+      await _audioPlayer.resume();
+    }
+  }
+
+  Future<void> _toggleVoicePreview() async {
+    if (_isGenerating || _isPreviewGenerating || !_audioPlaybackSupported) {
+      if (!_audioPlaybackSupported) {
+        _showMessage(
+          'Preview player unavailable in this build. Use Generate + Download.',
+        );
+      }
+      return;
+    }
+    if (_previewUrl.isNotEmpty && _loadedAudioUrl == _previewUrl) {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else {
+        await _audioPlayer.resume();
+      }
+      return;
+    }
+    try {
+      setState(() {
+        _isPreviewGenerating = true;
+        _statusMessage = 'Loading voice preview...';
+      });
+      final String normalizedVoiceId =
+          _sanitizeVoiceIdForLanguage(_selectedVoiceId, _languageCode);
+      if (normalizedVoiceId != _selectedVoiceId) {
+        setState(() {
+          _selectedVoiceId = normalizedVoiceId;
+        });
+      }
+      final String previewUrl =
+          'https://static.aiquickdraw.com/elevenlabs/voice/${Uri.encodeComponent(normalizedVoiceId)}.mp3';
+      if (!mounted) return;
+      await _loadAudioUrl(previewUrl, autoplay: true);
+      if (!mounted) return;
+      setState(() {
+        _statusMessage = 'Voice preview ready.';
+      });
+    } catch (error) {
+      if (_isAudioPluginMissingError(error)) {
+        _markAudioPreviewUnsupported();
+        _showMessage(
+          'Preview player unavailable in this build. Reinstall latest APK.',
+        );
+        return;
+      }
+      _showMessage(error.toString(), isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPreviewGenerating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _togglePlayback() async {
+    if (!_audioPlaybackSupported) {
+      _showMessage(
+        'Built-in audio player unavailable in this build. Use Download.',
+      );
+      return;
+    }
+    final String? url = _resultAudioUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      if (_loadedAudioUrl != url) {
+        await _loadAudioUrl(url, autoplay: true);
+        return;
+      }
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+        return;
+      }
+      if (_audioDuration > Duration.zero &&
+          _audioPosition >=
+              _audioDuration - const Duration(milliseconds: 200)) {
+        await _audioPlayer.seek(Duration.zero);
+      }
+      await _audioPlayer.resume();
+    } catch (_) {
+      try {
+        await _loadAudioUrl(url, autoplay: true);
+      } catch (error) {
+        if (_isAudioPluginMissingError(error)) {
+          _markAudioPreviewUnsupported();
+          _showMessage(
+            'Built-in audio player unavailable in this build. Use Download.',
+          );
+          return;
+        }
+        _showMessage(error.toString(), isError: true);
+      }
+    }
+  }
+
+  Future<void> _seekAudio(double valueMs) async {
+    if (!_audioPlaybackSupported) return;
+    if (_audioDuration <= Duration.zero) return;
+    final int safeMs = valueMs.round().clamp(0, _audioDuration.inMilliseconds);
+    try {
+      await _audioPlayer.seek(Duration(milliseconds: safeMs));
+    } catch (error) {
+      if (_isAudioPluginMissingError(error)) {
+        _markAudioPreviewUnsupported();
+      }
+    }
+  }
+
+  Future<void> _downloadAudioToTemp() async {
+    final String? url = _resultAudioUrl;
+    if (url == null || url.isEmpty || _isDownloading) return;
+    setState(() {
+      _isDownloading = true;
+    });
+    try {
+      final http.Response response =
+          await http.get(Uri.parse(url)).timeout(const Duration(minutes: 3));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError('Audio download failed (${response.statusCode}).');
+      }
+      final String extension = _guessAudioExtension(
+        url: url,
+        contentType: response.headers['content-type'],
+      );
+      final String path = await _buildDownloadPath(extension);
+      final File file = File(path);
+      await file.writeAsBytes(response.bodyBytes, flush: true);
+      if (!mounted) return;
+      setState(() {
+        _lastDownloadedFilePath = path;
+      });
+      _showMessage('Audio downloaded to temp storage.');
+    } catch (error) {
+      _showMessage(error.toString(), isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  Future<String> _buildDownloadPath(String extension) async {
+    final String fileName =
+        'wonderpic_voice_${DateTime.now().millisecondsSinceEpoch}.$extension';
+    if (Platform.isAndroid) {
+      final Directory androidDownload =
+          Directory('/storage/emulated/0/Download');
+      if (await androidDownload.exists()) {
+        return '${androidDownload.path}/$fileName';
+      }
+    }
+    return '${Directory.systemTemp.path}/$fileName';
+  }
+
+  String _guessAudioExtension({
+    required String url,
+    String? contentType,
+  }) {
+    final String normalizedType = (contentType ?? '').toLowerCase();
+    if (normalizedType.contains('audio/mpeg') ||
+        normalizedType.contains('audio/mp3')) {
+      return 'mp3';
+    }
+    if (normalizedType.contains('audio/wav') ||
+        normalizedType.contains('audio/x-wav')) {
+      return 'wav';
+    }
+    if (normalizedType.contains('audio/ogg')) return 'ogg';
+    if (normalizedType.contains('audio/aac')) return 'aac';
+    final String lowerUrl = url.toLowerCase();
+    if (lowerUrl.contains('.wav')) return 'wav';
+    if (lowerUrl.contains('.ogg')) return 'ogg';
+    if (lowerUrl.contains('.aac')) return 'aac';
+    return 'mp3';
+  }
+
+  void _showMessage(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? const Color(0xFFB3261E) : _cardBg,
+      ),
+    );
+  }
+
+  String _inferNearestQuality(double stability) {
+    String nearest = _qualityPresets.keys.first;
+    double minDiff = double.infinity;
+    _qualityPresets.forEach((label, value) {
+      final double diff = (stability - value).abs();
+      if (diff < minDiff) {
+        minDiff = diff;
+        nearest = label;
+      }
+    });
+    return nearest;
+  }
+
+  double _snapStability(double value) {
+    if (value < 0.25) return 0.0;
+    if (value < 0.75) return 0.5;
+    return 1.0;
+  }
+
+  String _formatDuration(Duration value) {
+    final int minutes = value.inMinutes;
+    final int seconds = value.inSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildLanguageChip(String value, String label) {
+    final bool active = _languageCode == value;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: _isGenerating
+          ? null
+          : () {
+              final List<_VoicePreset> nextVoices =
+                  _voiceOptionsForLanguage(value);
+              setState(() {
+                final bool changed = _languageCode != value;
+                _languageCode = value;
+                if (changed) {
+                  _selectedVoiceId = nextVoices.first.id;
+                } else if (!nextVoices
+                    .any((voice) => voice.id == _selectedVoiceId)) {
+                  _selectedVoiceId = nextVoices.first.id;
+                }
+              });
+            },
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? kActiveAccent : _cardBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _stroke),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? kActiveAccentForeground : _textMain,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQualityChip(String label, double value) {
+    final bool active = _selectedQuality == label;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: _isGenerating
+          ? null
+          : () {
+              setState(() {
+                _selectedQuality = label;
+                _stability = value;
+              });
+            },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? kActiveAccent : _cardBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _stroke),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? kActiveAccentForeground : _textMain,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGeneratedAudioCard() {
+    final String? url = _resultAudioUrl;
+    if (url == null || url.isEmpty) return const SizedBox.shrink();
+    final double maxMs =
+        math.max<double>(_audioDuration.inMilliseconds.toDouble(), 1);
+    final double valueMs =
+        _audioPosition.inMilliseconds.toDouble().clamp(0, maxMs);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _stroke),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Generated Voice',
+            style: TextStyle(
+              color: _textMain,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF11151C),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _stroke),
+            ),
+            child: Row(
+              children: [
+                IconButton(
+                  splashRadius: 20,
+                  onPressed: _togglePlayback,
+                  icon: Icon(
+                    _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    color: _textMain,
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    children: [
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                          ),
+                        ),
+                        child: Slider(
+                          value: valueMs,
+                          min: 0,
+                          max: maxMs,
+                          onChanged: (value) => _seekAudio(value),
+                          activeColor: kActiveAccent,
+                          inactiveColor: const Color(0xFF303643),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          children: [
+                            Text(
+                              _formatDuration(_audioPosition),
+                              style: const TextStyle(
+                                color: _textSub,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              _formatDuration(_audioDuration),
+                              style: const TextStyle(
+                                color: _textSub,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _isDownloading ? null : _downloadAudioToTemp,
+              icon: _isDownloading
+                  ? const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_rounded, size: 18),
+              label: Text(_isDownloading ? 'Downloading...' : 'Download'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _cardBg,
+                foregroundColor: _textMain,
+                side: const BorderSide(color: _stroke),
+                minimumSize: const Size.fromHeight(44),
+              ),
+            ),
+          ),
+          if (_lastDownloadedFilePath != null &&
+              _lastDownloadedFilePath!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SelectableText(
+              _lastDownloadedFilePath!,
+              style: const TextStyle(
+                color: _textSub,
+                fontSize: 11.5,
+                height: 1.3,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          SelectableText(
+            url,
+            style: const TextStyle(
+              color: _textSub,
+              fontSize: 11.5,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _pageBg,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(14, 10, 14, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    splashRadius: 20,
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon:
+                        const Icon(Icons.arrow_back_rounded, color: _textMain),
+                  ),
+                  const SizedBox(width: 2),
+                  const Text(
+                    'Generate Voice',
+                    style: TextStyle(
+                      color: _textMain,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 2),
+              const Text(
+                'Model: ElevenLabs text-to-dialogue-v3',
+                style: TextStyle(
+                  color: _textSub,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF171A20),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _stroke),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Language',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _languageOptions.entries
+                          .map((entry) => _buildLanguageChip(
+                                entry.key,
+                                entry.value,
+                              ))
+                          .toList(growable: false),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _languageCode == 'ar'
+                          ? 'Arabic Voice Library'
+                          : 'English Voice Library',
+                      style: const TextStyle(
+                        color: _textSub,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Voice',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: _selectedVoiceId,
+                      isExpanded: true,
+                      dropdownColor: _cardBg,
+                      iconEnabledColor: _textMain,
+                      style: const TextStyle(
+                        color: _textMain,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: const Color(0xFF11151C),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: _stroke),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: _stroke),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: kActiveAccent),
+                        ),
+                      ),
+                      items: _currentVoiceOptions
+                          .map(
+                            (voice) => DropdownMenuItem<String>(
+                              value: voice.id,
+                              child: Text(voice.label),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: _isGenerating
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _selectedVoiceId = value;
+                              });
+                            },
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isPreviewGenerating ||
+                                _isGenerating ||
+                                !_audioPlaybackSupported
+                            ? null
+                            : _toggleVoicePreview,
+                        icon: _isPreviewGenerating
+                            ? const SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                _isCurrentPreviewPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                size: 18,
+                              ),
+                        label: Text(
+                          !_audioPlaybackSupported
+                              ? 'Preview Unavailable'
+                              : (_isPreviewGenerating
+                                  ? 'Preparing preview...'
+                                  : (_isCurrentPreviewPlaying
+                                      ? 'Pause Voice Preview'
+                                      : 'Preview Voice')),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _textMain,
+                          side: const BorderSide(color: _stroke),
+                          minimumSize: const Size.fromHeight(42),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _textController,
+                      enabled: !_isGenerating,
+                      minLines: 4,
+                      maxLines: 8,
+                      style: const TextStyle(
+                        color: _textMain,
+                        fontSize: 13.5,
+                        height: 1.35,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: 'Write the text to generate as voice...',
+                        hintStyle: const TextStyle(
+                          color: _textSub,
+                          fontSize: 12.5,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF11151C),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        const Text(
+                          'Quality',
+                          style: TextStyle(
+                            color: _textMain,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          _stability.toStringAsFixed(2),
+                          style: const TextStyle(
+                            color: _textSub,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _qualityPresets.entries
+                          .map(
+                            (entry) =>
+                                _buildQualityChip(entry.key, entry.value),
+                          )
+                          .toList(growable: false),
+                    ),
+                    Slider(
+                      value: _stability,
+                      onChanged: _isGenerating
+                          ? null
+                          : (value) {
+                              final double snapped = _snapStability(value);
+                              setState(() {
+                                _stability = snapped;
+                                _selectedQuality =
+                                    _inferNearestQuality(snapped);
+                              });
+                            },
+                      min: 0.0,
+                      max: 1.0,
+                      divisions: 2,
+                      activeColor: kActiveAccent,
+                      inactiveColor: const Color(0xFF303643),
+                    ),
+                    const Text(
+                      'Official KIE control for this model: stability (quality) + language_code.',
+                      style: TextStyle(
+                        color: _textSub,
+                        fontSize: 11.5,
+                        height: 1.35,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _isGenerating ? null : _generateVoice,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kActiveAccent,
+                          foregroundColor: kActiveAccentForeground,
+                          disabledBackgroundColor: _cardBg,
+                          disabledForegroundColor: _textSub,
+                          minimumSize: const Size.fromHeight(48),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        icon: _isGenerating
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.graphic_eq_rounded, size: 20),
+                        label: Text(
+                          _isGenerating ? 'Generating...' : 'Generate Voice',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (_statusMessage != null &&
+                        _statusMessage!.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _statusMessage!,
+                        style: const TextStyle(
+                          color: _textSub,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (_resultAudioUrl != null && _resultAudioUrl!.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildGeneratedAudioCard(),
+              ],
             ],
           ),
         ),
@@ -4563,6 +5972,7 @@ extension EditorLayerTypeUi on EditorLayerType {
 
 enum EditorTool {
   move,
+  erase,
   pencil,
   text,
   clone,
@@ -4700,7 +6110,7 @@ extension _RegenerateModelUi on _RegenerateModel {
       case _RegenerateModel.flux2Pro:
         return 'Flux 2 Pro';
       case _RegenerateModel.seedream5Lite:
-        return 'C Dream 5 Lite';
+        return 'Seedream 5 Lite';
     }
   }
 
@@ -4716,7 +6126,7 @@ extension _RegenerateModelUi on _RegenerateModel {
   }
 }
 
-enum _RegenerateQualityPreset { autoReference, k1, k2 }
+enum _RegenerateQualityPreset { autoReference, k1, k2, k4 }
 
 extension _RegenerateQualityPresetUi on _RegenerateQualityPreset {
   String get label {
@@ -4727,6 +6137,8 @@ extension _RegenerateQualityPresetUi on _RegenerateQualityPreset {
         return '1K';
       case _RegenerateQualityPreset.k2:
         return '2K';
+      case _RegenerateQualityPreset.k4:
+        return '4K';
     }
   }
 }
@@ -4785,6 +6197,8 @@ enum _KieIdeogramImageSize {
   squareHd,
   portrait43,
   portrait169,
+  landscape43,
+  landscape169,
 }
 
 extension _KieIdeogramImageSizeUi on _KieIdeogramImageSize {
@@ -4798,6 +6212,10 @@ extension _KieIdeogramImageSizeUi on _KieIdeogramImageSize {
         return 'Portrait 3:4';
       case _KieIdeogramImageSize.portrait169:
         return 'Portrait 9:16';
+      case _KieIdeogramImageSize.landscape43:
+        return 'Landscape 4:3';
+      case _KieIdeogramImageSize.landscape169:
+        return 'Landscape 16:9';
     }
   }
 
@@ -4811,6 +6229,146 @@ extension _KieIdeogramImageSizeUi on _KieIdeogramImageSize {
         return 'portrait_4_3';
       case _KieIdeogramImageSize.portrait169:
         return 'portrait_16_9';
+      case _KieIdeogramImageSize.landscape43:
+        return 'landscape_4_3';
+      case _KieIdeogramImageSize.landscape169:
+        return 'landscape_16_9';
+    }
+  }
+}
+
+enum _KieNanoAspectRatio { square, portrait34, story916 }
+
+extension _KieNanoAspectRatioUi on _KieNanoAspectRatio {
+  String get label {
+    switch (this) {
+      case _KieNanoAspectRatio.square:
+        return 'Square';
+      case _KieNanoAspectRatio.portrait34:
+        return 'Portrait 3:4';
+      case _KieNanoAspectRatio.story916:
+        return 'Story 9:16';
+    }
+  }
+
+  String get apiValue {
+    switch (this) {
+      case _KieNanoAspectRatio.square:
+        return '1:1';
+      case _KieNanoAspectRatio.portrait34:
+        return '3:4';
+      case _KieNanoAspectRatio.story916:
+        return '9:16';
+    }
+  }
+}
+
+enum _KieFluxAspectRatio {
+  square11,
+  landscape43,
+  portrait34,
+  landscape169,
+  story916,
+  landscape32,
+  portrait23,
+  auto,
+}
+
+extension _KieFluxAspectRatioUi on _KieFluxAspectRatio {
+  String get label {
+    switch (this) {
+      case _KieFluxAspectRatio.square11:
+        return '1:1';
+      case _KieFluxAspectRatio.landscape43:
+        return '4:3';
+      case _KieFluxAspectRatio.portrait34:
+        return '3:4';
+      case _KieFluxAspectRatio.landscape169:
+        return '16:9';
+      case _KieFluxAspectRatio.story916:
+        return '9:16';
+      case _KieFluxAspectRatio.landscape32:
+        return '3:2';
+      case _KieFluxAspectRatio.portrait23:
+        return '2:3';
+      case _KieFluxAspectRatio.auto:
+        return 'Auto';
+    }
+  }
+
+  String get apiValue {
+    switch (this) {
+      case _KieFluxAspectRatio.square11:
+        return '1:1';
+      case _KieFluxAspectRatio.landscape43:
+        return '4:3';
+      case _KieFluxAspectRatio.portrait34:
+        return '3:4';
+      case _KieFluxAspectRatio.landscape169:
+        return '16:9';
+      case _KieFluxAspectRatio.story916:
+        return '9:16';
+      case _KieFluxAspectRatio.landscape32:
+        return '3:2';
+      case _KieFluxAspectRatio.portrait23:
+        return '2:3';
+      case _KieFluxAspectRatio.auto:
+        return 'auto';
+    }
+  }
+}
+
+enum _KieSeedreamAspectRatio {
+  square11,
+  landscape43,
+  portrait34,
+  landscape169,
+  story916,
+  portrait23,
+  landscape32,
+  cinematic219,
+}
+
+extension _KieSeedreamAspectRatioUi on _KieSeedreamAspectRatio {
+  String get label {
+    switch (this) {
+      case _KieSeedreamAspectRatio.square11:
+        return '1:1';
+      case _KieSeedreamAspectRatio.landscape43:
+        return '4:3';
+      case _KieSeedreamAspectRatio.portrait34:
+        return '3:4';
+      case _KieSeedreamAspectRatio.landscape169:
+        return '16:9';
+      case _KieSeedreamAspectRatio.story916:
+        return '9:16';
+      case _KieSeedreamAspectRatio.portrait23:
+        return '2:3';
+      case _KieSeedreamAspectRatio.landscape32:
+        return '3:2';
+      case _KieSeedreamAspectRatio.cinematic219:
+        return '21:9';
+    }
+  }
+
+  String get apiValue {
+    switch (this) {
+      case _KieSeedreamAspectRatio.square11:
+        return '1:1';
+      case _KieSeedreamAspectRatio.landscape43:
+        return '4:3';
+      case _KieSeedreamAspectRatio.portrait34:
+        return '3:4';
+      case _KieSeedreamAspectRatio.landscape169:
+        return '16:9';
+      case _KieSeedreamAspectRatio.story916:
+        return '9:16';
+      case _KieSeedreamAspectRatio.portrait23:
+        return '2:3';
+      case _KieSeedreamAspectRatio.landscape32:
+        return '3:2';
+      case _KieSeedreamAspectRatio.cinematic219:
+        return '21:9';
     }
   }
 }
@@ -4982,7 +6540,7 @@ extension _KieAiImageModelUi on _KieAiImageModel {
       case _KieAiImageModel.nanoBanana:
         return 'Gemini Nano Banana 2';
       case _KieAiImageModel.ideogramV3Remix:
-        return 'Ideogram v3 Remix';
+        return 'Ideogram v3 Text';
       case _KieAiImageModel.gptImage15:
         return 'ChatGPT Image 1.5';
       case _KieAiImageModel.flux2Pro:
@@ -5007,11 +6565,11 @@ extension _KieAiImageModelUi on _KieAiImageModel {
       case _KieAiImageModel.nanoBanana:
         return 'nano-banana-2';
       case _KieAiImageModel.ideogramV3Remix:
-        return 'ideogram/v3-remix';
+        return 'ideogram/v3-text-to-image';
       case _KieAiImageModel.gptImage15:
         return 'gpt-image/1.5-text-to-image';
       case _KieAiImageModel.flux2Pro:
-        return 'flux-2/pro-text-to-image';
+        return 'flux-2/pro-image-to-image';
       case _KieAiImageModel.imagen4:
         return 'google/imagen4';
       case _KieAiImageModel.grokImagine:
@@ -5198,6 +6756,177 @@ class _AiVectorSheetResult {
   final Uint8List pngBytes;
 }
 
+class _ElementsCategory {
+  const _ElementsCategory({
+    required this.slug,
+    required this.name,
+    this.sortOrder = 0,
+  });
+
+  final String slug;
+  final String name;
+  final int sortOrder;
+
+  factory _ElementsCategory.fromJson(Map<String, dynamic> json) {
+    return _ElementsCategory(
+      slug: (json['slug'] as String? ?? '').trim(),
+      name: (json['name'] as String? ?? '').trim(),
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class _ElementsAssetItem {
+  const _ElementsAssetItem({
+    required this.id,
+    required this.categorySlug,
+    required this.fileUrl,
+    this.title,
+    this.mimeType,
+    this.width,
+    this.height,
+    this.sortOrder = 0,
+  });
+
+  final String id;
+  final String categorySlug;
+  final String fileUrl;
+  final String? title;
+  final String? mimeType;
+  final int? width;
+  final int? height;
+  final int sortOrder;
+
+  factory _ElementsAssetItem.fromJson(Map<String, dynamic> json) {
+    return _ElementsAssetItem(
+      id: (json['id'] as String? ?? '').trim(),
+      categorySlug: (json['category_slug'] as String? ?? '').trim(),
+      fileUrl: (json['file_url'] as String? ?? '').trim(),
+      title: (json['title'] as String?)?.trim(),
+      mimeType: (json['mime_type'] as String?)?.trim(),
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class _ElementsCatalogResponse {
+  const _ElementsCatalogResponse({
+    required this.categories,
+    required this.assets,
+  });
+
+  final List<_ElementsCategory> categories;
+  final List<_ElementsAssetItem> assets;
+
+  factory _ElementsCatalogResponse.fromJson(Map<String, dynamic> json) {
+    final List<dynamic> categoryRaw =
+        (json['categories'] as List<dynamic>?) ?? const <dynamic>[];
+    final List<dynamic> assetRaw =
+        (json['assets'] as List<dynamic>?) ?? const <dynamic>[];
+    return _ElementsCatalogResponse(
+      categories: categoryRaw
+          .whereType<Map>()
+          .map(
+            (entry) => _ElementsCategory.fromJson(
+              Map<String, dynamic>.from(
+                entry.map(
+                  (key, value) => MapEntry(key.toString(), value),
+                ),
+              ),
+            ),
+          )
+          .where((entry) => entry.slug.isNotEmpty && entry.name.isNotEmpty)
+          .toList(growable: false),
+      assets: assetRaw
+          .whereType<Map>()
+          .map(
+            (entry) => _ElementsAssetItem.fromJson(
+              Map<String, dynamic>.from(
+                entry.map(
+                  (key, value) => MapEntry(key.toString(), value),
+                ),
+              ),
+            ),
+          )
+          .where((entry) => entry.id.isNotEmpty && entry.fileUrl.isNotEmpty)
+          .toList(growable: false),
+    );
+  }
+}
+
+class _ElementsAssetSelection {
+  const _ElementsAssetSelection({
+    required this.asset,
+    this.pointerId,
+    this.globalPosition,
+    this.isDragPickup = false,
+  });
+
+  final _ElementsAssetItem asset;
+  final int? pointerId;
+  final Offset? globalPosition;
+  final bool isDragPickup;
+}
+
+class _PendingElementPlacement {
+  const _PendingElementPlacement({
+    required this.assetId,
+    required this.fileUrl,
+    required this.image,
+    required this.thumbnailBytes,
+    required this.initialLayerScale,
+    required this.previewSize,
+    required this.layerNamePrefix,
+    required this.placeOnDrop,
+    required this.isLoading,
+  });
+
+  final String assetId;
+  final String fileUrl;
+  final ui.Image? image;
+  final Uint8List? thumbnailBytes;
+  final double? initialLayerScale;
+  final double previewSize;
+  final String layerNamePrefix;
+  final bool placeOnDrop;
+  final bool isLoading;
+
+  _PendingElementPlacement copyWith({
+    String? assetId,
+    String? fileUrl,
+    ui.Image? image,
+    Uint8List? thumbnailBytes,
+    double? initialLayerScale,
+    double? previewSize,
+    String? layerNamePrefix,
+    bool? placeOnDrop,
+    bool? isLoading,
+  }) {
+    return _PendingElementPlacement(
+      assetId: assetId ?? this.assetId,
+      fileUrl: fileUrl ?? this.fileUrl,
+      image: image ?? this.image,
+      thumbnailBytes: thumbnailBytes ?? this.thumbnailBytes,
+      initialLayerScale: initialLayerScale ?? this.initialLayerScale,
+      previewSize: previewSize ?? this.previewSize,
+      layerNamePrefix: layerNamePrefix ?? this.layerNamePrefix,
+      placeOnDrop: placeOnDrop ?? this.placeOnDrop,
+      isLoading: isLoading ?? this.isLoading,
+    );
+  }
+}
+
+const List<_ElementsCategory> _kDefaultElementsCategories = <_ElementsCategory>[
+  _ElementsCategory(slug: 'basic-shapes', name: 'Basic', sortOrder: 10),
+  _ElementsCategory(slug: 'arrows-lines', name: 'Arrows', sortOrder: 20),
+  _ElementsCategory(slug: 'badges-labels', name: 'Badges', sortOrder: 30),
+  _ElementsCategory(slug: 'bubbles-cards', name: 'Bubbles', sortOrder: 40),
+  _ElementsCategory(slug: 'decorative', name: 'Decorative', sortOrder: 50),
+  _ElementsCategory(slug: 'symbols-icons', name: 'Symbols', sortOrder: 60),
+];
+
 class _UpscaleSheetResult {
   const _UpscaleSheetResult({
     required this.imageBytes,
@@ -5206,6 +6935,73 @@ class _UpscaleSheetResult {
 
   final Uint8List imageBytes;
   final _UpscaleAmount amount;
+}
+
+class _LoadedElementAsset {
+  const _LoadedElementAsset({
+    required this.bytes,
+    required this.image,
+  });
+
+  final Uint8List bytes;
+  final ui.Image image;
+}
+
+class _ElementsShimmerTile extends StatefulWidget {
+  const _ElementsShimmerTile({
+    this.radius = 8,
+  });
+
+  final double radius;
+
+  @override
+  State<_ElementsShimmerTile> createState() => _ElementsShimmerTileState();
+}
+
+class _ElementsShimmerTileState extends State<_ElementsShimmerTile>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1050),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final double sweep = _controller.value;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(widget.radius),
+          child: ShaderMask(
+            blendMode: BlendMode.srcATop,
+            shaderCallback: (Rect rect) {
+              final double start = -1.4 + (sweep * 2.8);
+              return LinearGradient(
+                begin: Alignment(start, -0.2),
+                end: Alignment(start + 1.0, 0.2),
+                colors: const <Color>[
+                  Color(0xFF2A2D33),
+                  Color(0xFF434752),
+                  Color(0xFF2A2D33),
+                ],
+                stops: const <double>[0.1, 0.45, 0.9],
+              ).createShader(rect);
+            },
+            child: Container(
+              color: const Color(0xFF2A2D33),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ProjectCreateRequest {
@@ -5228,6 +7024,9 @@ class _AiImageGenerateRequest {
   const _AiImageGenerateRequest({
     required this.model,
     required this.nanoVersion,
+    required this.nanoAspectRatio,
+    required this.fluxAspectRatio,
+    required this.seedreamAspectRatio,
     required this.ideogramStyle,
     required this.ideogramImageSize,
     required this.sizePreset,
@@ -5238,6 +7037,9 @@ class _AiImageGenerateRequest {
 
   final _KieAiImageModel model;
   final _KieNanoBananaVersion nanoVersion;
+  final _KieNanoAspectRatio nanoAspectRatio;
+  final _KieFluxAspectRatio fluxAspectRatio;
+  final _KieSeedreamAspectRatio seedreamAspectRatio;
   final _KieIdeogramStyle ideogramStyle;
   final _KieIdeogramImageSize ideogramImageSize;
   final _AiCanvasSizePreset sizePreset;
@@ -5259,7 +7061,7 @@ class _RegenerateGenerateRequest {
   final String prompt;
   final _RegenerateModel model;
   final _RegenerateQualityPreset qualityPreset;
-  final Uint8List? secondaryReferenceBytes;
+  final Uint8List secondaryReferenceBytes;
 }
 
 class _AddBottomSheetResult {
@@ -5751,19 +7553,22 @@ enum _CropRatioPreset {
   ratio1x1,
   ratio4x5,
   ratio9x16Portrait,
+  ratio191x100,
 }
 
 extension _CropRatioPresetUi on _CropRatioPreset {
   String get label {
     switch (this) {
       case _CropRatioPreset.free:
-        return 'Free Size';
+        return 'Free';
       case _CropRatioPreset.ratio1x1:
-        return '1:1';
+        return 'Square (1:1)';
       case _CropRatioPreset.ratio4x5:
-        return '4:5';
+        return 'Instagram Post (4:5)';
       case _CropRatioPreset.ratio9x16Portrait:
-        return '16:9 Portrait';
+        return 'Story (9:16)';
+      case _CropRatioPreset.ratio191x100:
+        return 'Facebook Post (1.91:1)';
     }
   }
 
@@ -5777,7 +7582,13 @@ extension _CropRatioPresetUi on _CropRatioPreset {
         return 4 / 5;
       case _CropRatioPreset.ratio9x16Portrait:
         return 9 / 16;
+      case _CropRatioPreset.ratio191x100:
+        return 1.91;
     }
+  }
+
+  bool get isFreeformHandleMode {
+    return this == _CropRatioPreset.free || this == _CropRatioPreset.ratio1x1;
   }
 }
 
@@ -6035,6 +7846,59 @@ class CloneStampSettings {
       size: size ?? this.size,
       hardness: hardness ?? this.hardness,
       opacity: opacity ?? this.opacity,
+    );
+  }
+}
+
+enum EraseBrushShape {
+  round,
+  square,
+  diamond,
+  horizontal,
+  vertical,
+}
+
+extension EraseBrushShapeUi on EraseBrushShape {
+  String get label {
+    switch (this) {
+      case EraseBrushShape.round:
+        return 'Round';
+      case EraseBrushShape.square:
+        return 'Square';
+      case EraseBrushShape.diamond:
+        return 'Diamond';
+      case EraseBrushShape.horizontal:
+        return 'Horizontal';
+      case EraseBrushShape.vertical:
+        return 'Vertical';
+    }
+  }
+}
+
+class EraseToolSettings {
+  const EraseToolSettings({
+    this.size = 34,
+    this.hardness = 78,
+    this.opacity = 100,
+    this.shape = EraseBrushShape.round,
+  });
+
+  final double size;
+  final double hardness;
+  final double opacity;
+  final EraseBrushShape shape;
+
+  EraseToolSettings copyWith({
+    double? size,
+    double? hardness,
+    double? opacity,
+    EraseBrushShape? shape,
+  }) {
+    return EraseToolSettings(
+      size: size ?? this.size,
+      hardness: hardness ?? this.hardness,
+      opacity: opacity ?? this.opacity,
+      shape: shape ?? this.shape,
     );
   }
 }
@@ -6914,25 +8778,39 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   static const double _bottomNavHeight = 62;
   static const double _topToolButtonSize = 40;
   static const double _topToolSpacing = 8;
-  static const double _moveJoystickSize = 52;
-  static const double _moveJoystickKnobSize = 20;
-  static const double _moveJoystickDockBottomGap = 8;
-  static const double _moveJoystickGap = 12;
-  static const double _moveJoystickKnobTravel = 12;
-  static const double _cloneJoystickSize = 58;
-  static const double _cloneJoystickKnobSize = 22;
-  static const double _cloneJoystickKnobTravel = 13;
-  static const double _cloneJoystickHorizontalInset = 22;
-  static const double _moveJoystickRotationSensitivity = 0.0092;
-  static const double _moveJoystickScaleSensitivity = 0.0096;
+  static const double _moveJoystickSize = 62;
+  static const double _moveJoystickKnobSize = 24;
+  static const double _moveJoystickDockBottomGap = 12;
+  static const double _moveJoystickGap = 26;
+  static const double _moveJoystickKnobTravel = 14;
+  static const double _cloneJoystickSize = 72;
+  static const double _cloneJoystickKnobSize = 27;
+  static const double _cloneJoystickKnobTravel = 17;
+  static const double _cloneSetSourceDockButtonSize = 58;
+  static const double _cloneJoystickHorizontalInset = 34;
+  static const double _moveJoystickRotationSensitivity = 0.0046;
+  static const double _moveJoystickScaleSensitivity = 0.0036;
   static const double _joystickMinLayerScale = 0.02;
   static const double _joystickMaxLayerScale = 20.0;
-  static const Duration _cloneJoystickCursorIdleTimeout = Duration(seconds: 30);
+  static const Duration _cloneJoystickCursorIdleTimeout = Duration(seconds: 5);
   static const double _textQuickDockHeight = 36;
   static const double _textQuickDockBottomGap = 10;
   static const double _textFloatingPanelClearance = 6;
   static const double _bottomNavHorizontalInset = 2;
   static const double _textToolsHorizontalInset = 4;
+  static const List<_CropRatioPreset> _cropQuickPresets = <_CropRatioPreset>[
+    _CropRatioPreset.free,
+    _CropRatioPreset.ratio4x5,
+    _CropRatioPreset.ratio9x16Portrait,
+    _CropRatioPreset.ratio1x1,
+    _CropRatioPreset.ratio191x100,
+  ];
+  static const double _elementStandardLongestEdgeRatio = 0.14;
+  static const double _pendingElementPreviewFallbackSize = 86;
+  static const double _pendingElementPreviewMinSize = 62;
+  static const double _pendingElementPreviewMaxSize = 122;
+  static const double _pendingElementTapPlaceThresholdPx = 10;
+  static const Color _bottomSheetSurface = Color(0xFF26292F);
   static const Color _floatingPanelSurface = Color(0xFF1E1F22);
   static const Color _floatingPanelSurfaceSolid = Color(0xFF1E1F22);
   static const Color _floatingPanelStroke = Color(0x244F5358);
@@ -6943,7 +8821,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   static const Color _floatingPanelHint = Color(0xFF938A87);
   static const String _openAiEmbeddedApiKey = '';
   static const String _geminiEmbeddedApiKey = '';
-  static const String _kieEmbeddedApiKey = '063df1b9f5839b39ba0bf735e5486cf3';
   static const String _replicateEmbeddedApiToken = '';
   static const String _replicateInpaintModelVersion =
       '95b7223104132402a9ae91cc677285bc5eb997834bd2349fa486f53910fd68b3';
@@ -6953,10 +8830,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       '2757d1ac2f1291af219f5f10e8ecba15e92e7c05253e2841295f3ba6bff6adc4';
   // Requested UX: no bottom snackbars in editor flows.
   static const bool _editorBottomSnackbarsEnabled = false;
+  static const double _creditCostTier1 = 1.0;
+  static const double _creditCostTier2 = 1.0;
+  static const double _creditCostTier4 = 1.0;
+  static const int _defaultFreeTrialActions = 15;
   final ImagePicker _picker = ImagePicker();
+  late final WonderPicBackendClient _backendClient;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final GlobalKey<ScaffoldMessengerState> _editorScaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
+  final GlobalKey _editorRootStackKey = GlobalKey();
   final GlobalKey _canvasViewportKey = GlobalKey();
   final GlobalKey<_SkiaEditorCanvasState> _editorCanvasStateKey =
       GlobalKey<_SkiaEditorCanvasState>();
@@ -6982,8 +8865,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isToolEnabled = false;
   String? _selectedLayerId;
   List<_BrushStroke> _pencilStrokes = <_BrushStroke>[];
+  _PendingElementPlacement? _pendingElementPlacement;
+  int? _pendingElementPlacementPointerId;
+  Offset? _pendingElementPlacementGlobalPosition;
+  Offset? _pendingElementPlacementPointerDownGlobalPosition;
+  Offset? _pendingElementPlacementQueuedDropWorkspacePoint;
+  final ValueNotifier<Offset?> _pendingElementPlacementPositionNotifier =
+      ValueNotifier<Offset?>(null);
   PencilSettings _pencilSettings = const PencilSettings();
   CloneStampSettings _cloneSettings = const CloneStampSettings();
+  EraseToolSettings _eraseSettings = const EraseToolSettings();
   BlurToolSettings _blurSettings = const BlurToolSettings();
   bool _isCloneSourceArmed = false;
   bool _isCloneBrushSelected = false;
@@ -7012,6 +8903,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   PencilSettings? _pencilSettingsFloatingBaseline;
   bool _isCloneSettingsFloatingOpen = false;
   bool _isCloneSettingsBottomSheetOpen = false;
+  bool _isEraseSettingsBottomSheetOpen = false;
   bool _isMarqueeSettingsBottomSheetOpen = false;
   bool _isBlurSettingsBottomSheetOpen = false;
   bool _isLayersMergeInProgress = false;
@@ -7026,6 +8918,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   int _cloneClearRequestToken = 0;
   bool _isCloneBrushPreviewVisible = false;
   Timer? _cloneBrushPreviewTimer;
+  bool _isEraseBrushPreviewVisible = false;
+  Timer? _eraseBrushPreviewTimer;
   Offset _cloneMoveJoystickOffset = Offset.zero;
   Offset _cloneDrawJoystickOffset = Offset.zero;
   Offset _cloneJoystickMoveVector = Offset.zero;
@@ -7075,11 +8969,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   _KieAiImageModel _defaultKieAiImageModel = _KieAiImageModel.nanoBanana;
   _KieNanoBananaVersion _defaultKieNanoVersion =
       _KieNanoBananaVersion.nanoBanana2;
+  _KieNanoAspectRatio _defaultKieNanoAspectRatio = _KieNanoAspectRatio.square;
+  _KieFluxAspectRatio _defaultKieFluxAspectRatio = _KieFluxAspectRatio.square11;
+  _KieSeedreamAspectRatio _defaultKieSeedreamAspectRatio =
+      _KieSeedreamAspectRatio.square11;
   _KieIdeogramStyle _defaultKieIdeogramStyle = _KieIdeogramStyle.auto;
   _KieIdeogramImageSize _defaultKieIdeogramImageSize =
       _KieIdeogramImageSize.squareHd;
   _AiCanvasSizePreset _defaultAiCanvasSizePreset = _AiCanvasSizePreset.square;
-  _AiGenerationQuality _defaultAiGenerationQuality = _AiGenerationQuality.k1;
+  _AiGenerationQuality _defaultAiGenerationQuality = _AiGenerationQuality.k2;
   String _lastRegeneratePrompt = '';
   _RegenerateModel _defaultRegenerateModel = _RegenerateModel.nanoBanana2;
   _RegenerateQualityPreset _defaultRegenerateQualityPreset =
@@ -7110,16 +9008,51 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Offset? _moveJoystickCurrentPosition;
   double? _rotateJoystickCurrentRotation;
   double? _scaleJoystickCurrentScale;
+  int _creditNonce = 0;
+  String _accountLifecycleStatus = 'unknown';
+  double? _accountAvailableCredits;
+  int _freeTrialTotal = _defaultFreeTrialActions;
+  int _freeTrialRemaining = _defaultFreeTrialActions;
+  bool _isAccountHubSidebarMode = true;
+  bool _isAccountHubSettingsPage = false;
+  final WonderPicLibraryStore _libraryStore = WonderPicLibraryStore();
+  List<WonderPicLibraryItem> _libraryItems = <WonderPicLibraryItem>[];
+  bool _isEditorErrorDialogVisible = false;
+  DateTime? _aiCanvasGeneratingStartedAt;
+  Duration _aiCanvasGeneratingExpectedDuration = const Duration(seconds: 58);
+  StreamSubscription<User?>? _authStateSubscription;
 
   @override
   void initState() {
     super.initState();
+    _backendClient = WonderPicBackendClient();
+    unawaited(_syncEditorAccountStateBestEffort());
+    unawaited(_refreshLibraryItems(fromSetState: true));
+    _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
+      User? user,
+    ) {
+      if (user == null) {
+        if (!mounted) return;
+        setState(() {
+          _accountLifecycleStatus = 'unknown';
+          _accountAvailableCredits = null;
+          _freeTrialTotal = _defaultFreeTrialActions;
+          _freeTrialRemaining = _defaultFreeTrialActions;
+        });
+        return;
+      }
+      unawaited(_syncEditorAccountStateBestEffort());
+    });
     _textInputController.addListener(_onTextInputChanged);
     _textInputFocusNode.addListener(_onTextFocusChanged);
+    GestureBinding.instance.pointerRouter
+        .addGlobalRoute(_onGlobalElementPlacementPointerEvent);
   }
 
   @override
   void dispose() {
+    _authStateSubscription?.cancel();
+    _backendClient.dispose();
     _textInputController.removeListener(_onTextInputChanged);
     _textInputFocusNode.removeListener(_onTextFocusChanged);
     _topToolsScrollController.dispose();
@@ -7128,11 +9061,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _sketchReplacePromptController.dispose();
     _replaceObjectPromptController.dispose();
     _cloneBrushPreviewTimer?.cancel();
+    _eraseBrushPreviewTimer?.cancel();
     _cloneJoystickCursorHideTimer?.cancel();
     _sketchReplaceBrushPreviewTimer?.cancel();
     _aiCanvasGeneratingProgressTimer?.cancel();
     _textInputController.dispose();
     _textInputFocusNode.dispose();
+    GestureBinding.instance.pointerRouter
+        .removeGlobalRoute(_onGlobalElementPlacementPointerEvent);
+    _pendingElementPlacementPositionNotifier.dispose();
     super.dispose();
   }
 
@@ -7169,14 +9106,27 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       ).trim().isEmpty;
 
   String get _kieApiKey {
-    final String override = const String.fromEnvironment(
-      'KIE_API_KEY',
+    if (_isSupabaseEdgeProxyConfigured()) {
+      return 'edge-proxy';
+    }
+    return '';
+  }
+
+  String? get _kieCallbackUrl {
+    final String raw = const String.fromEnvironment(
+      'KIE_CALLBACK_URL',
       defaultValue: '',
     ).trim();
-    if (override.isNotEmpty) {
-      return override;
+    if (raw.isEmpty) return null;
+    final Uri? uri = Uri.tryParse(raw);
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      return null;
     }
-    return _kieEmbeddedApiKey;
+    final String scheme = uri.scheme.toLowerCase();
+    if (scheme != 'http' && scheme != 'https') {
+      return null;
+    }
+    return raw;
   }
 
   String get _replicateApiToken {
@@ -7188,6 +9138,375 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       return override;
     }
     return _replicateEmbeddedApiToken;
+  }
+
+  double _creditCostForAiQuality(_AiGenerationQuality quality) {
+    switch (quality) {
+      case _AiGenerationQuality.k4:
+      case _AiGenerationQuality.high:
+        return _creditCostTier4;
+      case _AiGenerationQuality.k2:
+        return _creditCostTier2;
+      case _AiGenerationQuality.medium:
+      case _AiGenerationQuality.k1:
+        return _creditCostTier1;
+    }
+  }
+
+  double _creditCostForUpscaleAmount(_UpscaleAmount amount) {
+    switch (amount) {
+      case _UpscaleAmount.k4:
+        return _creditCostTier4;
+      case _UpscaleAmount.k2:
+        return _creditCostTier2;
+    }
+  }
+
+  double? _readCreditValue(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw.toString().trim());
+  }
+
+  String _formatCreditValue(double value) {
+    final double roundedInt = value.roundToDouble();
+    if ((value - roundedInt).abs() <= 0.0001) {
+      return value.toStringAsFixed(0);
+    }
+    return value.toStringAsFixed(2);
+  }
+
+  Future<void> _consumeFreeTrialAction({
+    required String operationType,
+    String? operationId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    if (!_backendClient.isConfigured) {
+      throw StateError(
+        'Free trial backend is not configured. Please configure Supabase edge.',
+      );
+    }
+    if (FirebaseAuth.instance.currentUser == null) {
+      throw StateError('Sign in is required to consume free trial.');
+    }
+    final String normalizedOperationType =
+        operationType.trim().isEmpty ? 'operation' : operationType.trim();
+    final String baseOperationId = operationId?.trim().isNotEmpty == true
+        ? operationId!.trim()
+        : _nextCreditOperationId(normalizedOperationType);
+    final String idempotencyKey = '${baseOperationId}_trial';
+    final Map<String, dynamic> result =
+        await _backendClient.consumeFreeTrialAction(
+      operationType: normalizedOperationType,
+      idempotencyKey: idempotencyKey,
+      metadata: <String, dynamic>{
+        if (metadata != null) ...metadata,
+        'phase': 'free_trial_consume',
+      },
+    );
+    _applyAccountCreditSnapshot(result, fromSetState: mounted);
+    debugPrint('Free trial consumed for $normalizedOperationType.');
+  }
+
+  String _sidebarFreeTrialLabel() {
+    return '$_freeTrialRemaining / $_freeTrialTotal';
+  }
+
+  String _nextCreditOperationId(String operationType) {
+    _creditNonce++;
+    final String safeType = operationType
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    return '${safeType.isEmpty ? 'op' : safeType}_${DateTime.now().microsecondsSinceEpoch}_$_creditNonce';
+  }
+
+  void _applyAccountCreditSnapshot(
+    Map<String, dynamic>? payload, {
+    bool fromSetState = false,
+  }) {
+    if (payload == null || payload.isEmpty) return;
+    final String nextStatus =
+        ((payload['account_status'] ?? payload['status']) as String?)
+                ?.trim()
+                .toLowerCase() ??
+            _accountLifecycleStatus;
+    final double? nextAvailable = _readCreditValue(
+      payload['available_balance'] ?? payload['availableBalance'],
+    );
+    final int nextFreeTrialTotal =
+        ((payload['free_trial_total'] ?? payload['freeTrialTotal']) as num?)
+                ?.toInt() ??
+            _freeTrialTotal;
+    final int nextFreeTrialRemaining = ((payload['free_trial_remaining'] ??
+                payload['freeTrialRemaining']) as num?)
+            ?.toInt() ??
+        _freeTrialRemaining;
+    final int safeTotal = nextFreeTrialTotal < 0 ? 0 : nextFreeTrialTotal;
+    final int safeRemaining =
+        nextFreeTrialRemaining.clamp(0, safeTotal).toInt();
+    if (fromSetState && mounted) {
+      setState(() {
+        _accountLifecycleStatus = nextStatus;
+        if (nextAvailable != null) {
+          _accountAvailableCredits = nextAvailable;
+        }
+        _freeTrialTotal = safeTotal;
+        _freeTrialRemaining = safeRemaining;
+      });
+      return;
+    }
+    _accountLifecycleStatus = nextStatus;
+    if (nextAvailable != null) {
+      _accountAvailableCredits = nextAvailable;
+    }
+    _freeTrialTotal = safeTotal;
+    _freeTrialRemaining = safeRemaining;
+  }
+
+  Future<void> _syncEditorAccountStateBestEffort({
+    bool fromSetState = true,
+  }) async {
+    if (!_backendClient.isConfigured) return;
+    if (FirebaseAuth.instance.currentUser == null) return;
+    try {
+      final Map<String, dynamic> account =
+          await _backendClient.getAccountStatus();
+      if (fromSetState && !mounted) return;
+      _applyAccountCreditSnapshot(account, fromSetState: fromSetState);
+    } on BackendApiException catch (error) {
+      debugPrint(
+        'Editor account status sync skipped: ${error.message} (${error.statusCode})',
+      );
+    } catch (error) {
+      debugPrint('Editor account status sync skipped: $error');
+    }
+  }
+
+  String _normalizeOperationErrorMessage(Object error) {
+    if (error is BackendApiException) {
+      final String raw = error.message.trim();
+      final String upper = raw.toUpperCase();
+      if (error.statusCode == 402 || upper.contains('INSUFFICIENT_CREDITS')) {
+        final double? available = _accountAvailableCredits;
+        final String availableSuffix = available == null
+            ? ''
+            : ' Available: ${_formatCreditValue(available)}.';
+        return 'Insufficient credits for this operation.$availableSuffix';
+      }
+      if (error.statusCode == 401) {
+        return 'Your session expired. Please sign in again.';
+      }
+      if (error.statusCode == 403 ||
+          upper.contains('ACCOUNT_NOT_ACTIVE') ||
+          upper.contains('ACCOUNT_DELETED')) {
+        return 'Your account is not active. Reactivate the account and try again.';
+      }
+      if (upper.contains('FREE_TRIAL_EXHAUSTED')) {
+        return 'Free trial is finished. Upgrade to Premium to continue.';
+      }
+      if (upper.contains('HOLD_EXPIRED')) {
+        return 'Credit hold expired before billing finalization. Please retry.';
+      }
+      if (raw.isNotEmpty) {
+        return raw;
+      }
+      return 'Backend request failed (${error.statusCode}).';
+    }
+    String message = error.toString().trim();
+    if (message.startsWith('StateError: ')) {
+      message = message.substring('StateError: '.length);
+    } else if (message.startsWith('Exception: ')) {
+      message = message.substring('Exception: '.length);
+    }
+    return message;
+  }
+
+  Future<Map<String, dynamic>> _commitCreditsWithRetry({
+    required String holdId,
+    required String idempotencyKey,
+    required String reason,
+    required Map<String, dynamic> metadata,
+    int maxAttempts = 3,
+  }) async {
+    Object? lastError;
+    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        final Map<String, dynamic> result = await _backendClient.commitCredits(
+          holdId: holdId,
+          idempotencyKey: idempotencyKey,
+          reason: reason,
+          metadata: metadata,
+        );
+        _applyAccountCreditSnapshot(result);
+        return result;
+      } on BackendApiException catch (error) {
+        lastError = error;
+        final bool retryable = error.statusCode >= 500;
+        if (!retryable || attempt == maxAttempts - 1) {
+          rethrow;
+        }
+      } catch (error) {
+        lastError = error;
+        if (attempt == maxAttempts - 1) {
+          rethrow;
+        }
+      }
+      await Future<void>.delayed(
+        Duration(milliseconds: 300 * (attempt + 1)),
+      );
+    }
+    throw lastError ?? StateError('Credit commit failed unexpectedly.');
+  }
+
+  Future<void> _rollbackReservedCreditsBestEffort({
+    required String holdId,
+    required String commitIdempotencyKey,
+    required String refundIdempotencyKey,
+    required String operationType,
+    required Map<String, dynamic> metadata,
+  }) async {
+    try {
+      final Map<String, dynamic> commitResult = await _commitCreditsWithRetry(
+        holdId: holdId,
+        idempotencyKey: commitIdempotencyKey,
+        reason: '${operationType}_rollback_commit',
+        metadata: <String, dynamic>{
+          ...metadata,
+          'phase': 'rollback_commit',
+        },
+      );
+      _applyAccountCreditSnapshot(commitResult);
+    } catch (error) {
+      debugPrint('Credit rollback commit skipped for $operationType: $error');
+      return;
+    }
+
+    try {
+      final Map<String, dynamic> refundResult =
+          await _backendClient.refundCredits(
+        holdId: holdId,
+        idempotencyKey: refundIdempotencyKey,
+        reason: '${operationType}_rollback_refund',
+        metadata: <String, dynamic>{
+          ...metadata,
+          'phase': 'rollback_refund',
+        },
+      );
+      _applyAccountCreditSnapshot(refundResult);
+    } catch (error) {
+      debugPrint('Credit rollback refund skipped for $operationType: $error');
+    }
+  }
+
+  Future<T> _runWithCreditReservation<T>({
+    required String operationType,
+    required double amount,
+    required Map<String, dynamic> metadata,
+    required Future<T> Function() run,
+  }) async {
+    final double safeAmount =
+        amount <= 0 ? 0 : double.parse(amount.toStringAsFixed(4));
+    if (safeAmount <= 0) {
+      return run();
+    }
+
+    if (!_backendClient.isConfigured) {
+      throw StateError(
+        'Credits backend is not configured. Please configure Supabase edge.',
+      );
+    }
+
+    if (FirebaseAuth.instance.currentUser == null) {
+      throw StateError('Sign in is required to run this action.');
+    }
+
+    final String operationId = _nextCreditOperationId(operationType);
+    final Map<String, dynamic> baseMetadata = <String, dynamic>{
+      'operation_type': operationType,
+      'operation_id': operationId,
+      ...metadata,
+    };
+    final String reserveIdempotencyKey = '${operationId}_reserve';
+    final String commitIdempotencyKey = '${operationId}_commit';
+    final String rollbackCommitIdempotencyKey =
+        '${operationId}_rollback_commit';
+    final String rollbackRefundIdempotencyKey =
+        '${operationId}_rollback_refund';
+
+    bool usingFreeTrial = false;
+    Map<String, dynamic>? reserveResult;
+    try {
+      reserveResult = await _backendClient.reserveCredits(
+        amount: safeAmount,
+        idempotencyKey: reserveIdempotencyKey,
+        operationKey: operationId,
+        reason: operationType,
+        ttlSeconds: 3600,
+        metadata: <String, dynamic>{
+          ...baseMetadata,
+          'phase': 'reserve',
+        },
+      );
+      _applyAccountCreditSnapshot(reserveResult);
+    } on BackendApiException catch (error) {
+      final String upper = error.message.trim().toUpperCase();
+      final bool insufficient =
+          error.statusCode == 402 || upper.contains('INSUFFICIENT_CREDITS');
+      if (!insufficient) rethrow;
+      if (_freeTrialRemaining <= 0) {
+        throw StateError(
+            'Free trial is finished. Upgrade to Premium to continue.');
+      }
+      usingFreeTrial = true;
+    }
+
+    if (usingFreeTrial) {
+      final T output = await run();
+      await _consumeFreeTrialAction(
+        operationType: operationType,
+        operationId: operationId,
+        metadata: baseMetadata,
+      );
+      return output;
+    }
+
+    final String holdId = reserveResult?['hold_id']?.toString().trim() ?? '';
+
+    if (holdId.isEmpty) {
+      throw StateError('Credit hold was not returned by backend.');
+    }
+
+    bool operationSucceeded = false;
+    try {
+      final T output = await run();
+      operationSucceeded = true;
+      final Map<String, dynamic> commitResult = await _commitCreditsWithRetry(
+        holdId: holdId,
+        idempotencyKey: commitIdempotencyKey,
+        reason: operationType,
+        metadata: <String, dynamic>{
+          ...baseMetadata,
+          'phase': 'commit',
+        },
+      );
+      _applyAccountCreditSnapshot(commitResult);
+      unawaited(_syncEditorAccountStateBestEffort());
+      return output;
+    } catch (error) {
+      if (!operationSucceeded) {
+        await _rollbackReservedCreditsBestEffort(
+          holdId: holdId,
+          commitIdempotencyKey: rollbackCommitIdempotencyKey,
+          refundIdempotencyKey: rollbackRefundIdempotencyKey,
+          operationType: operationType,
+          metadata: baseMetadata,
+        );
+        unawaited(_syncEditorAccountStateBestEffort());
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -7202,6 +9521,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         endDrawerEnableOpenDragGesture: false,
         body: SafeArea(
           child: Stack(
+            key: _editorRootStackKey,
             children: [
               Column(
                 children: [
@@ -7217,7 +9537,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                       child: _buildEditorCanvasPanel(),
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  if (_isCropQuickPresetsVisible) ...[
+                    const SizedBox(height: 6),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: _bottomNavHorizontalInset,
+                      ),
+                      child: _buildCropQuickPresetStrip(),
+                    ),
+                  ] else
+                    const SizedBox(height: 6),
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: _bottomNavHorizontalInset,
@@ -7230,6 +9559,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               if (_isExpandActionDockVisible) _buildExpandActionDock(),
               if (_isMoveJoystickDockVisible) _buildMoveJoystickDock(),
               if (_isCloneJoystickDockVisible) _buildCloneJoystickDock(),
+              if (_isEraseJoystickDockVisible) _buildEraseJoystickDock(),
               if (_isTextQuickDockVisible && !_isTextSettingsBottomSheetOpen)
                 _buildTextQuickActionsDock(),
               if (_isTextFontsFloatingOpen && !_isTextSettingsBottomSheetOpen)
@@ -7254,6 +9584,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 _buildSketchReplaceFloatingOverlay(),
               if (_isReplaceObjectFloatingOpen)
                 _buildReplaceObjectFloatingOverlay(),
+              if (_pendingElementPlacement != null)
+                _buildPendingElementPlacementOverlay(),
               if (_isExporting) _buildExportingOverlay(),
             ],
           ),
@@ -7278,12 +9610,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         ),
         child: Row(
           children: [
-            _toolButton(icon: Icons.menu, filled: false),
-            const SizedBox(width: _topToolSpacing),
             _toolButton(
               icon: Icons.open_with_rounded,
               filled: _isToolEnabled && _activeTool == EditorTool.move,
               onTap: () => _setActiveTool(EditorTool.move),
+            ),
+            const SizedBox(width: _topToolSpacing),
+            _toolButton(
+              icon: Icons.crop_rounded,
+              filled: _isToolEnabled && _activeTool == EditorTool.crop,
+              onTap: () => _setActiveTool(EditorTool.crop),
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
@@ -7299,15 +9635,24 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
-              icon: Icons.edit_outlined,
-              filled: _isToolEnabled && _activeTool == EditorTool.pencil,
-              onTap: () => _setActiveTool(EditorTool.pencil),
+              filled: _isToolEnabled && _activeTool == EditorTool.erase,
+              onTap: _onEraseToolTap,
+              customChild: Transform.scale(
+                scale: 0.78,
+                child: ImageIcon(
+                  const AssetImage('assets/icons/eraser_tool_ref.png'),
+                  size: 16.3,
+                  color: _isToolEnabled && _activeTool == EditorTool.erase
+                      ? kActiveAccentForeground
+                      : WonderPicEditorScreen._iconColor,
+                ),
+              ),
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
-              icon: Icons.crop_din_rounded,
-              filled: _isToolEnabled && _activeTool == EditorTool.marquee,
-              onTap: _onMarqueeToolTap,
+              icon: Icons.edit_outlined,
+              filled: _isToolEnabled && _activeTool == EditorTool.pencil,
+              onTap: () => _setActiveTool(EditorTool.pencil),
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
@@ -7321,15 +9666,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
-              icon: Icons.blur_on_rounded,
-              filled: _isToolEnabled && _activeTool == EditorTool.blur,
-              onTap: _onBlurToolTap,
+              icon: Icons.crop_din_rounded,
+              filled: _isToolEnabled && _activeTool == EditorTool.marquee,
+              onTap: _onMarqueeToolTap,
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
-              icon: Icons.crop_rounded,
-              filled: _isToolEnabled && _activeTool == EditorTool.crop,
-              onTap: () => _setActiveTool(EditorTool.crop),
+              icon: Icons.blur_on_rounded,
+              filled: _isToolEnabled && _activeTool == EditorTool.blur,
+              onTap: _onBlurToolTap,
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
@@ -7448,6 +9793,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return layer != null && layer.isVisible;
   }
 
+  bool get _isEraseJoystickDockVisible {
+    if (!_isToolEnabled || _activeTool != EditorTool.erase) return false;
+    final EditorLayer? layer = _selectedImageLayer();
+    return layer != null && layer.isVisible;
+  }
+
   bool get _isExpandActionDockVisible {
     if (!_isToolEnabled || _activeTool != EditorTool.expand) return false;
     final EditorLayer? layer = _selectedExpandLayer();
@@ -7458,9 +9809,25 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   void _markCloneJoystickActivity() {
     _cloneJoystickCursorHideTimer?.cancel();
-    if (!_isCloneJoystickCursorVisible) {
+    final bool hideClonePreview = _isCloneBrushPreviewVisible;
+    final bool hideErasePreview = _isEraseBrushPreviewVisible;
+    if (hideClonePreview) {
+      _cloneBrushPreviewTimer?.cancel();
+    }
+    if (hideErasePreview) {
+      _eraseBrushPreviewTimer?.cancel();
+    }
+    if (!_isCloneJoystickCursorVisible ||
+        hideClonePreview ||
+        hideErasePreview) {
       setState(() {
         _isCloneJoystickCursorVisible = true;
+        if (hideClonePreview) {
+          _isCloneBrushPreviewVisible = false;
+        }
+        if (hideErasePreview) {
+          _isEraseBrushPreviewVisible = false;
+        }
       });
     }
     _cloneJoystickCursorHideTimer = Timer(
@@ -7501,11 +9868,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       (offset.dx / _cloneJoystickKnobTravel).clamp(-1.0, 1.0).toDouble(),
       (offset.dy / _cloneJoystickKnobTravel).clamp(-1.0, 1.0).toDouble(),
     );
+    _markCloneJoystickActivity();
     setState(() {
       _cloneMoveJoystickOffset = offset;
       _cloneJoystickMoveVector = vector;
+      _isCloneJoystickCursorVisible = true;
     });
-    _markCloneJoystickActivity();
   }
 
   void _onCloneMoveJoystickPanUpdate(DragUpdateDetails details) {
@@ -7518,15 +9886,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       (offset.dx / _cloneJoystickKnobTravel).clamp(-1.0, 1.0).toDouble(),
       (offset.dy / _cloneJoystickKnobTravel).clamp(-1.0, 1.0).toDouble(),
     );
+    _markCloneJoystickActivity();
     setState(() {
       _cloneMoveJoystickOffset = offset;
       _cloneJoystickMoveVector = vector;
+      _isCloneJoystickCursorVisible = true;
     });
     _editorCanvasStateKey.currentState?.moveCloneJoystickByScreenDelta(
       details.delta,
       drawPressed: _cloneJoystickDrawPressed,
     );
-    _markCloneJoystickActivity();
   }
 
   void _endCloneMoveJoystickGesture() {
@@ -7543,6 +9912,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _onCloneDrawJoystickPanStart(DragStartDetails details) {
+    _markCloneJoystickActivity();
     setState(() {
       _cloneJoystickDrawPressed = true;
       _cloneDrawJoystickOffset = _moveJoystickOffsetFromLocal(
@@ -7550,12 +9920,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         controlSize: _cloneJoystickSize,
         knobTravel: _cloneJoystickKnobTravel,
       );
+      _isCloneJoystickCursorVisible = true;
     });
     _editorCanvasStateKey.currentState?.beginCloneJoystickDraw();
-    _markCloneJoystickActivity();
   }
 
   void _onCloneDrawJoystickPanUpdate(DragUpdateDetails details) {
+    _markCloneJoystickActivity();
     setState(() {
       _cloneJoystickDrawPressed = true;
       _cloneDrawJoystickOffset = _moveJoystickOffsetFromLocal(
@@ -7563,9 +9934,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         controlSize: _cloneJoystickSize,
         knobTravel: _cloneJoystickKnobTravel,
       );
+      _isCloneJoystickCursorVisible = true;
     });
     _editorCanvasStateKey.currentState?.beginCloneJoystickDraw();
-    _markCloneJoystickActivity();
   }
 
   void _endCloneDrawJoystickGesture() {
@@ -7597,7 +9968,97 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               active: _cloneJoystickDrawPressed,
               controlSize: _cloneJoystickSize,
               knobSize: _cloneJoystickKnobSize,
-              iconSize: 18,
+              iconSize: 20,
+              onPanStart: _onCloneDrawJoystickPanStart,
+              onPanUpdate: _onCloneDrawJoystickPanUpdate,
+              onPanEnd: (_) => _endCloneDrawJoystickGesture(),
+              onPanCancel: _endCloneDrawJoystickGesture,
+            ),
+            _buildCloneSetSourceDockButton(),
+            _buildMoveJoystickControl(
+              icon: Icons.my_location_rounded,
+              offset: _cloneMoveJoystickOffset,
+              active: _cloneJoystickMoveVector.distanceSquared > 0.0001,
+              controlSize: _cloneJoystickSize,
+              knobSize: _cloneJoystickKnobSize,
+              iconSize: 20,
+              onPanStart: _onCloneMoveJoystickPanStart,
+              onPanUpdate: _onCloneMoveJoystickPanUpdate,
+              onPanEnd: (_) => _endCloneMoveJoystickGesture(),
+              onPanCancel: _endCloneMoveJoystickGesture,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCloneSetSourceDockButton() {
+    final bool active = _isCloneSourceArmed;
+    final Color iconColor =
+        active ? const Color(0xFFE33A51) : const Color(0xE0FFFFFF);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(_cloneSetSourceDockButtonSize / 2),
+        onTap: () {
+          _armCloneSourceSelection(
+            closeSidebar: false,
+            closeCloneSheet: false,
+          );
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOut,
+          width: _cloneSetSourceDockButtonSize,
+          height: _cloneSetSourceDockButtonSize,
+          decoration: BoxDecoration(
+            color: active ? const Color(0x24EF4444) : const Color(0x1FFFFFFF),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? const Color(0xFFE33A51) : const Color(0x6EFFFFFF),
+              width: active ? 1.6 : 1.2,
+            ),
+            boxShadow: active
+                ? const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x33EF4444),
+                      blurRadius: 12,
+                      spreadRadius: 0,
+                      offset: Offset(0, 4),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Icon(
+              Icons.gps_fixed_rounded,
+              size: 23,
+              color: iconColor,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEraseJoystickDock() {
+    return Positioned(
+      left: _cloneJoystickHorizontalInset,
+      right: _cloneJoystickHorizontalInset,
+      bottom: _bottomNavHeight + _moveJoystickDockBottomGap,
+      child: IgnorePointer(
+        ignoring: false,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _buildMoveJoystickControl(
+              icon: Icons.gesture_rounded,
+              offset: _cloneDrawJoystickOffset,
+              active: _cloneJoystickDrawPressed,
+              controlSize: _cloneJoystickSize,
+              knobSize: _cloneJoystickKnobSize,
+              iconSize: 20,
               onPanStart: _onCloneDrawJoystickPanStart,
               onPanUpdate: _onCloneDrawJoystickPanUpdate,
               onPanEnd: (_) => _endCloneDrawJoystickGesture(),
@@ -7609,7 +10070,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               active: _cloneJoystickMoveVector.distanceSquared > 0.0001,
               controlSize: _cloneJoystickSize,
               knobSize: _cloneJoystickKnobSize,
-              iconSize: 18,
+              iconSize: 20,
               onPanStart: _onCloneMoveJoystickPanStart,
               onPanUpdate: _onCloneMoveJoystickPanUpdate,
               onPanEnd: (_) => _endCloneMoveJoystickGesture(),
@@ -7641,39 +10102,220 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return workspaceSize.width / artboard.width;
   }
 
-  Offset _clampMoveJoystickOffset(
-    Offset offset, {
-    double knobTravel = _moveJoystickKnobTravel,
-  }) {
-    final double distance = offset.distance;
-    if (distance <= knobTravel || distance <= 0.000001) {
-      return offset;
+  EditorLayer? _activeMoveJoystickLayer() {
+    final EditorLayer? layer = _selectedMoveJoystickLayer();
+    if (layer == null || layer.isBackground) return null;
+    return layer;
+  }
+
+  Rect _referenceArtboardForStrokes(Size workspaceSize) {
+    final RenderBox? box =
+        _canvasViewportKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) {
+      return Rect.fromLTWH(0, 0, workspaceSize.width, workspaceSize.height);
     }
-    final double ratio = knobTravel / distance;
-    return Offset(offset.dx * ratio, offset.dy * ratio);
+    final Size canvasSize = box.size;
+    return _computeArtboardRect(
+      canvasSize: canvasSize,
+      workspaceSize: workspaceSize,
+    );
   }
 
   Offset _moveJoystickOffsetFromLocal(
     Offset localPosition, {
-    double controlSize = _moveJoystickSize,
-    double knobTravel = _moveJoystickKnobTravel,
+    required double controlSize,
+    required double knobTravel,
   }) {
-    final Offset center = Offset(
-      controlSize / 2,
-      controlSize / 2,
-    );
-    return _clampMoveJoystickOffset(
-      localPosition - center,
-      knobTravel: knobTravel,
+    final Offset centered =
+        localPosition - Offset(controlSize / 2, controlSize / 2);
+    final double distance = centered.distance;
+    if (distance <= knobTravel || distance == 0) {
+      return centered;
+    }
+    return Offset(
+      centered.dx / distance * knobTravel,
+      centered.dy / distance * knobTravel,
     );
   }
 
-  double _moveJoystickOffsetXFromLocal(Offset localPosition) {
-    final double raw = localPosition.dx - (_moveJoystickSize / 2);
-    return raw.clamp(-_moveJoystickKnobTravel, _moveJoystickKnobTravel);
+  void _onMoveJoystickPanStart(DragStartDetails details) {
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final EditorLayer? layer = _activeMoveJoystickLayer();
+    if (layer == null) return;
+
+    final Size? workspaceSize = _workspaceSizeForMoveJoystick();
+    if (workspaceSize == null) return;
+    final Offset startPosition =
+        _defaultLayerPositionForMoveJoystick(layer, workspaceSize);
+    _editorCanvasStateKey.currentState?.beginMoveJoystickSession(
+      layerId: layer.id,
+    );
+    setState(() {
+      _moveJoystickLayerId = layer.id;
+      _moveJoystickCurrentPosition = startPosition;
+      _moveJoystickOffset = offset;
+    });
+  }
+
+  void _onMoveJoystickPanUpdate(DragUpdateDetails details) {
+    final String? layerId = _moveJoystickLayerId;
+    if (layerId == null) return;
+    final Size? workspaceSize = _workspaceSizeForMoveJoystick();
+    if (workspaceSize == null) return;
+    final Offset? currentPosition = _moveJoystickCurrentPosition;
+    if (currentPosition == null) return;
+
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final double sourceUnitsPerPx = _sourceUnitsPerScreenPxForMoveJoystick(
+      workspaceSize,
+    );
+    final Offset deltaSource = Offset(
+      details.delta.dx * sourceUnitsPerPx,
+      details.delta.dy * sourceUnitsPerPx,
+    );
+    Offset? nextPosition = currentPosition;
+    if (deltaSource.distanceSquared > 0.0) {
+      nextPosition =
+          _editorCanvasStateKey.currentState?.moveLayerWithMoveJoystick(
+                layerId: layerId,
+                currentSourcePosition: currentPosition,
+                deltaSource: deltaSource,
+              ) ??
+              currentPosition;
+      _onLayerTransformChanged(layerId, position: nextPosition);
+    }
+
+    setState(() {
+      _moveJoystickOffset = offset;
+      _moveJoystickCurrentPosition = nextPosition;
+    });
+  }
+
+  void _endMoveJoystickGesture() {
+    final String? layerId = _moveJoystickLayerId;
+    if (layerId == null) return;
+    _editorCanvasStateKey.currentState?.endMoveJoystickSession();
+    _onTransformInteractionEnd();
+    setState(() {
+      _moveJoystickOffset = Offset.zero;
+      _moveJoystickLayerId = null;
+      _moveJoystickCurrentPosition = null;
+    });
+  }
+
+  void _onRotateJoystickPanStart(DragStartDetails details) {
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final EditorLayer? layer = _activeMoveJoystickLayer();
+    if (layer == null) return;
+    setState(() {
+      _rotateJoystickLayerId = layer.id;
+      _rotateJoystickCurrentRotation = layer.layerRotation;
+      _rotateJoystickOffset = offset;
+    });
+  }
+
+  void _onRotateJoystickPanUpdate(DragUpdateDetails details) {
+    final String? layerId = _rotateJoystickLayerId;
+    final double? currentRotation = _rotateJoystickCurrentRotation;
+    if (layerId == null || currentRotation == null) return;
+
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final double delta = details.delta.dx * _moveJoystickRotationSensitivity;
+    if (delta.abs() <= 0.0000001) {
+      setState(() {
+        _rotateJoystickOffset = offset;
+      });
+      return;
+    }
+    final double nextRotation = currentRotation + delta;
+
+    _onLayerTransformChanged(layerId, layerRotation: nextRotation);
+    setState(() {
+      _rotateJoystickOffset = offset;
+      _rotateJoystickCurrentRotation = nextRotation;
+    });
+  }
+
+  void _endRotateJoystickGesture() {
+    if (_rotateJoystickLayerId == null) return;
+    setState(() {
+      _rotateJoystickOffset = Offset.zero;
+      _rotateJoystickLayerId = null;
+      _rotateJoystickCurrentRotation = null;
+    });
+  }
+
+  void _onScaleJoystickPanStart(DragStartDetails details) {
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final EditorLayer? layer = _activeMoveJoystickLayer();
+    if (layer == null) return;
+    setState(() {
+      _scaleJoystickLayerId = layer.id;
+      _scaleJoystickCurrentScale = layer.layerScale;
+      _scaleJoystickOffset = offset;
+    });
+  }
+
+  void _onScaleJoystickPanUpdate(DragUpdateDetails details) {
+    final String? layerId = _scaleJoystickLayerId;
+    final double? currentScale = _scaleJoystickCurrentScale;
+    if (layerId == null || currentScale == null) return;
+
+    final Offset offset = _moveJoystickOffsetFromLocal(
+      details.localPosition,
+      controlSize: _moveJoystickSize,
+      knobTravel: _moveJoystickKnobTravel,
+    );
+    final double delta = details.delta.dx * _moveJoystickScaleSensitivity;
+    if (delta.abs() <= 0.0000001) {
+      setState(() {
+        _scaleJoystickOffset = offset;
+      });
+      return;
+    }
+    final double nextScale = (currentScale + delta).clamp(
+      _joystickMinLayerScale,
+      _joystickMaxLayerScale,
+    );
+
+    _onLayerTransformChanged(layerId, layerScale: nextScale);
+    setState(() {
+      _scaleJoystickOffset = offset;
+      _scaleJoystickCurrentScale = nextScale;
+    });
+  }
+
+  void _endScaleJoystickGesture() {
+    if (_scaleJoystickLayerId == null) return;
+    setState(() {
+      _scaleJoystickOffset = Offset.zero;
+      _scaleJoystickLayerId = null;
+      _scaleJoystickCurrentScale = null;
+    });
   }
 
   void _resetMoveJoystickControls() {
+    _editorCanvasStateKey.currentState?.endMoveJoystickSession();
     _moveJoystickOffset = Offset.zero;
     _rotateJoystickOffset = Offset.zero;
     _scaleJoystickOffset = Offset.zero;
@@ -7685,193 +10327,50 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _scaleJoystickCurrentScale = null;
   }
 
-  void _onMoveJoystickPanStart(DragStartDetails details) {
-    final EditorLayer? layer = _selectedMoveJoystickLayer();
-    final Size? workspaceSize = _workspaceSizeForMoveJoystick();
-    if (layer == null || workspaceSize == null) return;
-    _onTransformInteractionStart();
-    setState(() {
-      _moveJoystickLayerId = layer.id;
-      _moveJoystickCurrentPosition =
-          _defaultLayerPositionForMoveJoystick(layer, workspaceSize);
-      _moveJoystickOffset = _moveJoystickOffsetFromLocal(details.localPosition);
-    });
-  }
-
-  void _onMoveJoystickPanUpdate(DragUpdateDetails details) {
-    final String? layerId = _moveJoystickLayerId;
-    final EditorLayer? selected = _selectedMoveJoystickLayer();
-    final Size? workspaceSize = _workspaceSizeForMoveJoystick();
-    if (layerId == null ||
-        selected == null ||
-        selected.id != layerId ||
-        workspaceSize == null) {
-      return;
-    }
-    final double sourcePerPx =
-        _sourceUnitsPerScreenPxForMoveJoystick(workspaceSize);
-    final Offset current = _moveJoystickCurrentPosition ??
-        _defaultLayerPositionForMoveJoystick(selected, workspaceSize);
-    final Offset next = Offset(
-      (current.dx + (details.delta.dx * sourcePerPx))
-          .clamp(0.0, workspaceSize.width)
-          .toDouble(),
-      (current.dy + (details.delta.dy * sourcePerPx))
-          .clamp(0.0, workspaceSize.height)
-          .toDouble(),
-    );
-    _moveJoystickCurrentPosition = next;
-    _moveJoystickOffset = _moveJoystickOffsetFromLocal(details.localPosition);
-    _onLayerTransformChanged(layerId, position: next);
-  }
-
-  void _endMoveJoystickGesture() {
-    _onTransformInteractionEnd();
-    if (_moveJoystickOffset == Offset.zero &&
-        _moveJoystickLayerId == null &&
-        _moveJoystickCurrentPosition == null) {
-      return;
-    }
-    setState(() {
-      _moveJoystickOffset = Offset.zero;
-      _moveJoystickLayerId = null;
-      _moveJoystickCurrentPosition = null;
-    });
-  }
-
-  void _onRotateJoystickPanStart(DragStartDetails details) {
-    final EditorLayer? layer = _selectedMoveJoystickLayer();
-    if (layer == null) return;
-    _onTransformInteractionStart();
-    setState(() {
-      _rotateJoystickLayerId = layer.id;
-      _rotateJoystickCurrentRotation = layer.layerRotation;
-      _rotateJoystickOffset = Offset(
-        _moveJoystickOffsetXFromLocal(details.localPosition),
-        0,
-      );
-    });
-  }
-
-  void _onRotateJoystickPanUpdate(DragUpdateDetails details) {
-    final String? layerId = _rotateJoystickLayerId;
-    final EditorLayer? selected = _selectedMoveJoystickLayer();
-    if (layerId == null || selected == null || selected.id != layerId) return;
-    final double current =
-        _rotateJoystickCurrentRotation ?? selected.layerRotation;
-    final double next =
-        current + (details.delta.dx * _moveJoystickRotationSensitivity);
-    _rotateJoystickCurrentRotation = next;
-    _rotateJoystickOffset = Offset(
-      _moveJoystickOffsetXFromLocal(details.localPosition),
-      0,
-    );
-    _onLayerTransformChanged(layerId, layerRotation: next);
-  }
-
-  void _endRotateJoystickGesture() {
-    _onTransformInteractionEnd();
-    if (_rotateJoystickOffset == Offset.zero &&
-        _rotateJoystickLayerId == null &&
-        _rotateJoystickCurrentRotation == null) {
-      return;
-    }
-    setState(() {
-      _rotateJoystickOffset = Offset.zero;
-      _rotateJoystickLayerId = null;
-      _rotateJoystickCurrentRotation = null;
-    });
-  }
-
-  void _onScaleJoystickPanStart(DragStartDetails details) {
-    final EditorLayer? layer = _selectedMoveJoystickLayer();
-    if (layer == null) return;
-    _onTransformInteractionStart();
-    setState(() {
-      _scaleJoystickLayerId = layer.id;
-      _scaleJoystickCurrentScale = layer.layerScale;
-      _scaleJoystickOffset = Offset(
-        _moveJoystickOffsetXFromLocal(details.localPosition),
-        0,
-      );
-    });
-  }
-
-  void _onScaleJoystickPanUpdate(DragUpdateDetails details) {
-    final String? layerId = _scaleJoystickLayerId;
-    final EditorLayer? selected = _selectedMoveJoystickLayer();
-    if (layerId == null || selected == null || selected.id != layerId) return;
-    final double current = _scaleJoystickCurrentScale ?? selected.layerScale;
-    final double factor =
-        math.exp(details.delta.dx * _moveJoystickScaleSensitivity);
-    final double next = (current * factor)
-        .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
-        .toDouble();
-    _scaleJoystickCurrentScale = next;
-    _scaleJoystickOffset = Offset(
-      _moveJoystickOffsetXFromLocal(details.localPosition),
-      0,
-    );
-    _onLayerTransformChanged(layerId, layerScale: next);
-  }
-
-  void _endScaleJoystickGesture() {
-    _onTransformInteractionEnd();
-    if (_scaleJoystickOffset == Offset.zero &&
-        _scaleJoystickLayerId == null &&
-        _scaleJoystickCurrentScale == null) {
-      return;
-    }
-    setState(() {
-      _scaleJoystickOffset = Offset.zero;
-      _scaleJoystickLayerId = null;
-      _scaleJoystickCurrentScale = null;
-    });
-  }
-
   Widget _buildMoveJoystickDock() {
     return Positioned(
-      left: 0,
-      right: 0,
+      left: 12,
+      right: 12,
       bottom: _bottomNavHeight + _moveJoystickDockBottomGap,
-      child: IgnorePointer(
-        ignoring: false,
-        child: Center(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildMoveJoystickControl(
-                icon: Icons.open_with_rounded,
-                offset: _moveJoystickOffset,
-                active: _moveJoystickLayerId != null,
-                onPanStart: _onMoveJoystickPanStart,
-                onPanUpdate: _onMoveJoystickPanUpdate,
-                onPanEnd: (_) => _endMoveJoystickGesture(),
-                onPanCancel: _endMoveJoystickGesture,
-              ),
-              const SizedBox(width: _moveJoystickGap),
-              _buildMoveJoystickControl(
-                icon: Icons.rotate_right_rounded,
-                offset: _rotateJoystickOffset,
-                active: _rotateJoystickLayerId != null,
-                onPanStart: _onRotateJoystickPanStart,
-                onPanUpdate: _onRotateJoystickPanUpdate,
-                onPanEnd: (_) => _endRotateJoystickGesture(),
-                onPanCancel: _endRotateJoystickGesture,
-              ),
-              const SizedBox(width: _moveJoystickGap),
-              _buildMoveJoystickControl(
-                icon: Icons.zoom_out_map_rounded,
-                offset: _scaleJoystickOffset,
-                active: _scaleJoystickLayerId != null,
-                onPanStart: _onScaleJoystickPanStart,
-                onPanUpdate: _onScaleJoystickPanUpdate,
-                onPanEnd: (_) => _endScaleJoystickGesture(),
-                onPanCancel: _endScaleJoystickGesture,
-              ),
-            ],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _buildMoveJoystickControl(
+            icon: Icons.refresh_rounded,
+            offset: _rotateJoystickOffset,
+            active: _rotateJoystickLayerId != null,
+            controlSize: _moveJoystickSize,
+            knobSize: _moveJoystickKnobSize,
+            onPanStart: _onRotateJoystickPanStart,
+            onPanUpdate: _onRotateJoystickPanUpdate,
+            onPanEnd: (_) => _endRotateJoystickGesture(),
+            onPanCancel: _endRotateJoystickGesture,
           ),
-        ),
+          const SizedBox(width: _moveJoystickGap),
+          _buildMoveJoystickControl(
+            icon: Icons.open_in_full_rounded,
+            offset: _scaleJoystickOffset,
+            active: _scaleJoystickLayerId != null,
+            controlSize: _moveJoystickSize,
+            knobSize: _moveJoystickKnobSize,
+            onPanStart: _onScaleJoystickPanStart,
+            onPanUpdate: _onScaleJoystickPanUpdate,
+            onPanEnd: (_) => _endScaleJoystickGesture(),
+            onPanCancel: _endScaleJoystickGesture,
+          ),
+          const SizedBox(width: _moveJoystickGap),
+          _buildMoveJoystickControl(
+            icon: Icons.open_with_rounded,
+            offset: _moveJoystickOffset,
+            active: _moveJoystickLayerId != null,
+            controlSize: _moveJoystickSize,
+            knobSize: _moveJoystickKnobSize,
+            onPanStart: _onMoveJoystickPanStart,
+            onPanUpdate: _onMoveJoystickPanUpdate,
+            onPanEnd: (_) => _endMoveJoystickGesture(),
+            onPanCancel: _endMoveJoystickGesture,
+          ),
+        ],
       ),
     );
   }
@@ -7880,14 +10379,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required IconData icon,
     required Offset offset,
     required bool active,
+    required double controlSize,
+    required double knobSize,
+    double iconSize = 20,
     required GestureDragStartCallback onPanStart,
     required GestureDragUpdateCallback onPanUpdate,
     required GestureDragEndCallback onPanEnd,
     required VoidCallback onPanCancel,
-    double controlSize = _moveJoystickSize,
-    double knobSize = _moveJoystickKnobSize,
-    double iconSize = 17,
   }) {
+    final Color ringColor =
+        active ? const Color(0x80FFFFFF) : const Color(0x4DFFFFFF);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: onPanStart,
@@ -7898,43 +10399,38 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         width: controlSize,
         height: controlSize,
         child: Stack(
-          alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: controlSize,
-              height: controlSize,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color:
-                    active ? const Color(0x3AF3F3F2) : const Color(0x2A2B2E33),
-                border: Border.all(
-                  color: active
-                      ? const Color(0x66F3F3F2)
-                      : const Color(0x3CF3F3F2),
-                  width: 0.9,
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0x26FFFFFF),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: ringColor, width: 1.2),
+                ),
+                child: Icon(
+                  icon,
+                  size: iconSize,
+                  color: const Color(0x8AFFFFFF),
                 ),
               ),
-              child: Icon(
-                icon,
-                size: iconSize,
-                color:
-                    active ? const Color(0xFFF3F3F2) : const Color(0xC7D4D4D3),
-              ),
             ),
-            Transform.translate(
-              offset: offset,
+            Positioned(
+              left: (controlSize - knobSize) / 2 + offset.dx,
+              top: (controlSize - knobSize) / 2 + offset.dy,
               child: Container(
                 width: knobSize,
                 height: knobSize,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
                   color: active
-                      ? const Color(0xA0F3F3F2)
-                      : const Color(0x66F3F3F2),
+                      ? const Color(0x7AFFFFFF)
+                      : const Color(0x5AFFFFFF),
+                  shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0x66FFFFFF),
-                    width: 0.7,
+                    color: active
+                        ? const Color(0xAAFFFFFF)
+                        : const Color(0x77FFFFFF),
+                    width: 1,
                   ),
                 ),
               ),
@@ -8140,80 +10636,183 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _SkiaEditorCanvas(
-            key: _editorCanvasStateKey,
-            layers: _layers,
-            pencilStrokes: _pencilStrokes,
-            activeTool: _activeTool,
-            isToolEnabled: _isToolEnabled,
-            pencilSettings: _pencilSettings,
-            cloneSettings: _cloneSettings,
-            showCloneBrushPreview: _isToolEnabled &&
-                _activeTool == EditorTool.clone &&
-                _isCloneBrushPreviewVisible,
-            marqueeMode: _marqueeMode,
-            marqueeSelection: _marqueeSelection,
-            isCloneSourceArmed: _isCloneSourceArmed,
-            isCloneBrushSelected: _isCloneBrushSelected,
-            isCloneEraseSelected: _isCloneEraseSelected,
-            cloneClearRequestToken: _cloneClearRequestToken,
-            cloneJoystickDrawPressed: _cloneJoystickDrawPressed,
-            showCloneJoystickCursor:
-                _isCloneJoystickDockVisible && _isCloneJoystickCursorVisible,
-            selectedLayerId: _selectedLayerId,
-            onLayerSelected: _onLayerSelected,
-            onLayerTransformChanged: _onLayerTransformChanged,
-            onLayerImageChanged: _onLayerImageChanged,
-            onMarqueeSelectionChanged: _onMarqueeSelectionChanged,
-            onCloneSourcePicked: _onCloneSourcePicked,
-            onCanvasMessage: _showToolMessage,
-            onTextLayerDoubleTap: _onTextLayerDoubleTap,
-            onLayerDoubleTap: _onLayerCanvasDoubleTap,
-            onTransformInteractionStart: _onTransformInteractionStart,
-            onTransformInteractionEnd: _onTransformInteractionEnd,
-            onPencilStrokeCommitted: _onPencilStrokeCommitted,
-            overlayCutConfig: _activeOverlayCutConfigForCanvas(),
-            onOverlayCutConfigChanged: _onOverlayCutConfigChangedFromCanvas,
-            cropToolConfig: _activeCropConfigForCanvas(),
-            expandToolConfig: _activeExpandConfigForCanvas(),
-            isExpandGenerating: _isExpandGenerating,
-            onCropToolConfigChanged: _onCropToolConfigChangedFromCanvas,
-            onExpandToolConfigChanged: _onExpandToolConfigChangedFromCanvas,
-            onCropCommitRequested: _onCropCommitRequestedFromCanvas,
-            sketchMaskLayerId: _selectedImageLayer()?.id,
-            sketchMaskDrawingEnabled: _isToolEnabled &&
-                    (_activeTool == EditorTool.sketchReplace ||
-                        _activeTool == EditorTool.replaceObject)
-                ? (_activeTool == EditorTool.replaceObject
-                    ? _isReplaceObjectMaskDrawingEnabled
-                    : _isSketchReplaceMaskDrawingEnabled)
-                : false,
-            sketchMaskBrushSize: _activeTool == EditorTool.replaceObject
-                ? _replaceObjectMaskBrushSize
-                : _sketchReplaceMaskBrushSize,
-            showSketchMaskBrushPreview: _isSketchReplaceBrushPreviewVisible &&
-                (_activeTool == EditorTool.sketchReplace ||
-                    _activeTool == EditorTool.replaceObject) &&
-                (_activeTool == EditorTool.sketchReplace
-                    ? _isSketchReplaceFloatingOpen
-                    : _isReplaceObjectFloatingOpen) &&
-                _isToolEnabled,
-            sketchMaskBrushPreviewSize: _activeTool == EditorTool.replaceObject
-                ? _replaceObjectMaskBrushSize
-                : _sketchReplaceMaskBrushSize,
-            sketchMaskStrokes: _activeSketchMaskStrokes(),
-            onSketchMaskStrokeCommitted: _onSketchMaskStrokeCommitted,
-            inlineTextEditRequestLayerId: _inlineTextEditRequestLayerId,
-            inlineTextEditRequestToken: _inlineTextEditRequestToken,
-            onTextInlineEditStarted: _onTextInlineEditStarted,
-            onTextInlineChanged: _onTextInlineChanged,
-            onTextInlineEditFinished: _onTextInlineEditFinished,
-            showUpscaleMagicEffect: _isUpscaleLayerProcessing,
-            upscaleMagicLayerId: _upscaleEffectLayerId,
+          AbsorbPointer(
+            absorbing: _pendingElementPlacement != null,
+            child: _SkiaEditorCanvas(
+              key: _editorCanvasStateKey,
+              layers: _layers,
+              pencilStrokes: _pencilStrokes,
+              activeTool: _activeTool,
+              isToolEnabled: _isToolEnabled,
+              pencilSettings: _pencilSettings,
+              cloneSettings: _cloneSettings,
+              eraseSettings: _eraseSettings,
+              showCloneBrushPreview: _isToolEnabled &&
+                  _activeTool == EditorTool.clone &&
+                  _isCloneBrushPreviewVisible &&
+                  !_isCloneSourceArmed,
+              showEraseBrushPreview: _isToolEnabled &&
+                  _activeTool == EditorTool.erase &&
+                  _isEraseBrushPreviewVisible,
+              marqueeMode: _marqueeMode,
+              marqueeSelection: _marqueeSelection,
+              isCloneSourceArmed: _isCloneSourceArmed,
+              isCloneBrushSelected: _isCloneBrushSelected,
+              isCloneEraseSelected: _isCloneEraseSelected,
+              cloneClearRequestToken: _cloneClearRequestToken,
+              cloneJoystickDrawPressed: _cloneJoystickDrawPressed,
+              showCloneJoystickCursor: (_isCloneJoystickDockVisible ||
+                      _isEraseJoystickDockVisible) &&
+                  _isCloneJoystickCursorVisible &&
+                  !_isCloneSourceArmed,
+              onCloneViewportScaleInteraction:
+                  _onCloneViewportScaleInteractionFromCanvas,
+              selectedLayerId: _selectedLayerId,
+              onLayerSelected: _onLayerSelected,
+              onLayerTransformChanged: _onLayerTransformChanged,
+              onLayerImageChanged: _onLayerImageChanged,
+              onMarqueeSelectionChanged: _onMarqueeSelectionChanged,
+              onCloneSourcePicked: _onCloneSourcePicked,
+              onCanvasMessage: _showToolMessage,
+              onTextLayerDoubleTap: _onTextLayerDoubleTap,
+              onLayerDoubleTap: _onLayerCanvasDoubleTap,
+              onTransformInteractionStart: _onTransformInteractionStart,
+              onTransformInteractionEnd: _onTransformInteractionEnd,
+              onPencilStrokeCommitted: _onPencilStrokeCommitted,
+              overlayCutConfig: _activeOverlayCutConfigForCanvas(),
+              onOverlayCutConfigChanged: _onOverlayCutConfigChangedFromCanvas,
+              cropToolConfig: _activeCropConfigForCanvas(),
+              expandToolConfig: _activeExpandConfigForCanvas(),
+              isExpandGenerating: _isExpandGenerating,
+              onCropToolConfigChanged: _onCropToolConfigChangedFromCanvas,
+              onExpandToolConfigChanged: _onExpandToolConfigChangedFromCanvas,
+              onCropCommitRequested: _onCropCommitRequestedFromCanvas,
+              sketchMaskLayerId: _selectedImageLayer()?.id,
+              sketchMaskDrawingEnabled: _isToolEnabled &&
+                      (_activeTool == EditorTool.sketchReplace ||
+                          _activeTool == EditorTool.replaceObject)
+                  ? (_activeTool == EditorTool.replaceObject
+                      ? _isReplaceObjectMaskDrawingEnabled
+                      : _isSketchReplaceMaskDrawingEnabled)
+                  : false,
+              sketchMaskBrushSize: _activeTool == EditorTool.replaceObject
+                  ? _replaceObjectMaskBrushSize
+                  : _sketchReplaceMaskBrushSize,
+              showSketchMaskBrushPreview: _isSketchReplaceBrushPreviewVisible &&
+                  (_activeTool == EditorTool.sketchReplace ||
+                      _activeTool == EditorTool.replaceObject) &&
+                  (_activeTool == EditorTool.sketchReplace
+                      ? _isSketchReplaceFloatingOpen
+                      : _isReplaceObjectFloatingOpen) &&
+                  _isToolEnabled,
+              sketchMaskBrushPreviewSize:
+                  _activeTool == EditorTool.replaceObject
+                      ? _replaceObjectMaskBrushSize
+                      : _sketchReplaceMaskBrushSize,
+              sketchMaskStrokes: _activeSketchMaskStrokes(),
+              onSketchMaskStrokeCommitted: _onSketchMaskStrokeCommitted,
+              inlineTextEditRequestLayerId: _inlineTextEditRequestLayerId,
+              inlineTextEditRequestToken: _inlineTextEditRequestToken,
+              onTextInlineEditStarted: _onTextInlineEditStarted,
+              onTextInlineChanged: _onTextInlineChanged,
+              onTextInlineEditFinished: _onTextInlineEditFinished,
+              showUpscaleMagicEffect: _isUpscaleLayerProcessing,
+              upscaleMagicLayerId: _upscaleEffectLayerId,
+            ),
           ),
           if (_isAiCanvasGenerating || _isExpandGenerating)
             _buildAiCanvasGeneratingOverlay(),
         ],
+      ),
+    );
+  }
+
+  Widget _buildPendingElementPlacementOverlay() {
+    final _PendingElementPlacement? pending = _pendingElementPlacement;
+    if (pending == null) return const SizedBox.shrink();
+    final double previewSize = pending.previewSize
+        .clamp(
+          _pendingElementPreviewMinSize,
+          _pendingElementPreviewMaxSize,
+        )
+        .toDouble();
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ValueListenableBuilder<Offset?>(
+          valueListenable: _pendingElementPlacementPositionNotifier,
+          builder: (context, _, __) {
+            final Offset? previewPosition =
+                _pendingElementPlacementViewportPosition();
+            return Stack(
+              children: [
+                Positioned(
+                  top: 12,
+                  left: 16,
+                  right: 16,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xCC0F1117),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0x405E6676),
+                          width: 0.7,
+                        ),
+                      ),
+                      child: Text(
+                        pending.isLoading
+                            ? 'Loading element... keep dragging'
+                            : (pending.placeOnDrop
+                                ? 'Drag and release on canvas'
+                                : 'Move element, then tap canvas to place'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFF3F3F2),
+                          fontSize: 11.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (previewPosition != null)
+                  Positioned(
+                    left: previewPosition.dx - (previewSize / 2),
+                    top: previewPosition.dy - (previewSize / 2),
+                    child: Opacity(
+                      opacity: 0.94,
+                      child: RepaintBoundary(
+                        child: SizedBox(
+                          width: previewSize,
+                          height: previewSize,
+                          child: pending.image != null
+                              ? RawImage(
+                                  image: pending.image,
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.medium,
+                                )
+                              : Image.network(
+                                  pending.fileUrl,
+                                  fit: BoxFit.contain,
+                                  filterQuality: FilterQuality.medium,
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.broken_image_outlined,
+                                    color: Color(0xFFB8B7B5),
+                                    size: 22,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -8452,6 +11051,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     EditorTool tool, {
     bool toggleWhenSame = true,
   }) {
+    if (_isUpscaleLayerProcessing) {
+      _showExportMessage(
+        'Wait for Upscale to finish first.',
+        isError: true,
+      );
+      return;
+    }
+    if (_isUpscaleBottomSheetOpen) {
+      Navigator.of(context).maybePop();
+    }
     setState(() {
       if (_activeTool == tool) {
         _isToolEnabled = toggleWhenSame ? !_isToolEnabled : true;
@@ -8471,6 +11080,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _cloneBrushSelectedFloatingBaseline = null;
         _cloneEraseSelectedFloatingBaseline = null;
         _resetCloneJoystickControls();
+      }
+      if (!_isToolEnabled || tool != EditorTool.erase) {
+        _isEraseBrushPreviewVisible = false;
+        _isEraseSettingsBottomSheetOpen = false;
       }
       if (!_isToolEnabled || tool != EditorTool.blur) {
         _isBlurSettingsBottomSheetOpen = false;
@@ -8579,6 +11192,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (!_isToolEnabled || tool != EditorTool.clone) {
       _cloneBrushPreviewTimer?.cancel();
     }
+    if (!_isToolEnabled || tool != EditorTool.erase) {
+      _eraseBrushPreviewTimer?.cancel();
+    }
   }
 
   void _onRemoveBgToolTap() {
@@ -8609,9 +11225,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _onUpscaleToolTap() {
+    if (_isUpscaleLayerProcessing) {
+      _showExportMessage(
+        'Wait for Upscale to finish first.',
+        isError: true,
+      );
+      return;
+    }
     if (_isUpscaleBottomSheetOpen) {
       Navigator.of(context).maybePop();
       return;
+    }
+    if (_isToolEnabled) {
+      _setActiveTool(_activeTool);
     }
     _closeToolSettingsSidebarIfOpen();
     unawaited(_openUpscaleBottomSheet());
@@ -8688,7 +11314,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                   child: Container(
                     decoration: const BoxDecoration(
-                      color: WonderPicEditorScreen._pageBg,
+                      color: _bottomSheetSurface,
                       borderRadius: BorderRadius.vertical(
                         top: Radius.circular(20),
                       ),
@@ -8757,8 +11383,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return const <_RegenerateQualityPreset>[
           _RegenerateQualityPreset.autoReference,
           _RegenerateQualityPreset.k2,
+          _RegenerateQualityPreset.k4,
         ];
       case _RegenerateModel.nanoBanana2:
+        return const <_RegenerateQualityPreset>[
+          _RegenerateQualityPreset.autoReference,
+          _RegenerateQualityPreset.k1,
+          _RegenerateQualityPreset.k2,
+          _RegenerateQualityPreset.k4,
+        ];
       case _RegenerateModel.flux2Pro:
         return const <_RegenerateQualityPreset>[
           _RegenerateQualityPreset.autoReference,
@@ -8778,6 +11411,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       case _RegenerateModel.nanoBanana2:
         switch (preset) {
           case _RegenerateQualityPreset.autoReference:
+            if (longestSide >= 3000) {
+              return _AiGenerationQuality.k4;
+            }
             return longestSide >= 1700
                 ? _AiGenerationQuality.k2
                 : _AiGenerationQuality.k1;
@@ -8785,6 +11421,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             return _AiGenerationQuality.k1;
           case _RegenerateQualityPreset.k2:
             return _AiGenerationQuality.k2;
+          case _RegenerateQualityPreset.k4:
+            return _AiGenerationQuality.k4;
         }
       case _RegenerateModel.flux2Pro:
         switch (preset) {
@@ -8796,17 +11434,78 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             return _AiGenerationQuality.k1;
           case _RegenerateQualityPreset.k2:
             return _AiGenerationQuality.k2;
+          case _RegenerateQualityPreset.k4:
+            return _AiGenerationQuality.k2;
         }
       case _RegenerateModel.seedream5Lite:
         switch (preset) {
           case _RegenerateQualityPreset.autoReference:
+            if (longestSide >= 3000) {
+              return _AiGenerationQuality.high;
+            }
             return _AiGenerationQuality.k2;
           case _RegenerateQualityPreset.k1:
             return _AiGenerationQuality.k2;
           case _RegenerateQualityPreset.k2:
             return _AiGenerationQuality.k2;
+          case _RegenerateQualityPreset.k4:
+            return _AiGenerationQuality.high;
         }
     }
+  }
+
+  _KieNanoAspectRatio _nanoAspectRatioForImage(ui.Image image) {
+    final double ratio = image.width / math.max(1, image.height);
+    const List<MapEntry<_KieNanoAspectRatio, double>> candidates =
+        <MapEntry<_KieNanoAspectRatio, double>>[
+      MapEntry<_KieNanoAspectRatio, double>(_KieNanoAspectRatio.square, 1.0),
+      MapEntry<_KieNanoAspectRatio, double>(
+          _KieNanoAspectRatio.portrait34, 3 / 4),
+      MapEntry<_KieNanoAspectRatio, double>(
+          _KieNanoAspectRatio.story916, 9 / 16),
+    ];
+    MapEntry<_KieNanoAspectRatio, double> best = candidates.first;
+    double bestDelta = (ratio - best.value).abs();
+    for (final MapEntry<_KieNanoAspectRatio, double> candidate
+        in candidates.skip(1)) {
+      final double delta = (ratio - candidate.value).abs();
+      if (delta < bestDelta) {
+        best = candidate;
+        bestDelta = delta;
+      }
+    }
+    return best.key;
+  }
+
+  _KieFluxAspectRatio _fluxAspectRatioForImage(ui.Image image) {
+    final double ratio = image.width / math.max(1, image.height);
+    const List<MapEntry<_KieFluxAspectRatio, double>> candidates =
+        <MapEntry<_KieFluxAspectRatio, double>>[
+      MapEntry<_KieFluxAspectRatio, double>(_KieFluxAspectRatio.square11, 1.0),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.landscape43, 4 / 3),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.portrait34, 3 / 4),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.landscape169, 16 / 9),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.story916, 9 / 16),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.landscape32, 3 / 2),
+      MapEntry<_KieFluxAspectRatio, double>(
+          _KieFluxAspectRatio.portrait23, 2 / 3),
+    ];
+    MapEntry<_KieFluxAspectRatio, double> best = candidates.first;
+    double bestDelta = (ratio - best.value).abs();
+    for (final MapEntry<_KieFluxAspectRatio, double> candidate
+        in candidates.skip(1)) {
+      final double delta = (ratio - candidate.value).abs();
+      if (delta < bestDelta) {
+        best = candidate;
+        bestDelta = delta;
+      }
+    }
+    return best.key;
   }
 
   _AiCanvasSizePreset _sizePresetFromImage(ui.Image image) {
@@ -8820,74 +11519,42 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return _AiCanvasSizePreset.portrait;
   }
 
-  int _regenerateMaxLongEdgeForQuality(_AiGenerationQuality quality) {
-    switch (quality) {
-      case _AiGenerationQuality.k1:
-      case _AiGenerationQuality.medium:
-        return 1536;
-      case _AiGenerationQuality.k2:
-      case _AiGenerationQuality.high:
-        return 2048;
-      case _AiGenerationQuality.k4:
-        return 2560;
+  _AiCanvasSizePreset _sizePresetFromAspectRatioValue(String aspectRatio) {
+    if (aspectRatio.trim().toLowerCase() == 'auto') {
+      return _AiCanvasSizePreset.square;
     }
-  }
-
-  int _regenerateJpegQualityForQuality(_AiGenerationQuality quality) {
-    switch (quality) {
-      case _AiGenerationQuality.k1:
-      case _AiGenerationQuality.medium:
-        return 84;
-      case _AiGenerationQuality.k2:
-      case _AiGenerationQuality.high:
-        return 88;
-      case _AiGenerationQuality.k4:
-        return 90;
+    final List<String> parts = aspectRatio.split(':');
+    if (parts.length != 2) return _AiCanvasSizePreset.square;
+    final double? width = double.tryParse(parts.first.trim());
+    final double? height = double.tryParse(parts.last.trim());
+    if (width == null || height == null || width <= 0 || height <= 0) {
+      return _AiCanvasSizePreset.square;
     }
+    final double ratio = width / height;
+    if (ratio >= 0.92 && ratio <= 1.08) {
+      return _AiCanvasSizePreset.square;
+    }
+    if (ratio < 0.82) {
+      return _AiCanvasSizePreset.story;
+    }
+    if (ratio < 1.0) {
+      return _AiCanvasSizePreset.portrait;
+    }
+    return _AiCanvasSizePreset.square;
   }
 
   Future<Uint8List> _encodeUiImageForRegenerateUpload(
     ui.Image sourceImage, {
     required _AiGenerationQuality quality,
   }) async {
-    final ByteData? rawData = await sourceImage.toByteData(
-      format: ui.ImageByteFormat.rawRgba,
-    );
-    if (rawData == null) {
-      return _encodeUiImageToPngBytes(sourceImage);
-    }
-    final Uint8List rgba = Uint8List.fromList(
-      rawData.buffer.asUint8List(0, rawData.lengthInBytes),
-    );
-    final int width = sourceImage.width;
-    final int height = sourceImage.height;
-    final int jpegQuality = _regenerateJpegQualityForQuality(quality);
-    final int maxLongEdge = _regenerateMaxLongEdgeForQuality(quality);
-    return Isolate.run<Uint8List>(
-      () => _encodeJpgFromRgbaForAiUploadIsolate(
-        rgba: rgba,
-        width: width,
-        height: height,
-        quality: jpegQuality,
-        maxLongEdge: maxLongEdge,
-      ),
-    );
+    return _encodeUiImageToPngBytes(sourceImage);
   }
 
   Future<Uint8List> _encodeBytesForRegenerateUpload(
     Uint8List sourceBytes, {
     required _AiGenerationQuality quality,
   }) async {
-    final Uint8List safeBytes = Uint8List.fromList(sourceBytes);
-    final int jpegQuality = _regenerateJpegQualityForQuality(quality);
-    final int maxLongEdge = _regenerateMaxLongEdgeForQuality(quality);
-    return Isolate.run<Uint8List>(
-      () => _encodeJpgFromBytesForAiUploadIsolate(
-        encodedBytes: safeBytes,
-        quality: jpegQuality,
-        maxLongEdge: maxLongEdge,
-      ),
-    );
+    return Uint8List.fromList(sourceBytes);
   }
 
   Future<void> _openRegenerateBottomSheet() async {
@@ -8905,19 +11572,29 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool sheetOpen = true;
     bool isUploadingReference = false;
     String? sheetError;
+    bool modelMenuExpanded = false;
+    bool qualityMenuExpanded = false;
 
     try {
       final _RegenerateGenerateRequest? result =
           await showModalBottomSheet<_RegenerateGenerateRequest>(
         context: context,
         isScrollControlled: true,
+        isDismissible: true,
+        enableDrag: true,
         useSafeArea: true,
         barrierColor: Colors.transparent,
-        backgroundColor: const Color(0xFF23262C),
+        backgroundColor: Colors.transparent,
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.48,
+        ),
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
         ),
         builder: (sheetContext) {
+          const Color regenerateSheetSurface = _bottomSheetSurface;
+          const Color regenerateSheetStroke = Color(0x4D7D879C);
+
           Future<void> pickSecondReference(StateSetter setSheetState) async {
             if (isUploadingReference) return;
             setSheetState(() {
@@ -8960,6 +11637,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               });
               return;
             }
+            if (selectedModel == _RegenerateModel.flux2Pro &&
+                (prompt.length < 3 || prompt.length > 5000)) {
+              setSheetState(() {
+                sheetError =
+                    'Flux 2 Pro prompt must be between 3 and 5000 characters.';
+              });
+              return;
+            }
+            if (selectedModel == _RegenerateModel.seedream5Lite &&
+                prompt.length > 3000) {
+              setSheetState(() {
+                sheetError =
+                    'Seedream 5 Lite prompt must be 3000 characters or less.';
+              });
+              return;
+            }
+            if (secondReferenceBytes == null) {
+              setSheetState(() {
+                sheetError = 'Upload the second reference image first.';
+              });
+              return;
+            }
             final List<_RegenerateQualityPreset> qualityOptions =
                 _regenerateQualityOptionsForModel(selectedModel);
             final _RegenerateQualityPreset effectivePreset =
@@ -8974,30 +11673,26 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 prompt: prompt,
                 model: selectedModel,
                 qualityPreset: effectivePreset,
-                secondaryReferenceBytes: secondReferenceBytes,
+                secondaryReferenceBytes: secondReferenceBytes!,
               ),
             );
           }
 
-          Widget qualityChip(
-            _RegenerateQualityPreset preset,
-            StateSetter setSheetState,
-          ) {
-            final bool selected = selectedQuality == preset;
+          Widget buildChip({
+            required String label,
+            required bool selected,
+            required VoidCallback onTap,
+          }) {
             return _BouncyInkWell(
               pressedScale: 0.975,
               borderRadius: BorderRadius.circular(10),
-              onTap: () {
-                if (isUploadingReference) return;
-                setSheetState(() {
-                  selectedQuality = preset;
-                });
-              },
+              onTap: onTap,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 140),
                 curve: Curves.easeOutCubic,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected ? kActiveAccent : _floatingPanelSurfaceSolid,
                   borderRadius: BorderRadius.circular(10),
@@ -9009,12 +11704,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                 ),
                 child: Text(
-                  preset.label,
+                  label,
                   style: TextStyle(
                     color: selected
                         ? kActiveAccentForeground
                         : const Color(0xFFF3F3F2),
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -9022,329 +11717,474 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             );
           }
 
-          return StatefulBuilder(
-            builder: (sheetContext, setSheetState) {
-              final List<_RegenerateQualityPreset> qualityOptions =
-                  _regenerateQualityOptionsForModel(selectedModel);
-              if (!qualityOptions.contains(selectedQuality)) {
-                selectedQuality = qualityOptions.first;
-              }
-
-              return AnimatedPadding(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
-                padding: EdgeInsets.only(
-                  left: 14,
-                  right: 14,
-                  top: 10,
-                  bottom: 14 + MediaQuery.viewInsetsOf(sheetContext).bottom,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.84,
-                  ),
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          Widget buildInlineDropdownField<T>({
+            required String title,
+            required String valueLabel,
+            required bool isExpanded,
+            required VoidCallback onToggle,
+            required List<T> items,
+            required T selectedValue,
+            required String Function(T) labelOf,
+            required ValueChanged<T> onSelected,
+            bool highlightHeader = false,
+          }) {
+            final Color headerBg =
+                highlightHeader ? kActiveAccent : _floatingPanelSurfaceSolid;
+            final Color headerFg = highlightHeader
+                ? kActiveAccentForeground
+                : const Color(0xFFF3F3F2);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _BouncyInkWell(
+                  pressedScale: 0.985,
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onToggle,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: headerBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: highlightHeader
+                            ? Colors.transparent
+                            : _floatingPanelStrokeSolid,
+                        width: highlightHeader ? 0 : 0.55,
+                      ),
+                    ),
+                    child: Row(
                       children: [
-                        Center(
-                          child: Container(
-                            width: 38,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF605E5E),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Regenerate Layer',
-                                style: TextStyle(
-                                  color: Color(0xFFF3F3F2),
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            InkWell(
-                              borderRadius: BorderRadius.circular(14),
-                              onTap: () {
-                                sheetOpen = false;
-                                Navigator.of(sheetContext).pop();
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  size: 19,
-                                  color: Color(0xFFB8B7B5),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
                         Text(
-                          'Base reference: ${initialLayer.name}',
-                          style: const TextStyle(
-                            color: Color(0xFFB8B7B5),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                          title,
+                          style: TextStyle(
+                            color: headerFg.withOpacity(0.9),
+                            fontSize: 11.6,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _floatingPanelSurfaceSolid,
-                            borderRadius: BorderRadius.circular(12),
-                            border:
-                                Border.all(color: _floatingPanelStrokeSolid),
-                          ),
-                          child: TextField(
-                            controller: promptController,
-                            maxLines: 5,
-                            minLines: 3,
-                            textInputAction: TextInputAction.newline,
-                            style: const TextStyle(
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            valueLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              color: headerFg,
                               fontSize: 13,
-                              color: Color(0xFFF3F3F2),
-                            ),
-                            onChanged: (_) {
-                              setSheetState(() {
-                                sheetError = null;
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText:
-                                  'Write your instruction (e.g. replace object in hand with uploaded product)...',
-                              hintStyle: TextStyle(
-                                color: Color(0xFFB8B7B5),
-                                fontSize: 12.5,
-                              ),
+                              fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: isUploadingReference
-                              ? null
-                              : () => pickSecondReference(setSheetState),
-                          child: Container(
-                            height: 96,
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: _floatingPanelSurfaceSolid,
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: _floatingPanelStrokeSolid),
-                            ),
-                            child: secondReferenceBytes == null
-                                ? const Center(
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.upload_outlined,
-                                          size: 20,
-                                          color: Color(0xFFD4D4D3),
-                                        ),
-                                        SizedBox(height: 6),
-                                        Text(
-                                          'Upload second reference image',
-                                          style: TextStyle(
-                                            color: Color(0xFFB8B7B5),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                : Stack(
-                                    children: [
-                                      Positioned.fill(
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(11),
-                                          child: Image.memory(
-                                            secondReferenceBytes!,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        top: 6,
-                                        right: 6,
-                                        child: InkWell(
-                                          onTap: () {
-                                            setSheetState(() {
-                                              secondReferenceBytes = null;
-                                            });
-                                          },
-                                          child: Container(
-                                            width: 22,
-                                            height: 22,
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xAA19191A),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: const Icon(
-                                              Icons.close_rounded,
-                                              size: 14,
-                                              color: Color(0xFFF3F3F2),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Model',
-                          style: TextStyle(
-                            color: Color(0xFFF3F3F2),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _RegenerateModel.values.map((model) {
-                            final bool selected = selectedModel == model;
-                            return _BouncyInkWell(
-                              pressedScale: 0.975,
-                              borderRadius: BorderRadius.circular(10),
-                              onTap: () {
-                                if (isUploadingReference) return;
-                                setSheetState(() {
-                                  selectedModel = model;
-                                  final List<_RegenerateQualityPreset> options =
-                                      _regenerateQualityOptionsForModel(model);
-                                  if (!options.contains(selectedQuality)) {
-                                    selectedQuality = options.first;
-                                  }
-                                });
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 140),
-                                curve: Curves.easeOutCubic,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: selected
-                                      ? kActiveAccent
-                                      : _floatingPanelSurfaceSolid,
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: selected
-                                        ? Colors.transparent
-                                        : _floatingPanelStrokeSolid,
-                                    width: selected ? 0 : 0.55,
-                                  ),
-                                ),
-                                child: Text(
-                                  model.label,
-                                  style: TextStyle(
-                                    color: selected
-                                        ? kActiveAccentForeground
-                                        : const Color(0xFFF3F3F2),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(growable: false),
-                        ),
-                        const SizedBox(height: 10),
-                        const Text(
-                          'Quality',
-                          style: TextStyle(
-                            color: Color(0xFFF3F3F2),
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: qualityOptions
-                              .map((preset) =>
-                                  qualityChip(preset, setSheetState))
-                              .toList(growable: false),
-                        ),
-                        const SizedBox(height: 6),
-                        const Text(
-                          'Auto follows the base reference resolution.',
-                          style: TextStyle(
-                            color: Color(0xFF8D8D8D),
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (sheetError != null && sheetError!.isNotEmpty) ...[
-                          Text(
-                            sheetError!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFB91C1C),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildTextEffectFloatingActionButton(
-                                label: 'Cancel',
-                                onTap: () {
-                                  sheetOpen = false;
-                                  Navigator.of(sheetContext).pop();
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _buildTextEffectFloatingActionButton(
-                                label: isUploadingReference
-                                    ? 'Uploading...'
-                                    : 'Regenerate',
-                                onTap: isUploadingReference
-                                    ? () {}
-                                    : () => submitRegenerate(setSheetState),
-                              ),
-                            ),
-                          ],
+                        const SizedBox(width: 8),
+                        Icon(
+                          isExpanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: headerFg,
                         ),
                       ],
                     ),
                   ),
                 ),
-              );
-            },
+                ClipRect(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 190),
+                    curve: Curves.easeOutCubic,
+                    child: isExpanded
+                        ? Container(
+                            margin: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF17181C),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _floatingPanelStrokeSolid,
+                                width: 0.55,
+                              ),
+                            ),
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: items
+                                  .map(
+                                    (item) => buildChip(
+                                      label: labelOf(item),
+                                      selected: item == selectedValue,
+                                      onTap: () => onSelected(item),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
+            );
+          }
+
+          Widget buildTopBorderPulse() {
+            return SizedBox(
+              height: 2.2,
+              child: StreamBuilder<int>(
+                stream: Stream<int>.periodic(
+                  const Duration(milliseconds: 46),
+                  (int tick) => tick,
+                ),
+                builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+                  final int tick = snapshot.data ?? 0;
+                  final double t = (tick % 140) / 140.0;
+                  final double glow = 0.52 + 0.48 * math.sin(t * math.pi * 2);
+                  final Color pulseColor = Color.lerp(
+                        const Color(0x16E6F24A),
+                        const Color(0x66E6F24A),
+                        glow,
+                      ) ??
+                      const Color(0x34E6F24A);
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment(-1.2 + (2.4 * t), 0),
+                        end: const Alignment(1.1, 0),
+                        colors: <Color>[
+                          const Color(0x00E6F24A),
+                          pulseColor,
+                          const Color(0x00E6F24A),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+
+          return Theme(
+            data: Theme.of(sheetContext).copyWith(
+              bottomSheetTheme: const BottomSheetThemeData(
+                surfaceTintColor: Colors.transparent,
+                backgroundColor: regenerateSheetSurface,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(34)),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: regenerateSheetSurface,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(34),
+                        ),
+                        border: Border.all(
+                          color: regenerateSheetStroke.withOpacity(0.36),
+                          width: 0.65,
+                        ),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        surfaceTintColor: Colors.transparent,
+                        child: SafeArea(
+                          top: false,
+                          child: AnimatedPadding(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOut,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              10,
+                              16,
+                              14 +
+                                  MediaQuery.of(sheetContext).viewInsets.bottom,
+                            ),
+                            child: StatefulBuilder(
+                              builder: (sheetContext, setSheetState) {
+                                final List<_RegenerateQualityPreset>
+                                    qualityOptions =
+                                    _regenerateQualityOptionsForModel(
+                                  selectedModel,
+                                );
+                                if (!qualityOptions.contains(selectedQuality)) {
+                                  selectedQuality = qualityOptions.first;
+                                }
+
+                                return SingleChildScrollView(
+                                  physics: const BouncingScrollPhysics(),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Center(
+                                        child: Container(
+                                          width: 44,
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xAA6F778A),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _floatingPanelSurfaceSolid,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          border: Border.all(
+                                              color: _floatingPanelStrokeSolid),
+                                        ),
+                                        child: TextField(
+                                          controller: promptController,
+                                          maxLines: 4,
+                                          minLines: 3,
+                                          textInputAction:
+                                              TextInputAction.newline,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFFF3F3F2),
+                                          ),
+                                          onChanged: (_) {
+                                            setSheetState(() {
+                                              sheetError = null;
+                                            });
+                                          },
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            border: InputBorder.none,
+                                            hintText:
+                                                'Write your instruction (e.g. replace object in hand with uploaded product)...',
+                                            hintStyle: TextStyle(
+                                              color: Color(0xFFB8B7B5),
+                                              fontSize: 12.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      buildInlineDropdownField<
+                                          _RegenerateModel>(
+                                        title: 'Model',
+                                        valueLabel: selectedModel.label,
+                                        isExpanded: modelMenuExpanded,
+                                        highlightHeader: true,
+                                        onToggle: () {
+                                          setSheetState(() {
+                                            modelMenuExpanded =
+                                                !modelMenuExpanded;
+                                            if (modelMenuExpanded) {
+                                              qualityMenuExpanded = false;
+                                            }
+                                          });
+                                        },
+                                        items: _RegenerateModel.values,
+                                        selectedValue: selectedModel,
+                                        labelOf: (model) => model.label,
+                                        onSelected: (value) {
+                                          setSheetState(() {
+                                            selectedModel = value;
+                                            final List<_RegenerateQualityPreset>
+                                                options =
+                                                _regenerateQualityOptionsForModel(
+                                              selectedModel,
+                                            );
+                                            if (!options
+                                                .contains(selectedQuality)) {
+                                              selectedQuality = options.first;
+                                            }
+                                            modelMenuExpanded = false;
+                                            qualityMenuExpanded = false;
+                                            sheetError = null;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      buildInlineDropdownField<
+                                          _RegenerateQualityPreset>(
+                                        title: 'Quality',
+                                        valueLabel: selectedQuality.label,
+                                        isExpanded: qualityMenuExpanded,
+                                        onToggle: () {
+                                          setSheetState(() {
+                                            qualityMenuExpanded =
+                                                !qualityMenuExpanded;
+                                            if (qualityMenuExpanded) {
+                                              modelMenuExpanded = false;
+                                            }
+                                          });
+                                        },
+                                        items: qualityOptions,
+                                        selectedValue: selectedQuality,
+                                        labelOf: (quality) => quality.label,
+                                        onSelected: (value) {
+                                          setSheetState(() {
+                                            selectedQuality = value;
+                                            qualityMenuExpanded = false;
+                                            sheetError = null;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      InkWell(
+                                        borderRadius: BorderRadius.circular(14),
+                                        onTap: isUploadingReference
+                                            ? null
+                                            : () => pickSecondReference(
+                                                setSheetState),
+                                        child: Container(
+                                          height: 84,
+                                          width: double.infinity,
+                                          decoration: BoxDecoration(
+                                            color: _floatingPanelSurfaceSolid,
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                            border: Border.all(
+                                              color: _floatingPanelStrokeSolid,
+                                            ),
+                                          ),
+                                          child: secondReferenceBytes == null
+                                              ? const Center(
+                                                  child: Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.upload_outlined,
+                                                        size: 19,
+                                                        color:
+                                                            Color(0xFFD4D4D3),
+                                                      ),
+                                                      SizedBox(height: 5),
+                                                      Text(
+                                                        'Upload image',
+                                                        style: TextStyle(
+                                                          color:
+                                                              Color(0xFFB8B7B5),
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                )
+                                              : Stack(
+                                                  children: [
+                                                    Positioned.fill(
+                                                      child: ClipRRect(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(13),
+                                                        child: Image.memory(
+                                                          secondReferenceBytes!,
+                                                          fit: BoxFit.cover,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      top: 6,
+                                                      right: 6,
+                                                      child: InkWell(
+                                                        onTap: () {
+                                                          setSheetState(() {
+                                                            secondReferenceBytes =
+                                                                null;
+                                                          });
+                                                        },
+                                                        child: Container(
+                                                          width: 22,
+                                                          height: 22,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color: const Color(
+                                                                0xAA19191A),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        20),
+                                                          ),
+                                                          child: const Icon(
+                                                            Icons.close_rounded,
+                                                            size: 14,
+                                                            color: Color(
+                                                                0xFFF3F3F2),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      if (sheetError != null &&
+                                          sheetError!.isNotEmpty) ...[
+                                        Text(
+                                          sheetError!,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFFB91C1C),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      _buildTextEffectFloatingActionButton(
+                                        accent: true,
+                                        icon: Icons.auto_awesome_rounded,
+                                        label: isUploadingReference
+                                            ? 'Uploading...'
+                                            : (_isAiCanvasGenerating
+                                                ? 'Generating...'
+                                                : 'Generate'),
+                                        onTap: (isUploadingReference ||
+                                                _isAiCanvasGenerating)
+                                            ? () {}
+                                            : () =>
+                                                submitRegenerate(setSheetState),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            height: 1,
+                            color: regenerateSheetStroke.withOpacity(0.75),
+                          ),
+                          buildTopBorderPulse(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           );
         },
       ).whenComplete(() {
@@ -9359,10 +12199,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   String _normalizeRegenerateErrorMessage(Object error) {
-    String message = error.toString().trim();
-    if (message.startsWith('StateError: ')) {
-      message = message.substring('StateError: '.length);
-    }
+    String message = _normalizeOperationErrorMessage(error);
     if (message.contains('object is unsendable') ||
         message.contains("Class: '_Image")) {
       return 'Internal image processing error. Please try again.';
@@ -9394,6 +12231,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
     final EditorLayer sourceLayer = _layers[layerIndex];
     final ui.Image sourceImage = sourceLayer.image!;
+    if (request.secondaryReferenceBytes.isEmpty) {
+      _showExportMessage(
+        'Second reference image is missing.',
+        isError: true,
+      );
+      return;
+    }
     final _AiGenerationQuality quality = _resolveRegenerateQuality(
       model: request.model,
       preset: request.qualityPreset,
@@ -9402,11 +12246,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
       _showExportMessage(
-        'KIE API key missing. Add --dart-define=KIE_API_KEY=...',
+        'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
         isError: true,
       );
       return;
     }
+    final double creditCost = _creditCostForAiQuality(quality);
+    final Duration expectedDuration = _estimateRegenerateDuration(
+      request: request,
+      quality: quality,
+    );
 
     setState(() {
       _lastRegeneratePrompt = request.prompt;
@@ -9416,53 +12265,73 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _isAiCanvasGenerating = true;
       _aiCanvasGeneratingProgress = 0.0;
     });
-    _startAiCanvasGeneratingProgressEstimator();
+    _startAiCanvasGeneratingProgressEstimator(
+      expectedDuration: expectedDuration,
+    );
 
     try {
-      final Uint8List baseReferenceBytes =
-          await _encodeUiImageForRegenerateUpload(
-        sourceImage,
-        quality: quality,
-      );
-      Uint8List? secondReferenceBytes;
-      if (request.secondaryReferenceBytes != null) {
-        if (request.model == _RegenerateModel.nanoBanana2) {
-          secondReferenceBytes = Uint8List.fromList(
-            request.secondaryReferenceBytes!,
-          );
-        } else {
-          secondReferenceBytes = await _encodeBytesForRegenerateUpload(
-            request.secondaryReferenceBytes!,
+      await _runWithCreditReservation<void>(
+        operationType: 'ai_regenerate',
+        amount: creditCost,
+        metadata: <String, dynamic>{
+          'model': request.model.label,
+          'quality': quality.label,
+          'quality_preset': request.qualityPreset.label,
+          'layer_id': request.layerId,
+          'reference_count': 2,
+          'source': 'editor_regenerate',
+        },
+        run: () async {
+          final Uint8List baseReferenceBytes =
+              await _encodeUiImageForRegenerateUpload(
+            sourceImage,
             quality: quality,
           );
-        }
-      }
-      final List<Uint8List> references = <Uint8List>[
-        baseReferenceBytes,
-        if (secondReferenceBytes != null) secondReferenceBytes,
-      ];
+          final Uint8List secondReferenceBytes =
+              await _encodeBytesForRegenerateUpload(
+            request.secondaryReferenceBytes,
+            quality: quality,
+          );
+          final List<Uint8List> references = <Uint8List>[
+            baseReferenceBytes,
+            secondReferenceBytes,
+          ];
 
-      final Uint8List outputBytes = await _generateImageWithKie(
-        model: request.model.kieModel,
-        nanoVersion: _KieNanoBananaVersion.nanoBanana2,
-        ideogramStyle: _defaultKieIdeogramStyle,
-        ideogramImageSize: _defaultKieIdeogramImageSize,
-        sizePreset: _sizePresetFromImage(sourceImage),
-        quality: quality,
-        prompt: request.prompt,
-        referenceImages: references,
-        preserveReferenceFormat: request.model == _RegenerateModel.nanoBanana2,
-        preferStreamUploadForReferences:
-            request.model == _RegenerateModel.nanoBanana2,
+          final Uint8List outputBytes = await _generateImageWithKie(
+            model: request.model.kieModel,
+            nanoVersion: _KieNanoBananaVersion.nanoBanana2,
+            nanoAspectRatio: _nanoAspectRatioForImage(sourceImage),
+            fluxAspectRatio: _fluxAspectRatioForImage(sourceImage),
+            seedreamAspectRatio: _seedreamAspectRatioForImage(sourceImage),
+            ideogramStyle: _defaultKieIdeogramStyle,
+            ideogramImageSize: _defaultKieIdeogramImageSize,
+            sizePreset: _sizePresetFromImage(sourceImage),
+            quality: quality,
+            prompt: request.prompt,
+            referenceImages: references,
+            preserveReferenceFormat:
+                request.model == _RegenerateModel.nanoBanana2,
+            preferStreamUploadForReferences:
+                request.model == _RegenerateModel.nanoBanana2,
+            useOfficialNanoPrompt: false,
+          );
+          final ui.Image nextImage = await _decodeUiImage(outputBytes);
+          if (!mounted) return;
+
+          _pushUndoSnapshot();
+          setState(() {
+            _replaceLayerImage(sourceLayer.id, nextImage);
+          });
+          unawaited(
+            _recordGeneratedImageInLibrary(
+              imageBytes: outputBytes,
+              prompt: request.prompt,
+              source: 'Regenerate',
+            ),
+          );
+          _showExportMessage('Regenerate completed successfully.');
+        },
       );
-      final ui.Image nextImage = await _decodeUiImage(outputBytes);
-      if (!mounted) return;
-
-      _pushUndoSnapshot();
-      setState(() {
-        _replaceLayerImage(sourceLayer.id, nextImage);
-      });
-      _showExportMessage('Regenerate completed successfully.');
     } catch (error) {
       if (!mounted) return;
       _showExportMessage(
@@ -9480,6 +12349,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       } else {
         _aiCanvasGeneratingProgressTimer?.cancel();
         _aiCanvasGeneratingProgressTimer = null;
+        _aiCanvasGeneratingStartedAt = null;
       }
     }
   }
@@ -9595,12 +12465,63 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         topExpand: config.topExpand,
         rightExpand: config.rightExpand,
         bottomExpand: config.bottomExpand,
-        maxLongSide: 2048,
-        maxPixels: 4000000,
-        sourceJpegQuality: 86,
       ),
     );
     return result['sourceImageBytes'] as Uint8List;
+  }
+
+  Future<ui.Image> _composeExpandResultPreservingSource({
+    required ui.Image generatedImage,
+    required ui.Image sourceImage,
+    required _ExpandToolConfig config,
+  }) async {
+    final int sourceWidth = sourceImage.width;
+    final int sourceHeight = sourceImage.height;
+    final int leftPx = math.max(0, (sourceWidth * config.leftExpand).round());
+    final int topPx = math.max(0, (sourceHeight * config.topExpand).round());
+    final int rightPx = math.max(0, (sourceWidth * config.rightExpand).round());
+    final int bottomPx =
+        math.max(0, (sourceHeight * config.bottomExpand).round());
+    final int outputWidth = math.max(sourceWidth + leftPx + rightPx, 1);
+    final int outputHeight = math.max(sourceHeight + topPx + bottomPx, 1);
+
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(
+      recorder,
+      Rect.fromLTWH(0, 0, outputWidth.toDouble(), outputHeight.toDouble()),
+    );
+
+    canvas.drawImageRect(
+      generatedImage,
+      Rect.fromLTWH(
+        0,
+        0,
+        generatedImage.width.toDouble(),
+        generatedImage.height.toDouble(),
+      ),
+      Rect.fromLTWH(0, 0, outputWidth.toDouble(), outputHeight.toDouble()),
+      Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high,
+    );
+
+    // Lock the original content back as exact source pixels to avoid quality loss.
+    canvas.drawImageRect(
+      sourceImage,
+      Rect.fromLTWH(0, 0, sourceWidth.toDouble(), sourceHeight.toDouble()),
+      Rect.fromLTWH(
+        leftPx.toDouble(),
+        topPx.toDouble(),
+        sourceWidth.toDouble(),
+        sourceHeight.toDouble(),
+      ),
+      Paint()
+        ..isAntiAlias = false
+        ..filterQuality = FilterQuality.none,
+    );
+
+    final ui.Picture picture = recorder.endRecording();
+    return picture.toImage(outputWidth, outputHeight);
   }
 
   double _expandedAspectRatioForExpand(
@@ -9638,6 +12559,100 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     return selected;
   }
 
+  Size _expandOutputSizeFromConfig({
+    required ui.Image sourceImage,
+    required _ExpandToolConfig config,
+  }) {
+    final int sourceWidth = sourceImage.width;
+    final int sourceHeight = sourceImage.height;
+    final int leftPx = math.max(0, (sourceWidth * config.leftExpand).round());
+    final int topPx = math.max(0, (sourceHeight * config.topExpand).round());
+    final int rightPx = math.max(0, (sourceWidth * config.rightExpand).round());
+    final int bottomPx =
+        math.max(0, (sourceHeight * config.bottomExpand).round());
+    final int outputWidth = math.max(sourceWidth + leftPx + rightPx, 1);
+    final int outputHeight = math.max(sourceHeight + topPx + bottomPx, 1);
+    return Size(outputWidth.toDouble(), outputHeight.toDouble());
+  }
+
+  String _expandFluxFallbackResolutionForTarget({
+    required int targetWidth,
+    required int targetHeight,
+  }) {
+    final int longEdge = math.max(targetWidth, targetHeight);
+    return longEdge >= 1700 ? '2K' : '1K';
+  }
+
+  Size? _decodedImageSize(Uint8List bytes) {
+    try {
+      final img.Image? decoded = img.decodeImage(bytes);
+      if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+        return null;
+      }
+      return Size(decoded.width.toDouble(), decoded.height.toDouble());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _shouldUpscaleExpandOutput({
+    required int targetWidth,
+    required int targetHeight,
+    required Size? outputSize,
+  }) {
+    if (outputSize == null) return false;
+    final double targetLongEdge =
+        math.max(targetWidth, targetHeight).toDouble();
+    if (targetLongEdge <= 0) return false;
+    final double outputLongEdge = math.max(outputSize.width, outputSize.height);
+    if (outputLongEdge <= 0) return false;
+    return outputLongEdge < (targetLongEdge * 0.9);
+  }
+
+  Future<Uint8List> _upscaleExpandOutputForQuality({
+    required Uint8List outputBytes,
+    required int targetWidth,
+    required int targetHeight,
+  }) async {
+    Uint8List currentBytes = Uint8List.fromList(outputBytes);
+    for (int pass = 0; pass < 2; pass++) {
+      final Size? currentSize = _decodedImageSize(currentBytes);
+      if (!_shouldUpscaleExpandOutput(
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+        outputSize: currentSize,
+      )) {
+        break;
+      }
+
+      final String imageUrl = await _uploadKieReferenceFile(
+        currentBytes,
+        preserveFormat: true,
+        normalizeOrientation: false,
+        preferStreamUpload: true,
+      );
+      final String taskId =
+          await _createKieRecraftUpscaleTask(imageUrl: imageUrl);
+      final Uint8List nextBytes = await _pollKieTaskAndDownload(
+        taskId: taskId,
+        maxAttempts: 200,
+        pollDelayResolver: _kieUpscalePollDelay,
+        requestTimeout: const Duration(seconds: 18),
+      );
+      final Size? nextSize = _decodedImageSize(nextBytes);
+      final double currentLongEdge = currentSize == null
+          ? 0
+          : math.max(currentSize.width, currentSize.height);
+      final double nextLongEdge =
+          nextSize == null ? 0 : math.max(nextSize.width, nextSize.height);
+      currentBytes = nextBytes;
+      if (currentLongEdge > 0 && nextLongEdge <= (currentLongEdge + 8)) {
+        break;
+      }
+    }
+    return currentBytes;
+  }
+
   String _buildExpandOutpaintPrompt() {
     return 'Outpaint all newly added border areas with natural continuation of the scene from all sides. Keep center content consistent, avoid mirrored patterns, avoid repeated top strips, and remove empty/black borders completely.';
   }
@@ -9649,9 +12664,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }) async {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
-      throw StateError('KIE API key missing.');
+      throw StateError('KIE backend proxy is not configured.');
     }
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final http.Response response = await http
         .post(
           uri,
@@ -9706,12 +12721,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required String imageUrl,
     required String aspectRatio,
     required String prompt,
+    required String resolution,
   }) async {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
-      throw StateError('KIE API key missing.');
+      throw StateError('KIE backend proxy is not configured.');
     }
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final http.Response response = await http
         .post(
           uri,
@@ -9726,7 +12742,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 'prompt': prompt,
                 'input_urls': <String>[imageUrl],
                 'aspect_ratio': aspectRatio,
-                'resolution': '1K',
+                'resolution': resolution,
               },
             },
           ),
@@ -9931,9 +12947,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
-      _showExportMessage('KIE API key missing.', isError: true);
+      _showExportMessage('KIE backend proxy is not configured.', isError: true);
       return;
     }
+    final Size expandTargetSize = _expandOutputSizeFromConfig(
+      sourceImage: sourceImage,
+      config: config,
+    );
+    final int expandTargetWidth = math.max(1, expandTargetSize.width.round());
+    final int expandTargetHeight = math.max(1, expandTargetSize.height.round());
+    final String fluxFallbackResolution =
+        _expandFluxFallbackResolutionForTarget(
+      targetWidth: expandTargetWidth,
+      targetHeight: expandTargetHeight,
+    );
 
     final EditorLayer? workspaceLayer = _workspaceLayerForEdit(_layers);
     final Size? workspaceSizeForOverlay = workspaceLayer == null
@@ -9950,7 +12977,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             sourceImage.height.toDouble(),
           );
     });
-    _startAiCanvasGeneratingProgressEstimator();
+    _startAiCanvasGeneratingProgressEstimator(
+      expectedDuration: const Duration(seconds: 56),
+    );
 
     bool expandSucceeded = false;
     try {
@@ -9961,6 +12990,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final String imageUrl = await _uploadKieReferenceFile(
         sourcePayloadBytes,
         preserveFormat: true,
+        normalizeOrientation: false,
+        preferStreamUpload: true,
       );
       final String aspectRatio = _nearestImageToImageAspectRatio(
         _expandedAspectRatioForExpand(sourceImage, config),
@@ -9977,10 +13008,21 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           imageUrl: imageUrl,
           aspectRatio: aspectRatio,
           prompt: _buildExpandOutpaintPrompt(),
+          resolution: fluxFallbackResolution,
         );
         outputBytes = await _pollKieTaskAndDownload(taskId: taskId);
       }
-      final ui.Image nextImage = await _decodeUiImage(outputBytes);
+      outputBytes = await _upscaleExpandOutputForQuality(
+        outputBytes: outputBytes,
+        targetWidth: expandTargetWidth,
+        targetHeight: expandTargetHeight,
+      );
+      final ui.Image generatedImage = await _decodeUiImage(outputBytes);
+      final ui.Image nextImage = await _composeExpandResultPreservingSource(
+        generatedImage: generatedImage,
+        sourceImage: sourceImage,
+        config: config,
+      );
       if (!mounted) return;
       final Map<String, _WorkspaceResizeLayerTransform>
           preservedLayerTransforms = selectedLayer.isBackground
@@ -9999,11 +13041,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
       final Size? workspaceSize =
           workspace == null ? null : _workspaceSourceSize(workspace);
-      final Offset oldPosition = selectedLayer.position ??
-          Offset(
-            (workspaceSize?.width ?? sourceImage.width.toDouble()) / 2,
-            (workspaceSize?.height ?? sourceImage.height.toDouble()) / 2,
-          );
+      final Offset workspaceCenterBeforeExpand = Offset(
+        (workspaceSize?.width ?? sourceImage.width.toDouble()) / 2,
+        (workspaceSize?.height ?? sourceImage.height.toDouble()) / 2,
+      );
+      final Offset oldPosition = selectedLayer.isBackground
+          ? workspaceCenterBeforeExpand
+          : (selectedLayer.position ?? workspaceCenterBeforeExpand);
       final double widthFactor = 1.0 + config.leftExpand + config.rightExpand;
       final double heightFactor = 1.0 + config.topExpand + config.bottomExpand;
       final double localShiftXPx = widthFactor <= 0
@@ -10020,7 +13064,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
       final Offset rotatedShiftWorkspace =
           _rotateVector(localShiftWorkspace, selectedLayer.layerRotation);
-      final Offset nextPosition = oldPosition - rotatedShiftWorkspace;
+      final Offset nextPosition = selectedLayer.isBackground
+          ? Offset(
+              nextImage.width.toDouble() / 2,
+              nextImage.height.toDouble() / 2,
+            )
+          : (oldPosition - rotatedShiftWorkspace);
       _pushUndoSnapshot();
       _editorCanvasStateKey.currentState?.commitExpandViewportAfterApply(
         preserveViewportOnNextWorkspaceResize: selectedLayer.isBackground,
@@ -10504,7 +13553,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 return Container(
                   height: maxHeight,
                   decoration: const BoxDecoration(
-                    color: WonderPicEditorScreen._pageBg,
+                    color: _bottomSheetSurface,
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(22),
                     ),
@@ -10654,10 +13703,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                   itemBuilder: (context, index) {
                                     final _TextFontOption option =
                                         options[index];
-                                    final bool isSelected = _isFontOptionActive(
-                                      option,
-                                      selectedTextLayer,
-                                    );
+                                    final bool isSelected =
+                                        index == selectedIndex;
                                     final int titleWeight =
                                         _resolveSupportedWeight(
                                             option.family, 600);
@@ -10672,7 +13719,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                           modalSetState(() {});
                                         },
                                         pressedScale: 0.986,
-                                        child: Container(
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 220,
+                                          ),
+                                          curve: Curves.easeOutCubic,
                                           width: double.infinity,
                                           padding: EdgeInsets.symmetric(
                                             horizontal: scaled(10, min: 8),
@@ -10686,32 +13737,40 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                               scaled(10, min: 8),
                                             ),
                                           ),
-                                          child: Directionality(
-                                            textDirection: option.direction,
-                                            child: Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    option.label,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: _fontAwareTextStyle(
-                                                      family: option.family,
-                                                      color: isSelected
-                                                          ? kActiveAccentForeground
-                                                          : _floatingPanelTextSecondary,
-                                                      fontSize:
-                                                          scaled(14, min: 11),
-                                                      fontWeight:
-                                                          _fontWeightFromValue(
-                                                        titleWeight,
+                                          child: AnimatedScale(
+                                            duration: const Duration(
+                                              milliseconds: 180,
+                                            ),
+                                            curve: Curves.easeOutCubic,
+                                            scale: isSelected ? 1.0 : 0.986,
+                                            child: Directionality(
+                                              textDirection: option.direction,
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      option.label,
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style:
+                                                          _fontAwareTextStyle(
+                                                        family: option.family,
+                                                        color: isSelected
+                                                            ? kActiveAccentForeground
+                                                            : _floatingPanelTextSecondary,
+                                                        fontSize:
+                                                            scaled(14, min: 11),
+                                                        fontWeight:
+                                                            _fontWeightFromValue(
+                                                          titleWeight,
+                                                        ),
+                                                        height: 1.0,
                                                       ),
-                                                      height: 1.0,
                                                     ),
                                                   ),
-                                                ),
-                                              ],
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -10844,6 +13903,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _openCloneSettingsFloatingPanel();
   }
 
+  void _onEraseToolTap() {
+    final EditorLayer? selectedImage = _selectedImageLayer();
+    if (selectedImage == null) {
+      _showExportMessage('Select an image layer first.', isError: true);
+      return;
+    }
+    _setActiveTool(EditorTool.erase, toggleWhenSame: false);
+    unawaited(_openEraseSettingsBottomSheet());
+  }
+
   void _resetBlurPreviewSession({
     bool clearError = true,
     bool clearBaseline = true,
@@ -10927,6 +13996,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _openSketchReplaceFloatingPanel();
   }
 
+  void _openMainSidebar() {
+    if ((_isAccountHubSidebarMode != true || _isAccountHubSettingsPage) &&
+        mounted) {
+      setState(() {
+        _isAccountHubSidebarMode = true;
+        _isAccountHubSettingsPage = false;
+      });
+    }
+    _scaffoldKey.currentState?.openEndDrawer();
+    // Keep drawer visuals stable while opening; refresh data silently.
+    unawaited(_syncEditorAccountStateBestEffort(fromSetState: false));
+    unawaited(_refreshLibraryItems(fromSetState: false));
+  }
+
   void _openToolSettingsSidebar() {
     if (_isToolEnabled &&
         _activeTool == EditorTool.clone &&
@@ -10935,10 +14018,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       return;
     }
     if (_isToolEnabled &&
+        _activeTool == EditorTool.erase &&
+        _selectedImageLayer() != null) {
+      unawaited(_openEraseSettingsBottomSheet());
+      return;
+    }
+    if (_isToolEnabled &&
         _activeTool == EditorTool.blur &&
         _selectedImageLayer() != null) {
       _openBlurSettingsBottomSheet();
       return;
+    }
+    if (_isAccountHubSidebarMode && mounted) {
+      setState(() {
+        _isAccountHubSidebarMode = false;
+        _isAccountHubSettingsPage = false;
+      });
     }
     _scaffoldKey.currentState?.openEndDrawer();
   }
@@ -10950,50 +14045,519 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Widget _buildToolSettingsSidebar(BuildContext context) {
+    final bool accountHubMode = _isAccountHubSidebarMode;
+    final bool showToolSettingsSection = !accountHubMode &&
+        (_resolvedSettingsTool() != null ||
+            _selectedSidebarLayerContext() != null);
+    const Color sidebarSurface = Color(0xFF26292F);
+    const Color sidebarStroke = Color(0x165C5C5C);
     final double width = MediaQuery.sizeOf(context).width * 0.80;
     return Drawer(
       width: width,
-      backgroundColor: const Color(0xFF1E1F22),
+      backgroundColor: sidebarSurface,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      elevation: 0,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(18),
           bottomLeft: Radius.circular(18),
         ),
+        side: BorderSide(color: sidebarStroke, width: 0.5),
       ),
       child: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _toolSettingsTitle(),
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFFF3F3F2),
+          child: accountHubMode
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: _isAccountHubSettingsPage
+                            ? _buildAccountHubSettingsPage()
+                            : _buildAccountHubSection(),
                       ),
                     ),
-                  ),
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => Navigator.of(context).maybePop(),
-                    icon: const Icon(
-                      Icons.close,
-                      size: 20,
-                      color: Color(0xFFD4D4D3),
+                    if (!_isAccountHubSettingsPage) ...[
+                      const SizedBox(height: 10),
+                      _buildSidebarSettingsLauncherCard(),
+                    ],
+                  ],
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 14),
+                            Text(
+                              _toolSettingsTitle(),
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFB8B7B5),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            if (showToolSettingsSection)
+                              _buildToolSettingsContent()
+                            else
+                              const _ToolHintCard(
+                                title: 'No Layer Selected',
+                                message:
+                                    'Double tap any layer to open its settings panel.',
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: _buildToolSettingsContent(),
+                  ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  String _sidebarPrimaryEmail() {
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String email = user?.email?.trim() ?? '';
+    if (email.isNotEmpty) {
+      return email;
+    }
+    if (user == null) return 'No email connected';
+    return 'Email not linked';
+  }
+
+  String _sidebarCreditsLabel() {
+    final double? value = _accountAvailableCredits;
+    if (value == null) return 'Unknown';
+    return '${_formatCreditValue(value)} cr';
+  }
+
+  Future<void> _refreshLibraryItems({bool fromSetState = false}) async {
+    try {
+      final List<WonderPicLibraryItem> items = await _libraryStore.loadItems();
+      if (fromSetState && mounted) {
+        setState(() {
+          _libraryItems = items;
+        });
+      } else {
+        _libraryItems = items;
+      }
+    } catch (error) {
+      debugPrint('Library sync skipped: $error');
+    }
+  }
+
+  Future<String?> _persistLibraryTempFile({
+    required Uint8List bytes,
+    required String extension,
+    required String prefix,
+  }) async {
+    try {
+      final Directory baseDir = Directory(
+        '${Directory.systemTemp.path}/wonderpic_library',
+      );
+      if (!await baseDir.exists()) {
+        await baseDir.create(recursive: true);
+      }
+      final String safeExt = extension.trim().toLowerCase();
+      final String path =
+          '${baseDir.path}/${prefix}_${DateTime.now().microsecondsSinceEpoch}.${safeExt.isEmpty ? 'bin' : safeExt}';
+      final File file = File(path);
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (error) {
+      debugPrint('Library temp file write skipped: $error');
+      return null;
+    }
+  }
+
+  Future<void> _recordLibraryItem(WonderPicLibraryItem item) async {
+    await _libraryStore.addItem(item);
+    await _refreshLibraryItems(fromSetState: true);
+  }
+
+  Future<void> _recordGeneratedImageInLibrary({
+    required Uint8List imageBytes,
+    required String prompt,
+    required String source,
+  }) async {
+    final String? filePath = await _persistLibraryTempFile(
+      bytes: imageBytes,
+      extension: 'png',
+      prefix: 'image',
+    );
+    final String title = prompt.trim().isEmpty
+        ? 'Generated image'
+        : _truncateSidebarLine(prompt, maxChars: 52);
+    await _recordLibraryItem(
+      WonderPicLibraryItem(
+        id: 'image_${DateTime.now().microsecondsSinceEpoch}',
+        type: WonderPicLibraryItemType.image,
+        title: title,
+        subtitle: source,
+        createdAtIso: DateTime.now().toUtc().toIso8601String(),
+        previewPath: filePath,
+        localPath: filePath,
+      ),
+    );
+  }
+
+  Future<void> _openLibraryScreen() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => const WonderPicLibraryScreen(),
+      ),
+    );
+    if (!mounted) return;
+    await _refreshLibraryItems(fromSetState: true);
+  }
+
+  int _sidebarProjectCount() {
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    return workspace == null ? 0 : 1;
+  }
+
+  int _sidebarLibraryImageCount() {
+    return _libraryItems
+        .where((item) => item.type == WonderPicLibraryItemType.image)
+        .length;
+  }
+
+  int _sidebarLibraryVideoCount() {
+    return _libraryItems
+        .where((item) => item.type == WonderPicLibraryItemType.video)
+        .length;
+  }
+
+  int _sidebarLibraryVoiceCount() {
+    return _libraryItems
+        .where((item) => item.type == WonderPicLibraryItemType.voice)
+        .length;
+  }
+
+  String _truncateSidebarLine(String text, {int maxChars = 64}) {
+    final String clean = text.trim();
+    if (clean.length <= maxChars) {
+      return clean;
+    }
+    return '${clean.substring(0, maxChars)}...';
+  }
+
+  String _sidebarProjectActivityLabel() {
+    final int projects = _sidebarProjectCount();
+    if (projects == 0) return 'No project activity yet.';
+    if (projects == 1) return '1 active project now.';
+    return '$projects active projects now.';
+  }
+
+  String _sidebarLibraryLabel() {
+    final int imageCount = _sidebarLibraryImageCount();
+    final int videoCount = _sidebarLibraryVideoCount();
+    final int voiceCount = _sidebarLibraryVoiceCount();
+    final int itemsCount = imageCount + videoCount + voiceCount;
+    if (itemsCount == 0) return 'No saved items yet.';
+    return '$itemsCount saved items.';
+  }
+
+  void _runSidebarShortcut(Future<void> Function() action) {
+    _closeToolSettingsSidebarIfOpen();
+    Future<void>.delayed(const Duration(milliseconds: 120), () {
+      if (!mounted) return;
+      unawaited(action());
+    });
+  }
+
+  Future<void> _handleSidebarLogout() async {
+    try {
+      _closeToolSettingsSidebarIfOpen();
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+      _showExportMessage('Logged out successfully.');
+    } catch (error) {
+      if (!mounted) return;
+      _showExportMessage('Could not log out. Please try again.', isError: true);
+    }
+  }
+
+  Future<void> _handleSidebarDeleteAccount() async {
+    final User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _showExportMessage('No signed-in account to delete.', isError: true);
+      return;
+    }
+    final bool confirmed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (BuildContext dialogContext) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1F22),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(
+                  color: Color(0x2B4F5358),
+                  width: 0.8,
+                ),
+              ),
+              title: const Text(
+                'Delete account?',
+                style: TextStyle(
+                  color: Color(0xFFF3F3F2),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              content: const Text(
+                'This action permanently deletes your Firebase account.',
+                style: TextStyle(
+                  color: Color(0xFFD4D4D3),
+                  fontWeight: FontWeight.w600,
+                  height: 1.3,
+                ),
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: const Color(0xFFEF4444),
+                  ),
+                  child: const Text('Delete'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    try {
+      _closeToolSettingsSidebarIfOpen();
+      await user.delete();
+      await FirebaseAuth.instance.signOut();
+      if (!mounted) return;
+      _showExportMessage('Account deleted successfully.');
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      if (error.code == 'requires-recent-login') {
+        _showExportMessage(
+          'Please sign in again, then retry account deletion.',
+          isError: true,
+        );
+      } else {
+        final String message = error.message?.trim().isNotEmpty == true
+            ? error.message!.trim()
+            : 'Could not delete account.';
+        _showExportMessage(message, isError: true);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _showExportMessage('Could not delete account. Please try again.',
+          isError: true);
+    }
+  }
+
+  String _sidebarProfileInitial() {
+    final User? user = FirebaseAuth.instance.currentUser;
+    final String email = user?.email?.trim() ?? '';
+    if (email.isNotEmpty) {
+      return email.substring(0, 1).toUpperCase();
+    }
+    final String displayName = user?.displayName?.trim() ?? '';
+    if (displayName.isNotEmpty) {
+      return displayName.substring(0, 1).toUpperCase();
+    }
+    return 'G';
+  }
+
+  Widget _buildSidebarAccentIcon(
+    IconData icon, {
+    double size = 16,
+    double diameter = 32,
+  }) {
+    return Container(
+      width: diameter,
+      height: diameter,
+      decoration: const BoxDecoration(
+        color: kActiveAccent,
+        shape: BoxShape.circle,
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, size: size, color: kActiveAccentForeground),
+    );
+  }
+
+  Widget _buildAccountMenuCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    String? badge,
+    VoidCallback? onTap,
+    bool danger = false,
+  }) {
+    final Widget content = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      decoration: BoxDecoration(
+        color: _floatingPanelSurfaceSolid,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _floatingPanelStrokeSolid, width: 0.55),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSidebarAccentIcon(icon),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.6,
+                    fontWeight: FontWeight.w700,
+                    color: danger ? Color(0xFFFDA4AF) : Color(0xFFF3F3F2),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10.4,
+                    fontWeight: FontWeight.w600,
+                    color: danger
+                        ? const Color(0xFFFCA5A5)
+                        : const Color(0xFFB8B7B5),
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (badge != null && badge.trim().isNotEmpty) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF17181C),
+                borderRadius: BorderRadius.circular(999),
+                border:
+                    Border.all(color: _floatingPanelStrokeSolid, width: 0.5),
+              ),
+              child: Text(
+                badge,
+                style: const TextStyle(
+                  fontSize: 10.3,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFDDE2EC),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+
+    if (onTap == null) return content;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: content,
+      ),
+    );
+  }
+
+  Widget _buildSidebarMetricCard({
+    required String title,
+    required String value,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFF17181C),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _floatingPanelStrokeSolid, width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 10.2,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF9EA5B2),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12.6,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFFF3F3F2),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarSettingsLauncherCard() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          if (!mounted) return;
+          setState(() {
+            _isAccountHubSettingsPage = true;
+          });
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+          decoration: BoxDecoration(
+            color: _floatingPanelSurfaceSolid,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _floatingPanelStrokeSolid, width: 0.55),
+          ),
+          child: Row(
+            children: [
+              _buildSidebarAccentIcon(Icons.settings_rounded),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'Settings',
+                  style: TextStyle(
+                    fontSize: 12.6,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFF3F3F2),
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Color(0xFFB8B7B5),
               ),
             ],
           ),
@@ -11002,9 +14566,194 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
   }
 
+  Widget _buildAccountHubSettingsPage() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 6),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              if (!mounted) return;
+              setState(() {
+                _isAccountHubSettingsPage = false;
+              });
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF17181C),
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: _floatingPanelStrokeSolid, width: 0.5),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.arrow_back_ios_new_rounded,
+                    size: 14,
+                    color: Color(0xFFD4D4D3),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Back',
+                    style: TextStyle(
+                      fontSize: 11.8,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFFF3F3F2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        _buildAccountMenuCard(
+          icon: Icons.delete_forever_rounded,
+          title: 'Delete account',
+          subtitle: 'Remove this account permanently.',
+          onTap: () => unawaited(_handleSidebarDeleteAccount()),
+          danger: true,
+        ),
+        const SizedBox(height: 8),
+        _buildAccountMenuCard(
+          icon: Icons.logout_rounded,
+          title: 'Log out',
+          subtitle: 'Sign out from this account.',
+          onTap: () => unawaited(_handleSidebarLogout()),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAccountHubSection() {
+    final String profileEmail = _sidebarPrimaryEmail();
+    final String creditsLabel = _sidebarCreditsLabel();
+    final String freeTrialLabel = _sidebarFreeTrialLabel();
+    final String profileInitial = _sidebarProfileInitial();
+    final int projectCount = _sidebarProjectCount();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: 4),
+        Center(
+          child: Container(
+            width: 78,
+            height: 78,
+            decoration: const BoxDecoration(
+              color: kActiveAccent,
+              shape: BoxShape.circle,
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              profileInitial,
+              style: const TextStyle(
+                color: kActiveAccentForeground,
+                fontSize: 31,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Center(
+          child: Text(
+            profileEmail,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12.6,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFFF3F3F2),
+              shadows: [
+                Shadow(
+                  color: Color(0x26FFFFFF),
+                  blurRadius: 6,
+                  offset: Offset(0, 0),
+                ),
+                Shadow(
+                  color: Color(0x1AFFFFFF),
+                  blurRadius: 2,
+                  offset: Offset(0, 0),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _buildSidebarMetricCard(
+                title: 'Credit',
+                value: creditsLabel,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _buildSidebarMetricCard(
+                title: 'Free Trial',
+                value: freeTrialLabel,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _buildAccountMenuCard(
+          icon: Icons.local_atm_rounded,
+          title: 'Credit Center',
+          subtitle: 'View credit balance quickly.',
+          badge: creditsLabel,
+          onTap: () => unawaited(_syncEditorAccountStateBestEffort()),
+        ),
+        const SizedBox(height: 8),
+        _buildAccountMenuCard(
+          icon: Icons.hourglass_top_rounded,
+          title: 'Free Trial',
+          subtitle: 'Track remaining free actions.',
+          badge: freeTrialLabel,
+          onTap: null,
+        ),
+        const SizedBox(height: 8),
+        _buildAccountMenuCard(
+          icon: Icons.timeline_rounded,
+          title: 'Activity & Projects',
+          subtitle: _sidebarProjectActivityLabel(),
+          badge: '$projectCount ${projectCount == 1 ? 'project' : 'projects'}',
+          onTap: () => _runSidebarShortcut(_openAddBottomSheet),
+        ),
+        const SizedBox(height: 8),
+        _buildAccountMenuCard(
+          icon: Icons.library_books_outlined,
+          title: 'Library',
+          subtitle: _sidebarLibraryLabel(),
+          badge: '${_libraryItems.length} items',
+          onTap: () => _runSidebarShortcut(_openLibraryScreen),
+        ),
+        const SizedBox(height: 8),
+        _buildAccountMenuCard(
+          icon: Icons.file_upload_outlined,
+          title: 'Export',
+          subtitle: 'Open export panel and save image.',
+          badge: _isExporting ? 'Exporting' : null,
+          onTap: _isExporting
+              ? null
+              : () => _runSidebarShortcut(_openExportBottomSheet),
+        ),
+      ],
+    );
+  }
+
   EditorTool? _resolvedSettingsTool() {
     if (!_isToolEnabled) return null;
     switch (_activeTool) {
+      case EditorTool.erase:
       case EditorTool.pencil:
       case EditorTool.clone:
       case EditorTool.blur:
@@ -11040,6 +14789,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final EditorLayer? selectedLayer = _selectedSidebarLayerContext();
     final EditorTool? resolved = _resolvedSettingsTool();
     switch (resolved) {
+      case EditorTool.erase:
+        return 'Erase Tool Settings';
       case EditorTool.pencil:
         return 'Pencil Tool Settings';
       case EditorTool.text:
@@ -11084,6 +14835,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final EditorLayer? selectedLayer = _selectedSidebarLayerContext();
     final EditorTool? resolved = _resolvedSettingsTool();
     switch (resolved) {
+      case EditorTool.erase:
+        return _buildEraseSettingsPanel();
       case EditorTool.pencil:
         return _buildPencilSettingsPanel();
       case EditorTool.text:
@@ -11260,6 +15013,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _isCloneSettingsFloatingOpen = false;
       _isCloneSettingsBottomSheetOpen = false;
       _isCloneBrushPreviewVisible = false;
+      _isEraseBrushPreviewVisible = false;
       _cloneSettingsFloatingBaseline = null;
       _cloneSourceArmedFloatingBaseline = null;
       _cloneBrushSelectedFloatingBaseline = null;
@@ -12130,7 +15884,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
       _showExportMessage(
-        'KIE API key missing. Use --dart-define=KIE_API_KEY=...',
+        'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
         isError: true,
       );
       return;
@@ -12173,6 +15927,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _replaceLayerImage(selectedLayerId, nextImage);
       });
       _showExportMessage('Background removed successfully.');
+      unawaited(
+        _consumeFreeTrialAction(
+          operationType: 'remove_bg_bria',
+        ).catchError((Object error) {
+          debugPrint('Free trial consume skipped for remove_bg_bria: $error');
+        }),
+      );
     } catch (error) {
       if (!mounted) return;
       _showExportMessage(error.toString(), isError: true);
@@ -12228,6 +15989,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _replaceLayerImage(selectedLayerId, nextImage);
       });
       _showExportMessage('Logo background removed successfully.');
+      unawaited(
+        _consumeFreeTrialAction(
+          operationType: 'remove_bg_logo',
+        ).catchError((Object error) {
+          debugPrint('Free trial consume skipped for remove_bg_logo: $error');
+        }),
+      );
     } catch (error) {
       if (!mounted) return;
       _showExportMessage(error.toString(), isError: true);
@@ -12352,6 +16120,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return (w: 4, h: 5);
       case _CropRatioPreset.ratio9x16Portrait:
         return (w: 9, h: 16);
+      case _CropRatioPreset.ratio191x100:
+        return (w: 191, h: 100);
     }
   }
 
@@ -12508,6 +16278,91 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
   }
 
+  Future<ui.Image> _rotateUiImageQuarterTurns(
+    ui.Image source,
+    int quarterTurns,
+  ) async {
+    final int normalizedTurns = ((quarterTurns % 4) + 4) % 4;
+    if (normalizedTurns == 0) return source;
+    final bool swap = normalizedTurns.isOdd;
+    final int outWidth = swap ? source.height : source.width;
+    final int outHeight = swap ? source.width : source.height;
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(recorder);
+    canvas.translate(outWidth / 2, outHeight / 2);
+    canvas.rotate(normalizedTurns * (math.pi / 2));
+    canvas.translate(-source.width / 2, -source.height / 2);
+    canvas.drawImage(
+      source,
+      Offset.zero,
+      Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high,
+    );
+    final ui.Picture picture = recorder.endRecording();
+    return picture.toImage(outWidth, outHeight);
+  }
+
+  Future<ui.Image> _rotateUiImageByDegrees(
+    ui.Image source,
+    double degrees,
+  ) async {
+    if (degrees.abs() < 0.01) return source;
+    final double radians = degrees * (math.pi / 180);
+    final double cosValue = math.cos(radians).abs();
+    final double sinValue = math.sin(radians).abs();
+    final int outWidth = math.max(
+      1,
+      ((source.width * cosValue) + (source.height * sinValue)).ceil(),
+    );
+    final int outHeight = math.max(
+      1,
+      ((source.width * sinValue) + (source.height * cosValue)).ceil(),
+    );
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(recorder);
+    canvas.translate(outWidth / 2, outHeight / 2);
+    canvas.rotate(radians);
+    canvas.translate(-source.width / 2, -source.height / 2);
+    canvas.drawImage(
+      source,
+      Offset.zero,
+      Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high,
+    );
+    final ui.Picture picture = recorder.endRecording();
+    return picture.toImage(outWidth, outHeight);
+  }
+
+  Future<ui.Image> _cropUiImageRect({
+    required ui.Image source,
+    required int left,
+    required int top,
+    required int width,
+    required int height,
+  }) async {
+    final int safeWidth = math.max(1, width);
+    final int safeHeight = math.max(1, height);
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Canvas canvas = Canvas(recorder);
+    canvas.drawImageRect(
+      source,
+      Rect.fromLTWH(
+        left.toDouble(),
+        top.toDouble(),
+        safeWidth.toDouble(),
+        safeHeight.toDouble(),
+      ),
+      Rect.fromLTWH(0, 0, safeWidth.toDouble(), safeHeight.toDouble()),
+      Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high,
+    );
+    final ui.Picture picture = recorder.endRecording();
+    return picture.toImage(safeWidth, safeHeight);
+  }
+
   Future<void> _applyCropFloatingPanel() async {
     final EditorLayer? layer = _selectedCropLayer();
     final _CropToolConfig? config = _cropToolConfig;
@@ -12524,30 +16379,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       );
       return;
     }
-    final Uint8List? rgba = await _readImagePixels(sourceImage);
-    if (rgba == null) return;
-
-    img.Image working = img.Image.fromBytes(
-      width: sourceImage.width,
-      height: sourceImage.height,
-      bytes: rgba.buffer,
-      order: img.ChannelOrder.rgba,
-      numChannels: 4,
-    );
-
+    ui.Image working = sourceImage;
     if (!isWorkspaceCrop && turns != 0) {
-      working = img.copyRotate(
-        working,
-        angle: turns * 90,
-        interpolation: img.Interpolation.linear,
-      );
+      working = await _rotateUiImageQuarterTurns(working, turns);
     }
     if (!isWorkspaceCrop && straighten.abs() >= 0.01) {
-      working = img.copyRotate(
-        working,
-        angle: straighten,
-        interpolation: img.Interpolation.linear,
-      );
+      working = await _rotateUiImageByDegrees(working, straighten);
     }
 
     final double? uvAspect = _cropUvAspectRatio(
@@ -12608,19 +16445,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       cropHeight = targetH;
     }
 
-    final img.Image cropped = img.copyCrop(
-      working,
-      x: left,
-      y: top,
+    final ui.Image nextImage = await _cropUiImageRect(
+      source: working,
+      left: left,
+      top: top,
       width: cropWidth,
       height: cropHeight,
-    );
-    final ui.Image nextImage = await _buildUiImageFromRgba(
-      pixels: Uint8List.fromList(
-        cropped.getBytes(order: img.ChannelOrder.rgba),
-      ),
-      width: cropped.width,
-      height: cropped.height,
     );
     if (!mounted) return;
 
@@ -12643,6 +16473,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               image: nextImage,
               solidSize: _imageSourceSize(nextImage),
               thumbnailBytes: null,
+              position: Offset(
+                nextImage.width.toDouble() / 2,
+                nextImage.height.toDouble() / 2,
+              ),
             );
             continue;
           }
@@ -13115,11 +16949,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       option.defaultWeight,
     );
     return resolvedPendingWeight == optionWeight;
-  }
-
-  bool _isFontOptionActive(_TextFontOption option, EditorLayer layer) {
-    return _pendingFontOptionMatches(option) ||
-        _fontOptionMatchesLayer(option, layer);
   }
 
   int _selectedFontOptionIndex({
@@ -13642,6 +17471,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     setState(() {
       _isCloneSettingsFloatingOpen = false;
       _isCloneSettingsBottomSheetOpen = true;
+      _isEraseSettingsBottomSheetOpen = false;
       _cloneSettingsFloatingBaseline = _cloneSettings;
       _cloneSourceArmedFloatingBaseline = _isCloneSourceArmed;
       _cloneBrushSelectedFloatingBaseline = _isCloneBrushSelected;
@@ -13693,7 +17523,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: WonderPicEditorScreen._pageBg,
+                      color: _bottomSheetSurface,
                       borderRadius: BorderRadius.vertical(
                         top: Radius.circular(sheetRadius.topLeft.x),
                       ),
@@ -13871,6 +17701,258 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
   }
 
+  Future<void> _openEraseSettingsBottomSheet() async {
+    final EditorLayer? selectedImageLayer = _selectedImageLayer();
+    if (selectedImageLayer == null) {
+      _showExportMessage(
+        'Erase tool works only when an Image Layer is selected',
+        isError: true,
+      );
+      return;
+    }
+    if (_isEraseSettingsBottomSheetOpen) return;
+    _eraseBrushPreviewTimer?.cancel();
+    setState(() {
+      _isEraseSettingsBottomSheetOpen = true;
+      _isCloneSettingsFloatingOpen = false;
+      _isCloneSettingsBottomSheetOpen = false;
+      _isBlurSettingsBottomSheetOpen = false;
+      _resetBlurPreviewSession();
+      _isEraseBrushPreviewVisible = false;
+      _isPencilSettingsFloatingOpen = false;
+      _pencilSettingsFloatingBaseline = null;
+      _resetTextQuickFloatingPanels();
+      _activeTextEffectFloatingPanel = null;
+      _isCropFloatingOpen = false;
+      _isOverlayImageShadowFloatingOpen = false;
+      _overlayImageShadowFloatingBaseline = null;
+      _overlayImageShadowFloatingLayerId = null;
+      _isPhotoRoomRemoveBgFloatingOpen = false;
+      _isPhotoRoomRemoveBgProcessing = false;
+    });
+    _closeToolSettingsSidebarIfOpen();
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        barrierColor: Colors.transparent,
+        builder: (BuildContext sheetContext) {
+          const double uiScale = 0.86;
+          double scaled(double value, {required double min}) =>
+              math.max(min, value * uiScale);
+          final double keyboardInset =
+              MediaQuery.viewInsetsOf(sheetContext).bottom;
+          final double contentBottomInset =
+              MediaQuery.viewPaddingOf(sheetContext).bottom +
+                  scaled(12, min: 9);
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: keyboardInset),
+            child: StatefulBuilder(
+              builder: (context, modalSetState) {
+                final EditorLayer? selectedImageLayer = _selectedImageLayer();
+                final bool enabled = selectedImageLayer != null;
+                return ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.44,
+                  ),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: _bottomSheetSurface,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                    ),
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        scaled(12, min: 9),
+                        scaled(10, min: 7),
+                        scaled(12, min: 9),
+                        contentBottomInset,
+                      ),
+                      child: IgnorePointer(
+                        ignoring: !enabled,
+                        child: Opacity(
+                          opacity: enabled ? 1 : 0.55,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: const Color(0x665A616B),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                              ),
+                              SizedBox(height: scaled(8, min: 6)),
+                              _buildCloneCompactSlider(
+                                label: 'Size',
+                                value: _eraseSettings.size,
+                                min: 4,
+                                max: 220,
+                                valueText:
+                                    _eraseSettings.size.toStringAsFixed(0),
+                                uiScale: uiScale,
+                                enabled: enabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _eraseSettings =
+                                        _eraseSettings.copyWith(size: value);
+                                  });
+                                  modalSetState(() {});
+                                  _showEraseBrushPreviewOverlay();
+                                },
+                              ),
+                              SizedBox(height: scaled(4, min: 3)),
+                              _buildCloneCompactSlider(
+                                label: 'Hardness',
+                                value: _eraseSettings.hardness,
+                                min: 0,
+                                max: 100,
+                                valueText:
+                                    '${_eraseSettings.hardness.toStringAsFixed(0)}%',
+                                uiScale: uiScale,
+                                enabled: enabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _eraseSettings = _eraseSettings.copyWith(
+                                        hardness: value);
+                                  });
+                                  modalSetState(() {});
+                                  _showEraseBrushPreviewOverlay();
+                                },
+                              ),
+                              SizedBox(height: scaled(4, min: 3)),
+                              _buildCloneCompactSlider(
+                                label: 'Opacity',
+                                value: _eraseSettings.opacity,
+                                min: 1,
+                                max: 100,
+                                valueText:
+                                    '${_eraseSettings.opacity.toStringAsFixed(0)}%',
+                                uiScale: uiScale,
+                                enabled: enabled,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _eraseSettings =
+                                        _eraseSettings.copyWith(opacity: value);
+                                  });
+                                  modalSetState(() {});
+                                  _showEraseBrushPreviewOverlay();
+                                },
+                              ),
+                              SizedBox(height: scaled(8, min: 6)),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Brush Shape',
+                                  style: TextStyle(
+                                    color: const Color(0xFFD4D4D3),
+                                    fontSize: scaled(11.2, min: 10.0),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(height: scaled(6, min: 5)),
+                              SizedBox(
+                                height: scaled(40, min: 34),
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: EraseBrushShape.values.length,
+                                  separatorBuilder: (_, __) =>
+                                      SizedBox(width: scaled(6, min: 4)),
+                                  itemBuilder: (context, index) {
+                                    final EraseBrushShape shape =
+                                        EraseBrushShape.values[index];
+                                    final bool selected =
+                                        _eraseSettings.shape == shape;
+                                    return Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(
+                                          scaled(10, min: 8),
+                                        ),
+                                        onTap: enabled
+                                            ? () {
+                                                setState(() {
+                                                  _eraseSettings =
+                                                      _eraseSettings.copyWith(
+                                                    shape: shape,
+                                                  );
+                                                });
+                                                modalSetState(() {});
+                                                _showEraseBrushPreviewOverlay();
+                                              }
+                                            : null,
+                                        child: AnimatedContainer(
+                                          duration:
+                                              const Duration(milliseconds: 140),
+                                          curve: Curves.easeOut,
+                                          width: scaled(96, min: 82),
+                                          padding: EdgeInsets.symmetric(
+                                            horizontal: scaled(8, min: 6),
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: selected
+                                                ? kActiveAccent
+                                                : _floatingPanelSurfaceSolid,
+                                            borderRadius: BorderRadius.circular(
+                                              scaled(10, min: 8),
+                                            ),
+                                            border: Border.all(
+                                              color: selected
+                                                  ? Colors.transparent
+                                                  : _floatingPanelStrokeSolid,
+                                              width: selected ? 0 : 0.55,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Text(
+                                              shape.label,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: selected
+                                                    ? kActiveAccentForeground
+                                                    : const Color(0xFFF3F3F2),
+                                                fontWeight: FontWeight.w700,
+                                                fontSize:
+                                                    scaled(10.4, min: 9.4),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isEraseSettingsBottomSheetOpen = false;
+          _isEraseBrushPreviewVisible = false;
+        });
+      }
+    }
+  }
+
   Future<void> _openBlurSettingsBottomSheet() async {
     final EditorLayer? selectedImageLayer = _selectedImageLayer();
     if (selectedImageLayer == null) {
@@ -13889,6 +17971,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _resetBlurPreviewSession(clearBaseline: false);
       _blurSettings = settingsAtOpen;
       _isBlurSettingsBottomSheetOpen = true;
+      _isEraseSettingsBottomSheetOpen = false;
       _blurSettingsBaseline = baseline;
       _blurSettingsAtOpen = settingsAtOpen;
       _isCloneSettingsFloatingOpen = false;
@@ -13934,7 +18017,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   ),
                   child: Container(
                     decoration: const BoxDecoration(
-                      color: WonderPicEditorScreen._pageBg,
+                      color: _bottomSheetSurface,
                       borderRadius: BorderRadius.vertical(
                         top: Radius.circular(20),
                       ),
@@ -14081,6 +18164,47 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         });
       },
     );
+  }
+
+  void _showEraseBrushPreviewOverlay() {
+    _eraseBrushPreviewTimer?.cancel();
+    if (!_isEraseBrushPreviewVisible) {
+      setState(() {
+        _isEraseBrushPreviewVisible = true;
+      });
+    }
+    _eraseBrushPreviewTimer = Timer(
+      const Duration(milliseconds: 650),
+      () {
+        if (!mounted) return;
+        setState(() {
+          _isEraseBrushPreviewVisible = false;
+        });
+      },
+    );
+  }
+
+  void _onCloneViewportScaleInteractionFromCanvas() {
+    if (!_isToolEnabled) return;
+    final bool cloneActive = _activeTool == EditorTool.clone;
+    final bool eraseActive = _activeTool == EditorTool.erase;
+    if (!cloneActive && !eraseActive) return;
+
+    _cloneJoystickCursorHideTimer?.cancel();
+    if (_isCloneJoystickCursorVisible || _cloneJoystickDrawPressed) {
+      setState(() {
+        _isCloneJoystickCursorVisible = false;
+        _cloneJoystickDrawPressed = false;
+      });
+    }
+
+    if (cloneActive && !_isCloneSourceArmed) {
+      _showCloneBrushPreviewOverlay();
+      return;
+    }
+    if (eraseActive) {
+      _showEraseBrushPreviewOverlay();
+    }
   }
 
   Widget _buildTextSettingsPanel() {
@@ -15084,6 +19208,113 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           },
         );
     }
+  }
+
+  Widget _buildEraseSettingsPanel() {
+    final EditorLayer? selectedImageLayer = _selectedImageLayer();
+    if (selectedImageLayer == null) {
+      return const _ToolHintCard(
+        title: 'Erase Tool',
+        message:
+            'Select an image layer first. Erasing removes pixels and reveals layers behind.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SettingsSliderTile(
+          label: 'Size',
+          value: _eraseSettings.size,
+          min: 4,
+          max: 220,
+          valueText: _eraseSettings.size.toStringAsFixed(0),
+          onChanged: (value) {
+            setState(() {
+              _eraseSettings = _eraseSettings.copyWith(size: value);
+            });
+            _showEraseBrushPreviewOverlay();
+          },
+        ),
+        const SizedBox(height: 8),
+        _SettingsSliderTile(
+          label: 'Hardness',
+          value: _eraseSettings.hardness,
+          min: 0,
+          max: 100,
+          valueText: '${_eraseSettings.hardness.toStringAsFixed(0)}%',
+          onChanged: (value) {
+            setState(() {
+              _eraseSettings = _eraseSettings.copyWith(hardness: value);
+            });
+            _showEraseBrushPreviewOverlay();
+          },
+        ),
+        const SizedBox(height: 8),
+        _SettingsSliderTile(
+          label: 'Opacity',
+          value: _eraseSettings.opacity,
+          min: 1,
+          max: 100,
+          valueText: '${_eraseSettings.opacity.toStringAsFixed(0)}%',
+          onChanged: (value) {
+            setState(() {
+              _eraseSettings = _eraseSettings.copyWith(opacity: value);
+            });
+            _showEraseBrushPreviewOverlay();
+          },
+        ),
+        const SizedBox(height: 10),
+        const Text(
+          'Brush Shape',
+          style: TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFFF3F3F2),
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 38,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: EraseBrushShape.values.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final EraseBrushShape shape = EraseBrushShape.values[index];
+              final bool selected = _eraseSettings.shape == shape;
+              return ChoiceChip(
+                selected: selected,
+                onSelected: (_) {
+                  setState(() {
+                    _eraseSettings = _eraseSettings.copyWith(shape: shape);
+                  });
+                  _showEraseBrushPreviewOverlay();
+                },
+                label: Text(
+                  shape.label,
+                  style: TextStyle(
+                    color: selected
+                        ? kActiveAccentForeground
+                        : const Color(0xFFB8B7B5),
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+                backgroundColor: const Color(0xFF1E1F22),
+                selectedColor: kActiveAccent,
+                side: BorderSide(
+                  color:
+                      selected ? Colors.transparent : const Color(0xFF605E5E),
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(9),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildCloneSettingsPanel() {
@@ -16499,7 +20730,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
       setState(() {
-        _sketchReplaceError = 'KIE API key missing.';
+        _sketchReplaceError = 'KIE backend proxy is not configured.';
       });
       return;
     }
@@ -16559,9 +20790,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }) async {
     final String apiKey = _kieApiKey.trim();
     if (apiKey.isEmpty) {
-      throw StateError('KIE API key missing.');
+      throw StateError('KIE backend proxy is not configured.');
     }
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final http.Response response = await http
         .post(
           uri,
@@ -18230,11 +22461,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (layerIndex < 0) return;
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final EditorLayer current = nextLayers[layerIndex];
+    final Offset? normalizedPosition = current.isBackground
+        ? Offset(image.width.toDouble() / 2, image.height.toDouble() / 2)
+        : current.position;
     nextLayers[layerIndex] = current.copyWith(
       isBackground: current.isBackground,
       image: image,
       solidSize: _imageSourceSize(image),
       thumbnailBytes: null,
+      position: normalizedPosition,
     );
     _layers = nextLayers;
   }
@@ -18244,11 +22479,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool closeCloneSheet = false,
   }) {
     _cloneBrushPreviewTimer?.cancel();
+    _cloneJoystickCursorHideTimer?.cancel();
     setState(() {
       _isCloneSourceArmed = true;
       _isCloneBrushSelected = false;
       _isCloneEraseSelected = false;
       _isCloneBrushPreviewVisible = false;
+      _isCloneJoystickCursorVisible = false;
+      _cloneJoystickDrawPressed = false;
       _isCloneSettingsFloatingOpen = false;
       if (closeCloneSheet) {
         _isCloneSettingsBottomSheetOpen = false;
@@ -18293,11 +22531,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   void _onCloneSourcePicked() {
     if (!_isCloneSourceArmed) return;
+    _cloneJoystickCursorHideTimer?.cancel();
     setState(() {
       _isCloneSourceArmed = false;
       _isCloneBrushSelected = true;
       _isCloneEraseSelected = false;
       _isCloneBrushPreviewVisible = false;
+      _isCloneJoystickCursorVisible = false;
+      _cloneJoystickDrawPressed = false;
       _isCloneSettingsFloatingOpen = false;
       _isCloneSettingsBottomSheetOpen = false;
     });
@@ -19059,21 +23300,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
   }
 
-  Rect _referenceArtboardForStrokes(Size workspaceSize) {
-    final BuildContext? viewportContext = _canvasViewportKey.currentContext;
-    if (viewportContext == null) {
-      return Rect.fromLTWH(0, 0, workspaceSize.width, workspaceSize.height);
-    }
-    final RenderObject? renderObject = viewportContext.findRenderObject();
-    if (renderObject is! RenderBox || !renderObject.hasSize) {
-      return Rect.fromLTWH(0, 0, workspaceSize.width, workspaceSize.height);
-    }
-    return _computeArtboardRect(
-      canvasSize: renderObject.size,
-      workspaceSize: workspaceSize,
-    );
-  }
-
   void _paintExportStroke({
     required Canvas canvas,
     required List<Offset> points,
@@ -19201,7 +23427,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool isError = false,
   }) {
     if (!mounted) return;
-    if (!_editorBottomSnackbarsEnabled) return;
+    if (!_editorBottomSnackbarsEnabled) {
+      if (isError) {
+        _showEditorErrorDialog(message);
+      }
+      return;
+    }
     final ScaffoldMessengerState? messenger =
         _editorScaffoldMessengerKey.currentState;
     if (messenger == null) return;
@@ -19217,6 +23448,60 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showEditorErrorDialog(String message) {
+    if (!mounted) return;
+    final String normalized = message.trim();
+    if (normalized.isEmpty || _isEditorErrorDialogVisible) return;
+    _isEditorErrorDialogVisible = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: true,
+        builder: (BuildContext dialogContext) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1F22),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: const BorderSide(
+                color: Color(0x2B4F5358),
+                width: 0.8,
+              ),
+            ),
+            title: const Text(
+              'Operation failed',
+              style: TextStyle(
+                color: Color(0xFFF3F3F2),
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            content: Text(
+              normalized,
+              style: const TextStyle(
+                color: Color(0xFFD4D4D3),
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text(
+                  'OK',
+                  style: TextStyle(
+                    color: kActiveAccent,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ).whenComplete(() {
+        _isEditorErrorDialogVisible = false;
+      }),
     );
   }
 
@@ -19548,35 +23833,333 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required ui.Image image,
     required Uint8List thumbnailBytes,
     required Size workspaceSize,
+    Offset? position,
+    double? initialLayerScaleOverride,
+    String layerNamePrefix = 'Overlay Image',
   }) {
     final int overlayImageCount = _layers
         .where(
-          (entry) => entry.type == EditorLayerType.image && !entry.isBackground,
+          (entry) =>
+              entry.type == EditorLayerType.image &&
+              !entry.isBackground &&
+              entry.name.startsWith(layerNamePrefix),
         )
         .length;
     final double fitScale = math.min(
       workspaceSize.width / image.width,
       workspaceSize.height / image.height,
     );
-    final double initialScale = math.min(1.0, fitScale * 0.92);
+    final double initialScale =
+        (initialLayerScaleOverride ?? math.min(1.0, fitScale * 0.92))
+            .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
+            .toDouble();
     final String newId = 'layer_${_nextLayerId++}';
+    final Offset resolvedPosition = _clampSourcePositionToWorkspace(
+      position ?? Offset(workspaceSize.width / 2, workspaceSize.height / 2),
+      workspaceSize,
+    );
     final EditorLayer overlay = EditorLayer(
       id: newId,
       name: overlayImageCount == 0
-          ? 'Overlay Image'
-          : 'Overlay Image ${overlayImageCount + 1}',
+          ? layerNamePrefix
+          : '$layerNamePrefix ${overlayImageCount + 1}',
       type: EditorLayerType.image,
       isBackground: false,
       isVisible: true,
       image: image,
       thumbnailBytes: thumbnailBytes,
       solidSize: _imageSourceSize(image),
-      position: Offset(workspaceSize.width / 2, workspaceSize.height / 2),
+      position: resolvedPosition,
       layerScale: initialScale,
       layerRotation: 0.0,
     );
     _layers = <EditorLayer>[..._layers, overlay];
     _selectedLayerId = newId;
+  }
+
+  Offset _clampSourcePositionToWorkspace(Offset raw, Size workspaceSize) {
+    return Offset(
+      raw.dx.clamp(0.0, workspaceSize.width).toDouble(),
+      raw.dy.clamp(0.0, workspaceSize.height).toDouble(),
+    );
+  }
+
+  double _elementTargetLongestEdgeInSource(Size workspaceSize) {
+    final double shortest = math.min(workspaceSize.width, workspaceSize.height);
+    return (shortest * _elementStandardLongestEdgeRatio)
+        .clamp(110.0, 260.0)
+        .toDouble();
+  }
+
+  double _elementInitialLayerScaleForWorkspace({
+    required ui.Image image,
+    required Size workspaceSize,
+  }) {
+    final double longestImageEdge =
+        math.max(image.width, image.height).toDouble().clamp(1.0, 100000.0);
+    final double target = _elementTargetLongestEdgeInSource(workspaceSize);
+    return (target / longestImageEdge)
+        .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
+        .toDouble();
+  }
+
+  _PendingElementPlacement _preparePendingElementPlacement({
+    required String assetId,
+    required String fileUrl,
+    required ui.Image image,
+    required Uint8List thumbnailBytes,
+    required Size workspaceSize,
+    String layerNamePrefix = 'Overlay Element',
+    bool placeOnDrop = false,
+  }) {
+    final double initialScale = _elementInitialLayerScaleForWorkspace(
+      image: image,
+      workspaceSize: workspaceSize,
+    );
+    final double sourceLongest =
+        math.max(image.width, image.height) * initialScale;
+    final double previewSize = (_editorCanvasStateKey.currentState
+                ?.viewportLengthForSourceLength(sourceLongest) ??
+            _pendingElementPreviewFallbackSize)
+        .clamp(
+          _pendingElementPreviewMinSize,
+          _pendingElementPreviewMaxSize,
+        )
+        .toDouble();
+    return _PendingElementPlacement(
+      assetId: assetId,
+      fileUrl: fileUrl,
+      image: image,
+      thumbnailBytes: thumbnailBytes,
+      initialLayerScale: initialScale,
+      previewSize: previewSize,
+      layerNamePrefix: layerNamePrefix,
+      placeOnDrop: placeOnDrop,
+      isLoading: false,
+    );
+  }
+
+  _PendingElementPlacement _preparePendingElementPlacementLoading({
+    required String assetId,
+    required String fileUrl,
+    bool placeOnDrop = false,
+  }) {
+    return _PendingElementPlacement(
+      assetId: assetId,
+      fileUrl: fileUrl,
+      image: null,
+      thumbnailBytes: null,
+      initialLayerScale: null,
+      previewSize: _pendingElementPreviewFallbackSize,
+      layerNamePrefix: 'Overlay Element',
+      placeOnDrop: placeOnDrop,
+      isLoading: true,
+    );
+  }
+
+  Future<_LoadedElementAsset> _loadElementAsset(String fileUrl) async {
+    final http.Response imageResponse =
+        await http.get(Uri.parse(fileUrl)).timeout(const Duration(minutes: 2));
+    if (imageResponse.statusCode < 200 || imageResponse.statusCode >= 300) {
+      throw StateError(
+        'Failed to load element image (${imageResponse.statusCode}).',
+      );
+    }
+    final Uint8List bytes = imageResponse.bodyBytes;
+    final ui.Image image = await _decodeUiImage(bytes);
+    return _LoadedElementAsset(
+      bytes: bytes,
+      image: image,
+    );
+  }
+
+  Future<void> _resolvePendingElementPlacementAsset({
+    required _ElementsAssetItem selectedAsset,
+    required Size workspaceSize,
+    required bool placeOnDrop,
+  }) async {
+    try {
+      final _LoadedElementAsset loaded =
+          await _loadElementAsset(selectedAsset.fileUrl);
+      if (!mounted) return;
+      final _PendingElementPlacement? current = _pendingElementPlacement;
+      if (current == null || current.assetId != selectedAsset.id) return;
+
+      final _PendingElementPlacement readyPlacement =
+          _preparePendingElementPlacement(
+        assetId: selectedAsset.id,
+        fileUrl: selectedAsset.fileUrl,
+        image: loaded.image,
+        thumbnailBytes: loaded.bytes,
+        workspaceSize: workspaceSize,
+        placeOnDrop: placeOnDrop,
+      );
+      final Offset? queuedDropPoint =
+          _pendingElementPlacementQueuedDropWorkspacePoint;
+      setState(() {
+        _pendingElementPlacement = readyPlacement;
+      });
+      if (queuedDropPoint != null) {
+        _placePendingElementAtWorkspacePoint(queuedDropPoint);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final _PendingElementPlacement? current = _pendingElementPlacement;
+      if (current == null || current.assetId != selectedAsset.id) return;
+      setState(() {
+        _pendingElementPlacement = null;
+        _pendingElementPlacementPointerId = null;
+        _pendingElementPlacementGlobalPosition = null;
+        _pendingElementPlacementPointerDownGlobalPosition = null;
+        _pendingElementPlacementQueuedDropWorkspacePoint = null;
+        _pendingElementPlacementPositionNotifier.value = null;
+      });
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
+    }
+  }
+
+  void _updatePendingElementPlacementGlobalPosition(Offset? value) {
+    final Offset? previous = _pendingElementPlacementGlobalPosition;
+    if (value == null && previous == null) return;
+    if (value != null &&
+        previous != null &&
+        (value - previous).distanceSquared < 0.25) {
+      return;
+    }
+    _pendingElementPlacementGlobalPosition = value;
+    _pendingElementPlacementPositionNotifier.value = value;
+  }
+
+  void _resetPendingElementPlacementDragState({bool keepAsset = true}) {
+    _pendingElementPlacementPointerId = null;
+    _pendingElementPlacementPointerDownGlobalPosition = null;
+    _pendingElementPlacementQueuedDropWorkspacePoint = null;
+    _updatePendingElementPlacementGlobalPosition(null);
+    if (!keepAsset) {
+      setState(() {
+        _pendingElementPlacement = null;
+      });
+    }
+  }
+
+  Offset? _workspacePointForGlobalDrop(Offset globalPosition) {
+    return _editorCanvasStateKey.currentState?.workspacePointFromGlobal(
+      globalPosition,
+    );
+  }
+
+  Offset? _pendingElementPlacementStackPosition(Offset globalPosition) {
+    final BuildContext? stackContext = _editorRootStackKey.currentContext;
+    if (stackContext == null) return null;
+    final RenderObject? renderObject = stackContext.findRenderObject();
+    if (renderObject is! RenderBox) return null;
+    return renderObject.globalToLocal(globalPosition);
+  }
+
+  void _placePendingElementAtWorkspacePoint(Offset workspacePoint) {
+    final _PendingElementPlacement? pending = _pendingElementPlacement;
+    if (pending == null) return;
+    if (pending.image == null ||
+        pending.thumbnailBytes == null ||
+        pending.initialLayerScale == null) {
+      _pendingElementPlacementQueuedDropWorkspacePoint = workspacePoint;
+      return;
+    }
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspace == null ? null : _workspaceSourceSize(workspace);
+    if (workspaceSize == null) {
+      _resetPendingElementPlacementDragState(keepAsset: false);
+      return;
+    }
+    _pushUndoSnapshot();
+    setState(() {
+      _addOverlayImageLayer(
+        image: pending.image!,
+        thumbnailBytes: pending.thumbnailBytes!,
+        workspaceSize: workspaceSize,
+        position:
+            _clampSourcePositionToWorkspace(workspacePoint, workspaceSize),
+        initialLayerScaleOverride: pending.initialLayerScale!,
+        layerNamePrefix: pending.layerNamePrefix,
+      );
+      _isToolEnabled = false;
+      _pendingElementPlacement = null;
+      _pendingElementPlacementPointerId = null;
+      _pendingElementPlacementGlobalPosition = null;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      _pendingElementPlacementQueuedDropWorkspacePoint = null;
+      _pendingElementPlacementPositionNotifier.value = null;
+    });
+  }
+
+  void _onGlobalElementPlacementPointerEvent(PointerEvent event) {
+    final _PendingElementPlacement? pending = _pendingElementPlacement;
+    if (pending == null) return;
+
+    final int? activePointerId = _pendingElementPlacementPointerId;
+    if (activePointerId == null) {
+      if (event is PointerDownEvent) {
+        _pendingElementPlacementPointerId = event.pointer;
+        _pendingElementPlacementPointerDownGlobalPosition = event.position;
+        _updatePendingElementPlacementGlobalPosition(event.position);
+      } else if (pending.placeOnDrop && event is PointerMoveEvent) {
+        _pendingElementPlacementPointerId = event.pointer;
+        _pendingElementPlacementPointerDownGlobalPosition =
+            _pendingElementPlacementGlobalPosition ?? event.position;
+        _updatePendingElementPlacementGlobalPosition(event.position);
+      }
+      return;
+    }
+
+    if (event.pointer != activePointerId) return;
+
+    if (event is PointerMoveEvent || event is PointerDownEvent) {
+      _updatePendingElementPlacementGlobalPosition(event.position);
+      return;
+    }
+
+    if (event is PointerCancelEvent) {
+      _pendingElementPlacementPointerId = null;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      return;
+    }
+
+    if (event is! PointerUpEvent) return;
+
+    final Offset upPosition = event.position;
+    _pendingElementPlacementPointerId = null;
+    _updatePendingElementPlacementGlobalPosition(upPosition);
+
+    final Offset? workspacePoint = _workspacePointForGlobalDrop(upPosition);
+    if (pending.placeOnDrop) {
+      final Offset? downPosition =
+          _pendingElementPlacementPointerDownGlobalPosition;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      if (downPosition == null) return;
+      final double movement = (upPosition - downPosition).distance;
+      if (movement <= _pendingElementTapPlaceThresholdPx) return;
+      if (workspacePoint != null) {
+        _placePendingElementAtWorkspacePoint(workspacePoint);
+      }
+      return;
+    }
+
+    final Offset? downPosition =
+        _pendingElementPlacementPointerDownGlobalPosition;
+    _pendingElementPlacementPointerDownGlobalPosition = null;
+    if (downPosition == null) return;
+    final double movement = (upPosition - downPosition).distance;
+    if (movement > _pendingElementTapPlaceThresholdPx) return;
+    if (workspacePoint != null) {
+      _placePendingElementAtWorkspacePoint(workspacePoint);
+    }
+  }
+
+  Offset? _pendingElementPlacementViewportPosition() {
+    final Offset? globalPosition = _pendingElementPlacementGlobalPosition;
+    if (globalPosition == null) return null;
+    return _pendingElementPlacementStackPosition(globalPosition);
   }
 
   Future<void> _openUpscaleBottomSheet() async {
@@ -19649,10 +24232,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       });
 
       String normalizeError(Object error) {
-        final String message = error.toString().trim();
-        return message.startsWith('StateError: ')
-            ? message.substring('StateError: '.length)
-            : message;
+        return _normalizeOperationErrorMessage(error);
       }
 
       Future<void> closeSheetIfOpen() async {
@@ -19703,92 +24283,109 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         }
 
         if (!mounted) return;
-        setState(() {
-          _isUpscaleLayerProcessing = true;
-          _upscaleEffectLayerId = shimmerLayerId;
-        });
+        final double creditCost = _creditCostForUpscaleAmount(selectedAmount);
 
-        // Close immediately so shimmer magic effect appears on the canvas.
-        await closeSheetIfOpen();
+        await _runWithCreditReservation<void>(
+          operationType: 'ai_upscale',
+          amount: creditCost,
+          metadata: <String, dynamic>{
+            'amount': selectedAmount.label,
+            'source_mode': sourceMode.label,
+            'source': 'editor_upscale',
+          },
+          run: () async {
+            if (!mounted) return;
+            setState(() {
+              _isUpscaleLayerProcessing = true;
+              _upscaleEffectLayerId = shimmerLayerId;
+            });
 
-        if (selectedLayerForProcess != null &&
-            selectedLayerImageForProcess != null) {
-          final EditorLayer selectedLayer = selectedLayerForProcess;
-          final ui.Image sourceImage = selectedLayerImageForProcess;
-          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-            sourceImage: sourceImage,
-            amount: selectedAmount,
-          );
-          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
-          if (!mounted) return;
-          _pushUndoSnapshot();
-          setState(() {
-            final int targetIndex =
-                _layers.indexWhere((layer) => layer.id == selectedLayer.id);
-            if (targetIndex >= 0) {
-              final List<EditorLayer> nextLayers =
-                  List<EditorLayer>.from(_layers);
-              final EditorLayer current = nextLayers[targetIndex];
-              final Size oldWorkspaceSize = current.solidSize ??
-                  Size(
-                    sourceImage.width.toDouble(),
-                    sourceImage.height.toDouble(),
-                  );
-              final Size nextWorkspaceSize = Size(
-                upscaledImage.width.toDouble(),
-                upscaledImage.height.toDouble(),
+            // Close immediately so shimmer magic effect appears on the canvas.
+            await closeSheetIfOpen();
+
+            if (selectedLayerForProcess != null &&
+                selectedLayerImageForProcess != null) {
+              final EditorLayer selectedLayer = selectedLayerForProcess;
+              final ui.Image sourceImage = selectedLayerImageForProcess;
+              final Uint8List resultBytes =
+                  await _upscaleImageWithKieRecraftCrisp(
+                sourceImage: sourceImage,
+                amount: selectedAmount,
               );
-              final Map<String, _WorkspaceResizeLayerTransform>
-                  preservedLayerTransforms = current.isBackground
-                      ? _captureNonBackgroundTransformsForWorkspaceResize(
-                          oldWorkspaceSize: oldWorkspaceSize,
-                          newWorkspaceSize: nextWorkspaceSize,
-                          backgroundLayerId: current.id,
-                        )
-                      : const <String, _WorkspaceResizeLayerTransform>{};
-              nextLayers[targetIndex] = current.copyWith(
-                image: upscaledImage,
-                thumbnailBytes: resultBytes,
-                // Background upscale upgrades workspace size to match
-                // the new full-resolution canvas dimensions.
-                solidSize:
-                    current.isBackground ? nextWorkspaceSize : oldWorkspaceSize,
-              );
-              if (preservedLayerTransforms.isNotEmpty) {
-                for (int i = 0; i < nextLayers.length; i++) {
-                  final EditorLayer layer = nextLayers[i];
-                  final _WorkspaceResizeLayerTransform? transform =
-                      preservedLayerTransforms[layer.id];
-                  if (transform == null) continue;
-                  nextLayers[i] = layer.copyWith(
-                    position: transform.position,
-                    layerScale: transform.layerScale,
+              final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
+              if (!mounted) return;
+              _pushUndoSnapshot();
+              setState(() {
+                final int targetIndex =
+                    _layers.indexWhere((layer) => layer.id == selectedLayer.id);
+                if (targetIndex >= 0) {
+                  final List<EditorLayer> nextLayers =
+                      List<EditorLayer>.from(_layers);
+                  final EditorLayer current = nextLayers[targetIndex];
+                  final Size oldWorkspaceSize = current.solidSize ??
+                      Size(
+                        sourceImage.width.toDouble(),
+                        sourceImage.height.toDouble(),
+                      );
+                  final Size nextWorkspaceSize = Size(
+                    upscaledImage.width.toDouble(),
+                    upscaledImage.height.toDouble(),
                   );
+                  final Map<String, _WorkspaceResizeLayerTransform>
+                      preservedLayerTransforms = current.isBackground
+                          ? _captureNonBackgroundTransformsForWorkspaceResize(
+                              oldWorkspaceSize: oldWorkspaceSize,
+                              newWorkspaceSize: nextWorkspaceSize,
+                              backgroundLayerId: current.id,
+                            )
+                          : const <String, _WorkspaceResizeLayerTransform>{};
+                  nextLayers[targetIndex] = current.copyWith(
+                    image: upscaledImage,
+                    thumbnailBytes: resultBytes,
+                    // Background upscale upgrades workspace size to match
+                    // the new full-resolution canvas dimensions.
+                    solidSize: current.isBackground
+                        ? nextWorkspaceSize
+                        : oldWorkspaceSize,
+                  );
+                  if (preservedLayerTransforms.isNotEmpty) {
+                    for (int i = 0; i < nextLayers.length; i++) {
+                      final EditorLayer layer = nextLayers[i];
+                      final _WorkspaceResizeLayerTransform? transform =
+                          preservedLayerTransforms[layer.id];
+                      if (transform == null) continue;
+                      nextLayers[i] = layer.copyWith(
+                        position: transform.position,
+                        layerScale: transform.layerScale,
+                      );
+                    }
+                  }
+                  _layers = nextLayers;
+                  _selectedLayerId = current.id;
                 }
-              }
-              _layers = nextLayers;
-              _selectedLayerId = current.id;
+              });
+            } else if (uploadBytesForProcess != null &&
+                uploadWorkspaceSizeForProcess != null) {
+              final Uint8List resultBytes =
+                  await _upscaleImageWithKieRecraftCrisp(
+                sourceBytes: uploadBytesForProcess,
+                amount: selectedAmount,
+              );
+              final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
+              if (!mounted) return;
+              _pushUndoSnapshot();
+              setState(() {
+                _addOverlayImageLayer(
+                  image: upscaledImage,
+                  thumbnailBytes: resultBytes,
+                  workspaceSize: uploadWorkspaceSizeForProcess!,
+                );
+              });
             }
-          });
-        } else if (uploadBytesForProcess != null &&
-            uploadWorkspaceSizeForProcess != null) {
-          final Uint8List resultBytes = await _upscaleImageWithKieRecraftCrisp(
-            sourceBytes: uploadBytesForProcess,
-            amount: selectedAmount,
-          );
-          final ui.Image upscaledImage = await _decodeUiImage(resultBytes);
-          if (!mounted) return;
-          _pushUndoSnapshot();
-          setState(() {
-            _addOverlayImageLayer(
-              image: upscaledImage,
-              thumbnailBytes: resultBytes,
-              workspaceSize: uploadWorkspaceSizeForProcess!,
-            );
-          });
-        }
 
-        _showExportMessage('Upscale ${selectedAmount.label} completed.');
+            _showExportMessage('Upscale ${selectedAmount.label} completed.');
+          },
+        );
       } catch (error) {
         if (sheetOpen && sheetContext.mounted) {
           setSheetState(() {
@@ -19816,7 +24413,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       context: context,
       isScrollControlled: true,
       barrierColor: Colors.transparent,
-      backgroundColor: const Color(0xFF1E1F22),
+      backgroundColor: _bottomSheetSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -20195,6 +24792,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         MapEntry<String, double>('3:4', 3 / 4),
         MapEntry<String, double>('16:9', 16 / 9),
         MapEntry<String, double>('9:16', 9 / 16),
+        MapEntry<String, double>('3:2', 3 / 2),
+        MapEntry<String, double>('2:3', 2 / 3),
+        MapEntry<String, double>('21:9', 21 / 9),
       ];
       MapEntry<String, double> best = candidates.first;
       double bestDelta = (ratio - best.value).abs();
@@ -20211,28 +24811,38 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
   }
 
-  String _kieAspectRatioForModel(
-    _KieAiImageModel model,
-    _AiCanvasSizePreset sizePreset, {
-    String? referenceAspectRatio,
-  }) {
-    if (referenceAspectRatio != null && referenceAspectRatio.isNotEmpty) {
-      return referenceAspectRatio;
+  _KieSeedreamAspectRatio _seedreamAspectRatioForImage(ui.Image image) {
+    final double ratio = image.width / math.max(1, image.height);
+    const List<MapEntry<_KieSeedreamAspectRatio, double>> candidates =
+        <MapEntry<_KieSeedreamAspectRatio, double>>[
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.square11, 1.0),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.landscape43, 4 / 3),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.portrait34, 3 / 4),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.landscape169, 16 / 9),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.story916, 9 / 16),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.portrait23, 2 / 3),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.landscape32, 3 / 2),
+      MapEntry<_KieSeedreamAspectRatio, double>(
+          _KieSeedreamAspectRatio.cinematic219, 21 / 9),
+    ];
+    MapEntry<_KieSeedreamAspectRatio, double> best = candidates.first;
+    double bestDelta = (ratio - best.value).abs();
+    for (final MapEntry<_KieSeedreamAspectRatio, double> candidate
+        in candidates.skip(1)) {
+      final double delta = (ratio - candidate.value).abs();
+      if (delta < bestDelta) {
+        best = candidate;
+        bestDelta = delta;
+      }
     }
-    switch (model) {
-      case _KieAiImageModel.flux2Pro:
-      case _KieAiImageModel.seedream5Lite:
-        switch (sizePreset) {
-          case _AiCanvasSizePreset.square:
-            return '1:1';
-          case _AiCanvasSizePreset.portrait:
-            return '3:4';
-          case _AiCanvasSizePreset.story:
-            return '9:16';
-        }
-      default:
-        return sizePreset.aspectRatio;
-    }
+    return best.key;
   }
 
   bool _kieSupportsModelVersions(_KieAiImageModel model) {
@@ -20254,13 +24864,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _AiGenerationQuality.k1,
           _AiGenerationQuality.k2,
         ];
+      case _KieAiImageModel.gptImage15:
+        return const <_AiGenerationQuality>[
+          _AiGenerationQuality.medium,
+          _AiGenerationQuality.high,
+        ];
       case _KieAiImageModel.seedream5Lite:
         return const <_AiGenerationQuality>[
           _AiGenerationQuality.k2, // basic => 2K
-          _AiGenerationQuality.high, // high => 3K
+          _AiGenerationQuality.high, // high => 4K
         ];
       case _KieAiImageModel.ideogramV3Remix:
-        return const <_AiGenerationQuality>[_AiGenerationQuality.k1];
+        return const <_AiGenerationQuality>[
+          _AiGenerationQuality.k1, // TURBO
+          _AiGenerationQuality.k2, // BALANCED
+          _AiGenerationQuality.k4, // QUALITY
+        ];
       default:
         return const <_AiGenerationQuality>[
           _AiGenerationQuality.medium,
@@ -20270,6 +24889,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   _AiGenerationQuality _kieDefaultQualityForModel(_KieAiImageModel model) {
+    if (model == _KieAiImageModel.ideogramV3Remix) {
+      return _AiGenerationQuality.k2; // BALANCED
+    }
     return _kieQualityOptionsForModel(model).first;
   }
 
@@ -20277,8 +24899,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _KieAiImageModel model,
     _AiGenerationQuality quality,
   ) {
+    if (model == _KieAiImageModel.ideogramV3Remix) {
+      switch (quality) {
+        case _AiGenerationQuality.k1:
+          return 'Turbo';
+        case _AiGenerationQuality.k4:
+          return 'Quality';
+        default:
+          return 'Balanced';
+      }
+    }
     if (model == _KieAiImageModel.seedream5Lite) {
-      return quality == _AiGenerationQuality.high ? '3K' : '2K';
+      return quality == _AiGenerationQuality.high ? '4K' : '2K';
     }
     return quality.label;
   }
@@ -20287,7 +24919,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _KieAiImageModel model,
   ) {
     switch (model) {
-      case _KieAiImageModel.flux2Pro:
       case _KieAiImageModel.seedream5Lite:
         return const <_KieIdeogramImageSize>[
           _KieIdeogramImageSize.square,
@@ -20299,9 +24930,27 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
   }
 
+  List<_KieFluxAspectRatio> _kieGptAspectRatioOptions() {
+    return const <_KieFluxAspectRatio>[
+      _KieFluxAspectRatio.square11,
+      _KieFluxAspectRatio.portrait23,
+      _KieFluxAspectRatio.landscape32,
+    ];
+  }
+
+  _KieFluxAspectRatio _sanitizeGptAspectRatio(_KieFluxAspectRatio value) {
+    final List<_KieFluxAspectRatio> options = _kieGptAspectRatioOptions();
+    if (options.contains(value)) return value;
+    return options.first;
+  }
+
   Map<String, dynamic> _buildKieImageInput({
     required _KieAiImageModel model,
     required _KieNanoBananaVersion nanoVersion,
+    required _KieNanoAspectRatio nanoAspectRatio,
+    required _KieFluxAspectRatio fluxAspectRatio,
+    required _KieSeedreamAspectRatio seedreamAspectRatio,
+    required bool useOfficialNanoPrompt,
     required _KieIdeogramStyle ideogramStyle,
     required _KieIdeogramImageSize ideogramImageSize,
     required _AiCanvasSizePreset sizePreset,
@@ -20311,24 +24960,31 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     String? referenceAspectRatio,
   }) {
     final List<String> urls =
-        referenceImageUrls.take(2).toList(growable: false);
+        referenceImageUrls.take(_kieMaxReferenceImages(model)).toList(
+              growable: false,
+            );
     final bool hasRefs = urls.isNotEmpty;
-    final String effectivePrompt = model == _KieAiImageModel.nanoBanana
-        ? _buildNanoBananaPrompt(
-            userPrompt: prompt,
-            referenceCount: urls.length,
-          )
-        : _buildKieReferencePrompt(
-            model: model,
-            userPrompt: prompt,
-            referenceCount: urls.length,
-          );
-    final String modelAspectRatio = _kieAspectRatioForModel(
-      model,
-      sizePreset,
-      referenceAspectRatio: hasRefs ? referenceAspectRatio : null,
-    );
-
+    final String cleanPrompt = prompt.trim();
+    final String effectivePrompt;
+    if (model == _KieAiImageModel.nanoBanana) {
+      effectivePrompt = useOfficialNanoPrompt
+          ? cleanPrompt
+          : _buildNanoBananaPrompt(
+              userPrompt: cleanPrompt,
+              referenceCount: urls.length,
+            );
+    } else if (model == _KieAiImageModel.flux2Pro ||
+        model == _KieAiImageModel.gptImage15 ||
+        model == _KieAiImageModel.seedream5Lite ||
+        model == _KieAiImageModel.ideogramV3Remix) {
+      effectivePrompt = cleanPrompt;
+    } else {
+      effectivePrompt = _buildKieReferencePrompt(
+        model: model,
+        userPrompt: cleanPrompt,
+        referenceCount: urls.length,
+      );
+    }
     switch (model) {
       case _KieAiImageModel.nanoBanana:
         String resolutionLabel;
@@ -20336,6 +24992,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           case _AiGenerationQuality.k4:
             resolutionLabel = '4K';
           case _AiGenerationQuality.k2:
+          case _AiGenerationQuality.high:
             resolutionLabel = '2K';
           default:
             resolutionLabel = '1K';
@@ -20343,34 +25000,33 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         return <String, dynamic>{
           'prompt': effectivePrompt,
           if (hasRefs) 'image_input': urls,
-          'aspect_ratio': hasRefs ? 'auto' : sizePreset.aspectRatio,
+          'aspect_ratio': nanoAspectRatio.apiValue,
           'resolution': resolutionLabel,
           'output_format': 'png',
           'google_search': false,
         };
       case _KieAiImageModel.ideogramV3Remix:
-        final bool hasPrimaryRef = hasRefs && urls.isNotEmpty;
-        final bool hasSecondRef = urls.length > 1;
+        final String renderingSpeed = switch (quality) {
+          _AiGenerationQuality.k1 => 'TURBO',
+          _AiGenerationQuality.k4 => 'QUALITY',
+          _ => 'BALANCED',
+        };
         return <String, dynamic>{
           'prompt': effectivePrompt,
-          if (hasPrimaryRef && hasSecondRef) 'image_url': urls.first,
-          if (hasPrimaryRef)
-            'reference_image_urls': hasSecondRef
-                ? urls.skip(1).toList(growable: false)
-                : <String>[urls.first],
-          'rendering_speed': 'BALANCED',
+          'rendering_speed': renderingSpeed,
           'style': ideogramStyle.apiValue,
           'expand_prompt': true,
           'num_images': '1',
-          if (hasSecondRef) 'strength': 0.78,
           'negative_prompt': '',
           'image_size': ideogramImageSize.apiValue,
         };
       case _KieAiImageModel.gptImage15:
+        final _KieFluxAspectRatio gptAspectRatio =
+            _sanitizeGptAspectRatio(fluxAspectRatio);
         return <String, dynamic>{
           'prompt': effectivePrompt,
           if (hasRefs) 'input_urls': urls,
-          'aspect_ratio': sizePreset.aspectRatio,
+          'aspect_ratio': gptAspectRatio.apiValue,
           'quality': quality == _AiGenerationQuality.high ? 'high' : 'medium',
         };
       case _KieAiImageModel.flux2Pro:
@@ -20380,8 +25036,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             : '1K';
         return <String, dynamic>{
           'prompt': effectivePrompt,
-          if (hasRefs) 'input_urls': urls,
-          'aspect_ratio': modelAspectRatio,
+          'input_urls': urls,
+          'aspect_ratio': fluxAspectRatio.apiValue,
           'resolution': resolution,
         };
       case _KieAiImageModel.imagen4:
@@ -20423,8 +25079,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       case _KieAiImageModel.seedream5Lite:
         return <String, dynamic>{
           'prompt': effectivePrompt,
-          if (hasRefs) 'image_urls': urls,
-          'aspect_ratio': modelAspectRatio,
+          'image_urls': urls,
+          'aspect_ratio': seedreamAspectRatio.apiValue,
           'quality': quality == _AiGenerationQuality.high ? 'high' : 'basic',
         };
       case _KieAiImageModel.zImage:
@@ -20438,13 +25094,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _kieSupportsReferenceImages(_KieAiImageModel model) {
     switch (model) {
       case _KieAiImageModel.nanoBanana:
-      case _KieAiImageModel.ideogramV3Remix:
       case _KieAiImageModel.gptImage15:
       case _KieAiImageModel.flux2Pro:
       case _KieAiImageModel.grokImagine:
       case _KieAiImageModel.qwen:
       case _KieAiImageModel.seedream5Lite:
         return true;
+      case _KieAiImageModel.ideogramV3Remix:
       case _KieAiImageModel.imagen4:
       case _KieAiImageModel.seedreamV4:
       case _KieAiImageModel.zImage:
@@ -20454,10 +25110,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   int _kieMaxReferenceImages(_KieAiImageModel model) {
     switch (model) {
+      case _KieAiImageModel.nanoBanana:
+        return 3;
+      case _KieAiImageModel.flux2Pro:
+        return 8;
+      case _KieAiImageModel.seedream5Lite:
+        return 14;
+      case _KieAiImageModel.gptImage15:
+        return 16;
       case _KieAiImageModel.qwen:
         return 1;
       case _KieAiImageModel.ideogramV3Remix:
-        return 2;
+        return 0;
       default:
         return 2;
     }
@@ -20473,19 +25137,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       if (model == _KieAiImageModel.nanoBanana) {
         return _KieNanoBananaVersion.nanoBanana2.apiModel;
       }
+      if (model == _KieAiImageModel.flux2Pro) {
+        return 'flux-2/pro-image-to-image';
+      }
       return model.apiModel;
     }
     switch (model) {
       case _KieAiImageModel.nanoBanana:
         return _KieNanoBananaVersion.nanoBanana2.apiModel;
       case _KieAiImageModel.ideogramV3Remix:
-        if (referenceImageCount >= 2) {
-          return 'ideogram/character-remix';
-        }
-        if (referenceImageCount == 1) {
-          return 'ideogram/character';
-        }
-        return 'ideogram/v3-remix';
+        return 'ideogram/v3-text-to-image';
       case _KieAiImageModel.gptImage15:
         return 'gpt-image/1.5-image-to-image';
       case _KieAiImageModel.flux2Pro:
@@ -20514,7 +25175,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
       throw StateError(
-          'KIE API key missing. Use --dart-define=KIE_API_KEY=...');
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...');
     }
     Uint8List uploadBytes = bytes;
     if (normalizeOrientation) {
@@ -20538,10 +25199,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       } catch (_) {}
     }
 
-    final Uri base64Uri =
-        Uri.parse('https://kieai.redpandaai.co/api/file-base64-upload');
-    final Uri streamUri =
-        Uri.parse('https://kieai.redpandaai.co/api/file-stream-upload');
+    final Uri base64Uri = _kieProxyUri('/api/file-base64-upload');
+    final Uri streamUri = _kieProxyUri('/api/file-stream-upload');
     final String mime = _dataUriMime(uploadBytes);
     final String extension = mime == 'image/png'
         ? 'png'
@@ -20790,10 +25449,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
       throw StateError(
-          'KIE API key missing. Use --dart-define=KIE_API_KEY=...');
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...');
     }
 
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final http.Response response = await http
         .post(
           uri,
@@ -20846,10 +25505,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
       throw StateError(
-          'KIE API key missing. Use --dart-define=KIE_API_KEY=...');
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...');
     }
 
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
     final http.Response response = await http
         .post(
           uri,
@@ -20899,6 +25558,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Future<String> _createKieImageTask({
     required _KieAiImageModel model,
     required _KieNanoBananaVersion nanoVersion,
+    required _KieNanoAspectRatio nanoAspectRatio,
+    required _KieFluxAspectRatio fluxAspectRatio,
+    required _KieSeedreamAspectRatio seedreamAspectRatio,
+    required bool useOfficialNanoPrompt,
     required _KieIdeogramStyle ideogramStyle,
     required _KieIdeogramImageSize ideogramImageSize,
     required _AiCanvasSizePreset sizePreset,
@@ -20910,10 +25573,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
       throw StateError(
-          'KIE API key missing. Use --dart-define=KIE_API_KEY=...');
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...');
     }
 
-    final Uri uri = Uri.parse('https://api.kie.ai/api/v1/jobs/createTask');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/createTask');
+    final String? callBackUrl = _kieCallbackUrl;
     final bool hasRefs = referenceImageUrls.isNotEmpty;
     final http.Response response = await http
         .post(
@@ -20930,9 +25594,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 hasReferenceImages: hasRefs,
                 referenceImageCount: referenceImageUrls.length,
               ),
+              if (callBackUrl != null) 'callBackUrl': callBackUrl,
               'input': _buildKieImageInput(
                 model: model,
                 nanoVersion: nanoVersion,
+                nanoAspectRatio: nanoAspectRatio,
+                fluxAspectRatio: fluxAspectRatio,
+                seedreamAspectRatio: seedreamAspectRatio,
+                useOfficialNanoPrompt: useOfficialNanoPrompt,
                 ideogramStyle: ideogramStyle,
                 ideogramImageSize: ideogramImageSize,
                 sizePreset: sizePreset,
@@ -20981,11 +25650,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String apiKey = _kieApiKey;
     if (apiKey.trim().isEmpty) {
       throw StateError(
-          'KIE API key missing. Use --dart-define=KIE_API_KEY=...');
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...');
     }
 
-    final Uri uri =
-        Uri.parse('https://api.kie.ai/api/v1/jobs/recordInfo?taskId=$taskId');
+    final Uri uri = _kieProxyUri('/api/v1/jobs/recordInfo?taskId=$taskId');
     final int safeMaxAttempts = math.max(20, maxAttempts);
     final Duration Function(int) delayResolver =
         pollDelayResolver ?? _kiePollDelay;
@@ -21096,6 +25764,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Future<Uint8List> _generateImageWithKie({
     required _KieAiImageModel model,
     required _KieNanoBananaVersion nanoVersion,
+    required _KieNanoAspectRatio nanoAspectRatio,
+    required _KieFluxAspectRatio fluxAspectRatio,
+    required _KieSeedreamAspectRatio seedreamAspectRatio,
     required _KieIdeogramStyle ideogramStyle,
     required _KieIdeogramImageSize ideogramImageSize,
     required _AiCanvasSizePreset sizePreset,
@@ -21105,18 +25776,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     bool preserveReferenceFormat = false,
     bool normalizeReferenceOrientation = true,
     bool preferStreamUploadForReferences = false,
+    bool useOfficialNanoPrompt = false,
   }) async {
     final String? referenceAspectRatio = referenceImages.isNotEmpty
         ? _estimateReferenceAspectRatio(referenceImages.first)
         : null;
+    final int maxRefs = _kieMaxReferenceImages(model);
+    final bool preserveFormatForModel =
+        preserveReferenceFormat || model == _KieAiImageModel.nanoBanana;
+    final bool normalizeOrientationForModel =
+        model == _KieAiImageModel.nanoBanana
+            ? false
+            : normalizeReferenceOrientation;
+    final bool preferStreamForModel =
+        preferStreamUploadForReferences || model == _KieAiImageModel.nanoBanana;
     final List<String> referenceUrls = <String>[];
     if (referenceImages.isNotEmpty) {
-      for (final Uint8List imageBytes in referenceImages.take(2)) {
+      for (final Uint8List imageBytes in referenceImages.take(maxRefs)) {
         referenceUrls.add(await _uploadKieReferenceFile(
           imageBytes,
-          preserveFormat: preserveReferenceFormat,
-          normalizeOrientation: normalizeReferenceOrientation,
-          preferStreamUpload: preferStreamUploadForReferences,
+          preserveFormat: preserveFormatForModel,
+          normalizeOrientation: normalizeOrientationForModel,
+          preferStreamUpload: preferStreamForModel,
         ));
       }
     }
@@ -21124,6 +25805,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String taskId = await _createKieImageTask(
       model: model,
       nanoVersion: nanoVersion,
+      nanoAspectRatio: nanoAspectRatio,
+      fluxAspectRatio: fluxAspectRatio,
+      seedreamAspectRatio: seedreamAspectRatio,
+      useOfficialNanoPrompt: useOfficialNanoPrompt,
       ideogramStyle: ideogramStyle,
       ideogramImageSize: ideogramImageSize,
       sizePreset: sizePreset,
@@ -21142,13 +25827,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         TextEditingController(text: _lastKiePrompt);
     _KieAiImageModel selectedModel = _defaultKieAiImageModel;
     _KieNanoBananaVersion selectedNanoVersion = _defaultKieNanoVersion;
+    _KieNanoAspectRatio selectedNanoAspectRatio = _defaultKieNanoAspectRatio;
+    _KieFluxAspectRatio selectedFluxAspectRatio = _defaultKieFluxAspectRatio;
+    _KieSeedreamAspectRatio selectedSeedreamAspectRatio =
+        _defaultKieSeedreamAspectRatio;
     _KieIdeogramStyle selectedIdeogramStyle = _defaultKieIdeogramStyle;
     _KieIdeogramImageSize selectedIdeogramImageSize =
         _defaultKieIdeogramImageSize;
     _AiGenerationQuality selectedAiQuality = _defaultAiGenerationQuality;
     _AiCanvasSizePreset selectedProjectSizePreset = _AiCanvasSizePreset.story;
     _ProjectDpiPreset selectedProjectDpi = _ProjectDpiPreset.dpi300;
-    final List<Uint8List?> aiReferenceImages = <Uint8List?>[null, null];
+    final List<Uint8List?> aiReferenceImages =
+        List<Uint8List?>.filled(16, null, growable: false);
     bool sheetOpen = true;
     int pageIndex = 0; // 0=root, 1=project, 2=ai
 
@@ -21162,14 +25852,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         barrierColor: Colors.transparent,
         backgroundColor: Colors.transparent,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.58,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.36,
         ),
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
         ),
         builder: (sheetContext) {
+          const Color aiSheetSurface = _bottomSheetSurface;
+          const Color aiSheetStroke = Color(0x4D7D879C);
           String? aiError;
           bool isUploadingReference = false;
+          bool modelMenuExpanded = false;
+          bool qualityMenuExpanded = false;
+          bool styleMenuExpanded = false;
+          bool sizeMenuExpanded = false;
 
           Future<void> pickAiReferenceImage(
             StateSetter setSheetState,
@@ -21183,7 +25879,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             try {
               final XFile? file = await _picker.pickImage(
                 source: ImageSource.gallery,
-                imageQuality: 97,
+                requestFullMetadata: false,
               );
               if (file == null || !sheetContext.mounted || !sheetOpen) {
                 return;
@@ -21216,22 +25912,54 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               });
               return;
             }
-            final List<Uint8List> references = aiReferenceImages
-                .whereType<Uint8List>()
-                .toList(growable: false);
-            if (selectedModel == _KieAiImageModel.ideogramV3Remix &&
-                references.isEmpty) {
+            final List<_AiGenerationQuality> qualityOptions =
+                _kieQualityOptionsForModel(selectedModel);
+            final _AiGenerationQuality effectiveQuality =
+                qualityOptions.contains(selectedAiQuality)
+                    ? selectedAiQuality
+                    : qualityOptions.first;
+            if (selectedModel == _KieAiImageModel.flux2Pro &&
+                (prompt.length < 3 || prompt.length > 5000)) {
               setSheetState(() {
                 aiError =
-                    'Ideogram v3 Remix requires at least one uploaded reference image.';
+                    'Flux 2 Pro prompt must be between 3 and 5000 characters.';
               });
               return;
             }
+            if (selectedModel == _KieAiImageModel.seedream5Lite &&
+                prompt.length > 3000) {
+              setSheetState(() {
+                aiError =
+                    'Seedream 5 Lite prompt must be 3000 characters or less.';
+              });
+              return;
+            }
+            final int maxRefs = _kieMaxReferenceImages(selectedModel);
+            final List<Uint8List> references = aiReferenceImages
+                .take(maxRefs)
+                .whereType<Uint8List>()
+                .toList(growable: false);
             if (selectedModel == _KieAiImageModel.seedream5Lite &&
                 references.isEmpty) {
               setSheetState(() {
                 aiError =
                     'Seedream 5 Lite requires at least one uploaded reference image.';
+              });
+              return;
+            }
+            if (selectedModel == _KieAiImageModel.gptImage15 &&
+                references.isEmpty) {
+              setSheetState(() {
+                aiError =
+                    'GPT Image 1.5 requires at least one uploaded reference image.';
+              });
+              return;
+            }
+            if (selectedModel == _KieAiImageModel.flux2Pro &&
+                references.isEmpty) {
+              setSheetState(() {
+                aiError =
+                    'Flux 2 Pro requires at least one uploaded reference image.';
               });
               return;
             }
@@ -21243,7 +25971,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               });
               return;
             }
-            final int maxRefs = _kieMaxReferenceImages(selectedModel);
             if (references.length > maxRefs) {
               setSheetState(() {
                 aiError =
@@ -21254,14 +25981,36 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
             if (!sheetContext.mounted || !sheetOpen) return;
             final _AiCanvasSizePreset mappedSizePreset;
-            switch (selectedIdeogramImageSize) {
-              case _KieIdeogramImageSize.square:
-              case _KieIdeogramImageSize.squareHd:
-                mappedSizePreset = _AiCanvasSizePreset.square;
-              case _KieIdeogramImageSize.portrait43:
-                mappedSizePreset = _AiCanvasSizePreset.portrait;
-              case _KieIdeogramImageSize.portrait169:
-                mappedSizePreset = _AiCanvasSizePreset.story;
+            if (selectedModel == _KieAiImageModel.nanoBanana) {
+              mappedSizePreset = _sizePresetFromAspectRatioValue(
+                selectedNanoAspectRatio.apiValue,
+              );
+            } else if (selectedModel == _KieAiImageModel.flux2Pro) {
+              final String sizeValue = selectedFluxAspectRatio ==
+                      _KieFluxAspectRatio.auto
+                  ? (_estimateReferenceAspectRatio(references.first) ?? '1:1')
+                  : selectedFluxAspectRatio.apiValue;
+              mappedSizePreset = _sizePresetFromAspectRatioValue(sizeValue);
+            } else if (selectedModel == _KieAiImageModel.seedream5Lite) {
+              mappedSizePreset = _sizePresetFromAspectRatioValue(
+                selectedSeedreamAspectRatio.apiValue,
+              );
+            } else if (selectedModel == _KieAiImageModel.gptImage15) {
+              mappedSizePreset = _sizePresetFromAspectRatioValue(
+                _sanitizeGptAspectRatio(selectedFluxAspectRatio).apiValue,
+              );
+            } else {
+              switch (selectedIdeogramImageSize) {
+                case _KieIdeogramImageSize.square:
+                case _KieIdeogramImageSize.squareHd:
+                case _KieIdeogramImageSize.landscape43:
+                case _KieIdeogramImageSize.landscape169:
+                  mappedSizePreset = _AiCanvasSizePreset.square;
+                case _KieIdeogramImageSize.portrait43:
+                  mappedSizePreset = _AiCanvasSizePreset.portrait;
+                case _KieIdeogramImageSize.portrait169:
+                  mappedSizePreset = _AiCanvasSizePreset.story;
+              }
             }
             sheetOpen = false;
             Navigator.of(sheetContext).pop(
@@ -21269,10 +26018,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                 aiGenerateRequest: _AiImageGenerateRequest(
                   model: selectedModel,
                   nanoVersion: selectedNanoVersion,
+                  nanoAspectRatio: selectedNanoAspectRatio,
+                  fluxAspectRatio: selectedFluxAspectRatio,
+                  seedreamAspectRatio: selectedSeedreamAspectRatio,
                   ideogramStyle: selectedIdeogramStyle,
                   ideogramImageSize: selectedIdeogramImageSize,
                   sizePreset: mappedSizePreset,
-                  quality: selectedAiQuality,
+                  quality: effectiveQuality,
                   prompt: prompt,
                   referenceImages: references,
                 ),
@@ -21280,16 +26032,29 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             );
           }
 
-          Widget sectionTitle(String label) {
+          Widget sectionTitle(String label, {IconData? icon}) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFFF3F3F2),
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w800,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (icon != null) ...[
+                    Icon(
+                      icon,
+                      size: 14,
+                      color: const Color(0xFFB8B7B5),
+                    ),
+                    const SizedBox(width: 5),
+                  ],
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFF3F3F2),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             );
           }
@@ -21306,8 +26071,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 130),
                 curve: Curves.easeOutCubic,
-                height: 36,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: selected ? kActiveAccent : _floatingPanelSurfaceSolid,
@@ -21325,7 +26090,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                     color: selected
                         ? kActiveAccentForeground
                         : const Color(0xFFF3F3F2),
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -21339,18 +26104,172 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             required String Function(T) labelOf,
             required ValueChanged<T> onChanged,
           }) {
-            return Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: items
-                  .map(
-                    (item) => buildChip(
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List<Widget>.generate(items.length, (int index) {
+                  final T item = items[index];
+                  return Padding(
+                    padding: EdgeInsets.only(
+                        right: index == items.length - 1 ? 0 : 6),
+                    child: buildChip(
                       label: labelOf(item),
                       selected: item == value,
                       onTap: () => onChanged(item),
                     ),
-                  )
-                  .toList(growable: false),
+                  );
+                }),
+              ),
+            );
+          }
+
+          Widget buildTopBorderPulse() {
+            return SizedBox(
+              height: 2.2,
+              child: StreamBuilder<int>(
+                stream: Stream<int>.periodic(
+                  const Duration(milliseconds: 46),
+                  (int tick) => tick,
+                ),
+                builder: (BuildContext context, AsyncSnapshot<int> snapshot) {
+                  final int tick = snapshot.data ?? 0;
+                  final double t = (tick % 140) / 140.0;
+                  final double glow = 0.52 + 0.48 * math.sin(t * math.pi * 2);
+                  final Color pulseColor = Color.lerp(
+                        const Color(0x16E6F24A),
+                        const Color(0x66E6F24A),
+                        glow,
+                      ) ??
+                      const Color(0x34E6F24A);
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment(-1.2 + (2.4 * t), 0),
+                        end: const Alignment(1.1, 0),
+                        colors: <Color>[
+                          const Color(0x00E6F24A),
+                          pulseColor,
+                          const Color(0x00E6F24A),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+
+          Widget buildInlineDropdownField<T>({
+            required String title,
+            required String valueLabel,
+            required bool isExpanded,
+            required VoidCallback onToggle,
+            required List<T> items,
+            required T selectedValue,
+            required String Function(T) labelOf,
+            required ValueChanged<T> onSelected,
+            bool highlightHeader = false,
+          }) {
+            final Color headerBg =
+                highlightHeader ? kActiveAccent : _floatingPanelSurfaceSolid;
+            final Color headerFg = highlightHeader
+                ? kActiveAccentForeground
+                : const Color(0xFFF3F3F2);
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _BouncyInkWell(
+                  pressedScale: 0.985,
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: onToggle,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: headerBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: highlightHeader
+                            ? Colors.transparent
+                            : _floatingPanelStrokeSolid,
+                        width: highlightHeader ? 0 : 0.55,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            color: headerFg.withOpacity(0.9),
+                            fontSize: 11.6,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            valueLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: TextStyle(
+                              color: headerFg,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Icon(
+                          isExpanded
+                              ? Icons.keyboard_arrow_up_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          size: 18,
+                          color: headerFg,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                ClipRect(
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 190),
+                    curve: Curves.easeOutCubic,
+                    child: isExpanded
+                        ? Container(
+                            margin: const EdgeInsets.only(top: 6),
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF17181C),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: _floatingPanelStrokeSolid,
+                                width: 0.55,
+                              ),
+                            ),
+                            child: Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: items
+                                  .map(
+                                    (item) => buildChip(
+                                      label: labelOf(item),
+                                      selected: item == selectedValue,
+                                      onTap: () => onSelected(item),
+                                    ),
+                                  )
+                                  .toList(growable: false),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             );
           }
 
@@ -21360,79 +26279,129 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             required String label,
           }) {
             final Uint8List? bytes = aiReferenceImages[index];
-            return Expanded(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: isUploadingReference
-                    ? null
-                    : () => pickAiReferenceImage(setSheetState, index),
-                child: Container(
-                  height: 88,
-                  decoration: BoxDecoration(
-                    color: _floatingPanelSurfaceSolid,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: _floatingPanelStrokeSolid),
-                  ),
-                  child: bytes == null
-                      ? Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.upload_outlined,
-                                size: 18,
-                                color: Color(0xFFD4D4D3),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                label,
-                                style: const TextStyle(
-                                  color: Color(0xFFB8B7B5),
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      : Stack(
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: isUploadingReference
+                  ? null
+                  : () => pickAiReferenceImage(setSheetState, index),
+              child: Container(
+                height: 64,
+                decoration: BoxDecoration(
+                  color: _floatingPanelSurfaceSolid,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _floatingPanelStrokeSolid),
+                ),
+                child: bytes == null
+                    ? Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Positioned.fill(
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(11),
-                                child: Image.memory(
-                                  bytes,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
+                            const Icon(
+                              Icons.add_photo_alternate_outlined,
+                              size: 16,
+                              color: Color(0xFFD4D4D3),
                             ),
-                            Positioned(
-                              top: 4,
-                              right: 4,
-                              child: InkWell(
-                                onTap: () {
-                                  setSheetState(() {
-                                    aiReferenceImages[index] = null;
-                                  });
-                                },
-                                child: Container(
-                                  width: 21,
-                                  height: 21,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xAA19191A),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Icon(
-                                    Icons.close_rounded,
-                                    size: 14,
-                                    color: Color(0xFFF3F3F2),
-                                  ),
-                                ),
+                            const SizedBox(width: 5),
+                            Text(
+                              label,
+                              style: const TextStyle(
+                                color: Color(0xFFB8B7B5),
+                                fontSize: 10.8,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ],
                         ),
-                ),
+                      )
+                    : Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(11),
+                              child: Image.memory(
+                                bytes,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            top: 3,
+                            right: 3,
+                            child: InkWell(
+                              onTap: () {
+                                setSheetState(() {
+                                  aiReferenceImages[index] = null;
+                                });
+                              },
+                              child: Container(
+                                width: 18,
+                                height: 18,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xAA19191A),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Icon(
+                                  Icons.close_rounded,
+                                  size: 12,
+                                  color: Color(0xFFF3F3F2),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            );
+          }
+
+          String referenceSlotLabel(int index) {
+            final bool requiredFirst =
+                (selectedModel == _KieAiImageModel.seedream5Lite ||
+                        selectedModel == _KieAiImageModel.gptImage15 ||
+                        selectedModel == _KieAiImageModel.flux2Pro) &&
+                    index == 0;
+            return requiredFirst ? 'Required' : 'Image ${index + 1}';
+          }
+
+          Widget buildReferencePickerRow(StateSetter setSheetState) {
+            final int maxRefs = _kieMaxReferenceImages(selectedModel);
+            if (maxRefs <= 0) {
+              return const SizedBox.shrink();
+            }
+            if (maxRefs <= 3) {
+              return Row(
+                children: List<Widget>.generate(maxRefs, (int index) {
+                  return Expanded(
+                    child: Padding(
+                      padding:
+                          EdgeInsets.only(right: index == maxRefs - 1 ? 0 : 6),
+                      child: buildReferenceTile(
+                        setSheetState: setSheetState,
+                        index: index,
+                        label: referenceSlotLabel(index),
+                      ),
+                    ),
+                  );
+                }),
+              );
+            }
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List<Widget>.generate(maxRefs, (int index) {
+                  return Padding(
+                    padding:
+                        EdgeInsets.only(right: index == maxRefs - 1 ? 0 : 6),
+                    child: SizedBox(
+                      width: 106,
+                      child: buildReferenceTile(
+                        setSheetState: setSheetState,
+                        index: index,
+                        label: referenceSlotLabel(index),
+                      ),
+                    ),
+                  );
+                }),
               ),
             );
           }
@@ -21441,514 +26410,794 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             data: Theme.of(sheetContext).copyWith(
               bottomSheetTheme: const BottomSheetThemeData(
                 surfaceTintColor: Colors.transparent,
-                backgroundColor: WonderPicEditorScreen._pageBg,
+                backgroundColor: aiSheetSurface,
               ),
             ),
-            child: Material(
-              color: WonderPicEditorScreen._pageBg,
-              surfaceTintColor: Colors.transparent,
-              child: SafeArea(
-                top: false,
-                child: AnimatedPadding(
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOut,
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    10,
-                    16,
-                    18 + MediaQuery.of(sheetContext).viewInsets.bottom,
-                  ),
-                  child: StatefulBuilder(
-                    builder: (sheetContext, setSheetState) {
-                      Widget rootContent() {
-                        return Column(
-                          key: const ValueKey<String>('add-root'),
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF4F5358),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
+            child: ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(34)),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: aiSheetSurface,
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(34),
+                        ),
+                        border: Border.all(
+                          color: aiSheetStroke.withOpacity(0.36),
+                          width: 0.65,
+                        ),
+                      ),
+                      child: Material(
+                        color: Colors.transparent,
+                        surfaceTintColor: Colors.transparent,
+                        child: SafeArea(
+                          top: false,
+                          child: AnimatedPadding(
+                            duration: const Duration(milliseconds: 180),
+                            curve: Curves.easeOut,
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              10,
+                              16,
+                              18 +
+                                  MediaQuery.of(sheetContext).viewInsets.bottom,
                             ),
-                            const SizedBox(height: 14),
-                            ListTile(
-                              shape: RoundedRectangleBorder(
-                                side: const BorderSide(
-                                  color: _floatingPanelStrokeSolid,
-                                  width: 0.55,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              tileColor: _floatingPanelSurfaceSolid,
-                              leading: const Icon(
-                                Icons.add_photo_alternate_outlined,
-                                color: Color(0xFFD4D4D3),
-                                size: 20,
-                              ),
-                              title: const Text(
-                                'Add image',
-                                style: TextStyle(
-                                  color: Color(0xFFF3F3F2),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              onTap: () {
-                                sheetOpen = false;
-                                Navigator.of(sheetContext).pop(
-                                  const _AddBottomSheetResult.image(),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            ListTile(
-                              shape: RoundedRectangleBorder(
-                                side: const BorderSide(
-                                  color: _floatingPanelStrokeSolid,
-                                  width: 0.55,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              tileColor: _floatingPanelSurfaceSolid,
-                              leading: const Icon(
-                                Icons.dashboard_customize_outlined,
-                                color: Color(0xFFD4D4D3),
-                                size: 20,
-                              ),
-                              title: const Text(
-                                'Create new project',
-                                style: TextStyle(
-                                  color: Color(0xFFF3F3F2),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              subtitle: const Text(
-                                'Square, Portrait, Story + DPI',
-                                style: TextStyle(
-                                  color: Color(0xFFB8B7B5),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              onTap: () {
-                                setSheetState(() {
-                                  pageIndex = 1;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            ListTile(
-                              shape: RoundedRectangleBorder(
-                                side: const BorderSide(
-                                  color: _floatingPanelStrokeSolid,
-                                  width: 0.55,
-                                ),
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                              tileColor: _floatingPanelSurfaceSolid,
-                              leading: const Icon(
-                                Icons.auto_awesome_outlined,
-                                color: Color(0xFFD4D4D3),
-                                size: 20,
-                              ),
-                              title: const Text(
-                                'Generate image by AI',
-                                style: TextStyle(
-                                  color: Color(0xFFF3F3F2),
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              subtitle: const Text(
-                                'Open model page',
-                                style: TextStyle(
-                                  color: Color(0xFFB8B7B5),
-                                  fontSize: 12,
-                                ),
-                              ),
-                              onTap: () {
-                                setSheetState(() {
-                                  pageIndex = 2;
-                                });
-                              },
-                            ),
-                          ],
-                        );
-                      }
-
-                      Widget projectContent() {
-                        return Column(
-                          key: const ValueKey<String>('add-project-page'),
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    setSheetState(() {
-                                      pageIndex = 0;
-                                    });
-                                  },
-                                  child: const SizedBox(
-                                    width: 34,
-                                    height: 34,
-                                    child: Icon(
-                                      Icons.arrow_back_rounded,
-                                      size: 20,
-                                      color: Color(0xFFD4D4D3),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Expanded(
-                                  child: Text(
-                                    'Create New Project',
-                                    style: TextStyle(
-                                      color: Color(0xFFF3F3F2),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            sectionTitle('Canvas Size'),
-                            buildSegmentWrap<_AiCanvasSizePreset>(
-                              items: _AiCanvasSizePreset.values,
-                              value: selectedProjectSizePreset,
-                              labelOf: (size) => size.label,
-                              onChanged: (value) {
-                                setSheetState(() {
-                                  selectedProjectSizePreset = value;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            sectionTitle('Resolution (DPI)'),
-                            buildSegmentWrap<_ProjectDpiPreset>(
-                              items: _ProjectDpiPreset.values,
-                              value: selectedProjectDpi,
-                              labelOf: (dpi) => dpi.label,
-                              onChanged: (value) {
-                                setSheetState(() {
-                                  selectedProjectDpi = value;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildTextEffectFloatingActionButton(
-                                    label: 'Cancel',
-                                    onTap: () {
-                                      sheetOpen = false;
-                                      Navigator.of(sheetContext).pop();
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildTextEffectFloatingActionButton(
-                                    label: 'Create',
-                                    onTap: () {
-                                      sheetOpen = false;
-                                      Navigator.of(sheetContext).pop(
-                                        _AddBottomSheetResult.project(
-                                          projectRequest: _ProjectCreateRequest(
-                                            sizePreset:
-                                                selectedProjectSizePreset,
-                                            dpi: selectedProjectDpi,
+                            child: StatefulBuilder(
+                              builder: (sheetContext, setSheetState) {
+                                Widget rootContent() {
+                                  return Column(
+                                    key: const ValueKey<String>('add-root'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 38,
+                                        height: 4,
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF4F5358),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 24),
+                                      ListTile(
+                                        shape: RoundedRectangleBorder(
+                                          side: const BorderSide(
+                                            color: _floatingPanelStrokeSolid,
+                                            width: 0.55,
                                           ),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        tileColor: _floatingPanelSurfaceSolid,
+                                        leading: const Icon(
+                                          Icons.add_photo_alternate_outlined,
+                                          color: Color(0xFFD4D4D3),
+                                          size: 20,
+                                        ),
+                                        title: const Text(
+                                          'Add image',
+                                          style: TextStyle(
+                                            color: Color(0xFFF3F3F2),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          sheetOpen = false;
+                                          Navigator.of(sheetContext).pop(
+                                            const _AddBottomSheetResult.image(),
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      ListTile(
+                                        shape: RoundedRectangleBorder(
+                                          side: const BorderSide(
+                                            color: _floatingPanelStrokeSolid,
+                                            width: 0.55,
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        tileColor: _floatingPanelSurfaceSolid,
+                                        leading: const Icon(
+                                          Icons.dashboard_customize_outlined,
+                                          color: Color(0xFFD4D4D3),
+                                          size: 20,
+                                        ),
+                                        title: const Text(
+                                          'Create new project',
+                                          style: TextStyle(
+                                            color: Color(0xFFF3F3F2),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        subtitle: const Text(
+                                          'Square, Portrait, Story + DPI',
+                                          style: TextStyle(
+                                            color: Color(0xFFB8B7B5),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          setSheetState(() {
+                                            pageIndex = 1;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      ListTile(
+                                        shape: RoundedRectangleBorder(
+                                          side: const BorderSide(
+                                            color: _floatingPanelStrokeSolid,
+                                            width: 0.55,
+                                          ),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        tileColor: _floatingPanelSurfaceSolid,
+                                        leading: const Icon(
+                                          Icons.auto_awesome_outlined,
+                                          color: Color(0xFFD4D4D3),
+                                          size: 20,
+                                        ),
+                                        title: const Text(
+                                          'Generate image by AI',
+                                          style: TextStyle(
+                                            color: Color(0xFFF3F3F2),
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        subtitle: const Text(
+                                          'Open model page',
+                                          style: TextStyle(
+                                            color: Color(0xFFB8B7B5),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                        onTap: () {
+                                          setSheetState(() {
+                                            pageIndex = 2;
+                                          });
+                                        },
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                Widget projectContent() {
+                                  return Column(
+                                    key: const ValueKey<String>(
+                                        'add-project-page'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          InkWell(
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                            onTap: () {
+                                              setSheetState(() {
+                                                pageIndex = 0;
+                                              });
+                                            },
+                                            child: const SizedBox(
+                                              width: 34,
+                                              height: 34,
+                                              child: Icon(
+                                                Icons.arrow_back_rounded,
+                                                size: 20,
+                                                color: Color(0xFFD4D4D3),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          const Expanded(
+                                            child: Text(
+                                              'Create New Project',
+                                              style: TextStyle(
+                                                color: Color(0xFFF3F3F2),
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      sectionTitle('Canvas Size'),
+                                      buildSegmentWrap<_AiCanvasSizePreset>(
+                                        items: _AiCanvasSizePreset.values,
+                                        value: selectedProjectSizePreset,
+                                        labelOf: (size) => size.label,
+                                        onChanged: (value) {
+                                          setSheetState(() {
+                                            selectedProjectSizePreset = value;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 10),
+                                      sectionTitle('Resolution (DPI)'),
+                                      buildSegmentWrap<_ProjectDpiPreset>(
+                                        items: _ProjectDpiPreset.values,
+                                        value: selectedProjectDpi,
+                                        labelOf: (dpi) => dpi.label,
+                                        onChanged: (value) {
+                                          setSheetState(() {
+                                            selectedProjectDpi = value;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 14),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child:
+                                                _buildTextEffectFloatingActionButton(
+                                              label: 'Cancel',
+                                              onTap: () {
+                                                sheetOpen = false;
+                                                Navigator.of(sheetContext)
+                                                    .pop();
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child:
+                                                _buildTextEffectFloatingActionButton(
+                                              label: 'Create',
+                                              onTap: () {
+                                                sheetOpen = false;
+                                                Navigator.of(sheetContext).pop(
+                                                  _AddBottomSheetResult.project(
+                                                    projectRequest:
+                                                        _ProjectCreateRequest(
+                                                      sizePreset:
+                                                          selectedProjectSizePreset,
+                                                      dpi: selectedProjectDpi,
+                                                    ),
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                Widget aiContent() {
+                                  const List<_KieAiImageModel> visibleAiModels =
+                                      <_KieAiImageModel>[
+                                    _KieAiImageModel.nanoBanana,
+                                    _KieAiImageModel.gptImage15,
+                                    _KieAiImageModel.ideogramV3Remix,
+                                    _KieAiImageModel.flux2Pro,
+                                    _KieAiImageModel.seedream5Lite,
+                                  ];
+                                  if (!visibleAiModels
+                                      .contains(selectedModel)) {
+                                    selectedModel = visibleAiModels.first;
+                                  }
+                                  void resetAiControls() {
+                                    setSheetState(() {
+                                      selectedModel = _defaultKieAiImageModel;
+                                      selectedNanoVersion =
+                                          _defaultKieNanoVersion;
+                                      selectedNanoAspectRatio =
+                                          _defaultKieNanoAspectRatio;
+                                      selectedFluxAspectRatio =
+                                          _defaultKieFluxAspectRatio;
+                                      selectedSeedreamAspectRatio =
+                                          _defaultKieSeedreamAspectRatio;
+                                      selectedIdeogramStyle =
+                                          _defaultKieIdeogramStyle;
+                                      selectedIdeogramImageSize =
+                                          _defaultKieIdeogramImageSize;
+                                      selectedAiQuality =
+                                          _defaultAiGenerationQuality;
+                                      promptController.clear();
+                                      for (int i = 0;
+                                          i < aiReferenceImages.length;
+                                          i++) {
+                                        aiReferenceImages[i] = null;
+                                      }
+                                      modelMenuExpanded = false;
+                                      qualityMenuExpanded = false;
+                                      styleMenuExpanded = false;
+                                      sizeMenuExpanded = false;
+                                      aiError = null;
+                                    });
+                                  }
+
+                                  return Column(
+                                    key: const ValueKey<String>('add-ai-page'),
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 2),
+                                      Center(
+                                        child: Container(
+                                          width: 44,
+                                          height: 4,
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xAA6F778A),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _floatingPanelSurfaceSolid,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: _floatingPanelStrokeSolid,
+                                          ),
+                                        ),
+                                        child: TextField(
+                                          controller: promptController,
+                                          maxLines: 4,
+                                          minLines: 3,
+                                          textInputAction: TextInputAction.done,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Color(0xFFF3F3F2),
+                                          ),
+                                          onChanged: (_) {
+                                            setSheetState(() {
+                                              aiError = null;
+                                            });
+                                          },
+                                          decoration: const InputDecoration(
+                                            isDense: true,
+                                            border: InputBorder.none,
+                                            hintText: 'Description...',
+                                            hintStyle: TextStyle(
+                                              color: Color(0xFFB8B7B5),
+                                              fontSize: 13,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      buildInlineDropdownField<
+                                          _KieAiImageModel>(
+                                        title: 'Model',
+                                        valueLabel: selectedModel.label,
+                                        isExpanded: modelMenuExpanded,
+                                        highlightHeader: true,
+                                        onToggle: () {
+                                          setSheetState(() {
+                                            modelMenuExpanded =
+                                                !modelMenuExpanded;
+                                            if (modelMenuExpanded) {
+                                              qualityMenuExpanded = false;
+                                              styleMenuExpanded = false;
+                                              sizeMenuExpanded = false;
+                                            }
+                                          });
+                                        },
+                                        items: visibleAiModels,
+                                        selectedValue: selectedModel,
+                                        labelOf: (model) => model.label,
+                                        onSelected: (value) {
+                                          setSheetState(() {
+                                            selectedModel = value;
+                                            final List<_AiGenerationQuality>
+                                                options =
+                                                _kieQualityOptionsForModel(
+                                                    selectedModel);
+                                            if (selectedModel ==
+                                                    _KieAiImageModel.flux2Pro ||
+                                                selectedModel ==
+                                                    _KieAiImageModel
+                                                        .seedream5Lite) {
+                                              selectedAiQuality =
+                                                  _kieDefaultQualityForModel(
+                                                      selectedModel);
+                                            } else if (!options
+                                                .contains(selectedAiQuality)) {
+                                              selectedAiQuality =
+                                                  _kieDefaultQualityForModel(
+                                                      selectedModel);
+                                            }
+                                            final List<_KieIdeogramImageSize>
+                                                sizeOptions =
+                                                _kieImageSizeOptionsForModel(
+                                                    selectedModel);
+                                            if (!sizeOptions.contains(
+                                                selectedIdeogramImageSize)) {
+                                              selectedIdeogramImageSize =
+                                                  sizeOptions.first;
+                                            }
+                                            if (selectedModel ==
+                                                    _KieAiImageModel
+                                                        .gptImage15 &&
+                                                !_kieGptAspectRatioOptions()
+                                                    .contains(
+                                                        selectedFluxAspectRatio)) {
+                                              selectedFluxAspectRatio =
+                                                  _kieGptAspectRatioOptions()
+                                                      .first;
+                                            }
+                                            modelMenuExpanded = false;
+                                            qualityMenuExpanded = false;
+                                            styleMenuExpanded = false;
+                                            sizeMenuExpanded = false;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      buildInlineDropdownField<
+                                          _AiGenerationQuality>(
+                                        title: selectedModel ==
+                                                _KieAiImageModel.ideogramV3Remix
+                                            ? 'Quality'
+                                            : 'Resolution',
+                                        valueLabel: _kieQualityLabelForModel(
+                                          selectedModel,
+                                          _kieQualityOptionsForModel(
+                                                      selectedModel)
+                                                  .contains(selectedAiQuality)
+                                              ? selectedAiQuality
+                                              : _kieDefaultQualityForModel(
+                                                  selectedModel),
+                                        ),
+                                        isExpanded: qualityMenuExpanded,
+                                        onToggle: () {
+                                          setSheetState(() {
+                                            qualityMenuExpanded =
+                                                !qualityMenuExpanded;
+                                            if (qualityMenuExpanded) {
+                                              modelMenuExpanded = false;
+                                              styleMenuExpanded = false;
+                                              sizeMenuExpanded = false;
+                                            }
+                                          });
+                                        },
+                                        items: _kieQualityOptionsForModel(
+                                            selectedModel),
+                                        selectedValue:
+                                            _kieQualityOptionsForModel(
+                                                        selectedModel)
+                                                    .contains(selectedAiQuality)
+                                                ? selectedAiQuality
+                                                : _kieDefaultQualityForModel(
+                                                    selectedModel),
+                                        labelOf: (quality) =>
+                                            _kieQualityLabelForModel(
+                                                selectedModel, quality),
+                                        onSelected: (value) {
+                                          setSheetState(() {
+                                            selectedAiQuality = value;
+                                            qualityMenuExpanded = false;
+                                          });
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
+                                      if (selectedModel ==
+                                          _KieAiImageModel.ideogramV3Remix) ...[
+                                        buildInlineDropdownField<
+                                            _KieIdeogramStyle>(
+                                          title: 'Style',
+                                          valueLabel:
+                                              selectedIdeogramStyle.label,
+                                          isExpanded: styleMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              styleMenuExpanded =
+                                                  !styleMenuExpanded;
+                                              if (styleMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                sizeMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _KieIdeogramStyle.values,
+                                          selectedValue: selectedIdeogramStyle,
+                                          labelOf: (style) => style.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedIdeogramStyle = value;
+                                              styleMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      if (selectedModel ==
+                                          _KieAiImageModel.nanoBanana) ...[
+                                        buildInlineDropdownField<
+                                            _KieNanoAspectRatio>(
+                                          title: 'Size',
+                                          valueLabel:
+                                              selectedNanoAspectRatio.label,
+                                          isExpanded: sizeMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              sizeMenuExpanded =
+                                                  !sizeMenuExpanded;
+                                              if (sizeMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                styleMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _KieNanoAspectRatio.values,
+                                          selectedValue:
+                                              selectedNanoAspectRatio,
+                                          labelOf: (ratio) => ratio.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedNanoAspectRatio = value;
+                                              sizeMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ] else if (selectedModel ==
+                                          _KieAiImageModel.flux2Pro) ...[
+                                        buildInlineDropdownField<
+                                            _KieFluxAspectRatio>(
+                                          title: 'Size',
+                                          valueLabel:
+                                              selectedFluxAspectRatio.label,
+                                          isExpanded: sizeMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              sizeMenuExpanded =
+                                                  !sizeMenuExpanded;
+                                              if (sizeMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                styleMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _KieFluxAspectRatio.values,
+                                          selectedValue:
+                                              selectedFluxAspectRatio,
+                                          labelOf: (ratio) => ratio.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedFluxAspectRatio = value;
+                                              sizeMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ] else if (selectedModel ==
+                                          _KieAiImageModel.seedream5Lite) ...[
+                                        buildInlineDropdownField<
+                                            _KieSeedreamAspectRatio>(
+                                          title: 'Size',
+                                          valueLabel:
+                                              selectedSeedreamAspectRatio.label,
+                                          isExpanded: sizeMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              sizeMenuExpanded =
+                                                  !sizeMenuExpanded;
+                                              if (sizeMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                styleMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _KieSeedreamAspectRatio.values,
+                                          selectedValue:
+                                              selectedSeedreamAspectRatio,
+                                          labelOf: (ratio) => ratio.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedSeedreamAspectRatio =
+                                                  value;
+                                              sizeMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ] else if (selectedModel ==
+                                          _KieAiImageModel.gptImage15) ...[
+                                        buildInlineDropdownField<
+                                            _KieFluxAspectRatio>(
+                                          title: 'Size',
+                                          valueLabel: _sanitizeGptAspectRatio(
+                                            selectedFluxAspectRatio,
+                                          ).label,
+                                          isExpanded: sizeMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              sizeMenuExpanded =
+                                                  !sizeMenuExpanded;
+                                              if (sizeMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                styleMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _kieGptAspectRatioOptions(),
+                                          selectedValue:
+                                              _sanitizeGptAspectRatio(
+                                            selectedFluxAspectRatio,
+                                          ),
+                                          labelOf: (ratio) => ratio.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedFluxAspectRatio = value;
+                                              sizeMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ] else ...[
+                                        buildInlineDropdownField<
+                                            _KieIdeogramImageSize>(
+                                          title: 'Size',
+                                          valueLabel: (_kieImageSizeOptionsForModel(
+                                                          selectedModel)
+                                                      .contains(
+                                                          selectedIdeogramImageSize)
+                                                  ? selectedIdeogramImageSize
+                                                  : _kieImageSizeOptionsForModel(
+                                                          selectedModel)
+                                                      .first)
+                                              .label,
+                                          isExpanded: sizeMenuExpanded,
+                                          onToggle: () {
+                                            setSheetState(() {
+                                              sizeMenuExpanded =
+                                                  !sizeMenuExpanded;
+                                              if (sizeMenuExpanded) {
+                                                modelMenuExpanded = false;
+                                                qualityMenuExpanded = false;
+                                                styleMenuExpanded = false;
+                                              }
+                                            });
+                                          },
+                                          items: _kieImageSizeOptionsForModel(
+                                              selectedModel),
+                                          selectedValue:
+                                              _kieImageSizeOptionsForModel(
+                                                          selectedModel)
+                                                      .contains(
+                                                          selectedIdeogramImageSize)
+                                                  ? selectedIdeogramImageSize
+                                                  : _kieImageSizeOptionsForModel(
+                                                          selectedModel)
+                                                      .first,
+                                          labelOf: (size) => size.label,
+                                          onSelected: (value) {
+                                            setSheetState(() {
+                                              selectedIdeogramImageSize = value;
+                                              sizeMenuExpanded = false;
+                                            });
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                      ],
+                                      if (_kieMaxReferenceImages(
+                                              selectedModel) >
+                                          0) ...[
+                                        buildReferencePickerRow(setSheetState),
+                                        const SizedBox(height: 14),
+                                      ] else
+                                        const SizedBox(height: 6),
+                                      if (aiError != null)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 8),
+                                          child: Text(
+                                            aiError!,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFFB91C1C),
+                                            ),
+                                          ),
+                                        ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child:
+                                                _buildTextEffectFloatingActionButton(
+                                              label: 'Refresh',
+                                              icon: Icons.refresh_rounded,
+                                              onTap: isUploadingReference
+                                                  ? () {}
+                                                  : resetAiControls,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 16),
+                                          Expanded(
+                                            child:
+                                                _buildTextEffectFloatingActionButton(
+                                              accent: true,
+                                              icon: Icons.auto_awesome_rounded,
+                                              label: isUploadingReference
+                                                  ? 'Uploading...'
+                                                  : 'Generate',
+                                              onTap: isUploadingReference
+                                                  ? () {}
+                                                  : () => submitAiRequest(
+                                                      setSheetState),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  );
+                                }
+
+                                return SingleChildScrollView(
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 180),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, animation) {
+                                      return FadeTransition(
+                                        opacity: animation,
+                                        child: SlideTransition(
+                                          position: Tween<Offset>(
+                                            begin: const Offset(0.08, 0),
+                                            end: Offset.zero,
+                                          ).animate(animation),
+                                          child: child,
                                         ),
                                       );
                                     },
+                                    child: pageIndex == 2
+                                        ? aiContent()
+                                        : (pageIndex == 1
+                                            ? projectContent()
+                                            : rootContent()),
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      }
-
-                      Widget aiContent() {
-                        const List<_KieAiImageModel> visibleAiModels =
-                            <_KieAiImageModel>[
-                          _KieAiImageModel.nanoBanana,
-                          _KieAiImageModel.ideogramV3Remix,
-                          _KieAiImageModel.flux2Pro,
-                          _KieAiImageModel.seedream5Lite,
-                        ];
-                        if (!visibleAiModels.contains(selectedModel)) {
-                          selectedModel = visibleAiModels.first;
-                        }
-                        return Column(
-                          key: const ValueKey<String>('add-ai-page'),
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    setSheetState(() {
-                                      pageIndex = 0;
-                                    });
-                                  },
-                                  child: const SizedBox(
-                                    width: 34,
-                                    height: 34,
-                                    child: Icon(
-                                      Icons.arrow_back_rounded,
-                                      size: 20,
-                                      color: Color(0xFFD4D4D3),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                const Expanded(
-                                  child: Text(
-                                    'Generate Image',
-                                    style: TextStyle(
-                                      color: Color(0xFFF3F3F2),
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ),
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(10),
-                                  onTap: () {
-                                    sheetOpen = false;
-                                    Navigator.of(sheetContext).pop();
-                                  },
-                                  child: const SizedBox(
-                                    width: 34,
-                                    height: 34,
-                                    child: Icon(
-                                      Icons.close_rounded,
-                                      size: 20,
-                                      color: Color(0xFFD4D4D3),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            sectionTitle('Model'),
-                            buildSegmentWrap<_KieAiImageModel>(
-                              items: visibleAiModels,
-                              value: selectedModel,
-                              labelOf: (model) => model.label,
-                              onChanged: (value) {
-                                setSheetState(() {
-                                  selectedModel = value;
-                                  final List<_AiGenerationQuality> options =
-                                      _kieQualityOptionsForModel(selectedModel);
-                                  if (!options.contains(selectedAiQuality)) {
-                                    selectedAiQuality = options.first;
-                                  }
-                                  final List<_KieIdeogramImageSize>
-                                      sizeOptions =
-                                      _kieImageSizeOptionsForModel(
-                                          selectedModel);
-                                  if (!sizeOptions
-                                      .contains(selectedIdeogramImageSize)) {
-                                    selectedIdeogramImageSize =
-                                        sizeOptions.first;
-                                  }
-                                });
+                                );
                               },
                             ),
-                            const SizedBox(height: 10),
-                            if (selectedModel ==
-                                _KieAiImageModel.ideogramV3Remix) ...[
-                              sectionTitle('Style'),
-                              buildSegmentWrap<_KieIdeogramStyle>(
-                                items: _KieIdeogramStyle.values,
-                                value: selectedIdeogramStyle,
-                                labelOf: (style) => style.label,
-                                onChanged: (value) {
-                                  setSheetState(() {
-                                    selectedIdeogramStyle = value;
-                                  });
-                                },
-                              ),
-                              const SizedBox(height: 10),
-                            ],
-                            sectionTitle('Quality'),
-                            buildSegmentWrap<_AiGenerationQuality>(
-                              items: _kieQualityOptionsForModel(selectedModel),
-                              value: _kieQualityOptionsForModel(selectedModel)
-                                      .contains(selectedAiQuality)
-                                  ? selectedAiQuality
-                                  : _kieDefaultQualityForModel(selectedModel),
-                              labelOf: (quality) => _kieQualityLabelForModel(
-                                  selectedModel, quality),
-                              onChanged: (value) {
-                                setSheetState(() {
-                                  selectedAiQuality = value;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            sectionTitle('Image Size'),
-                            buildSegmentWrap<_KieIdeogramImageSize>(
-                              items:
-                                  _kieImageSizeOptionsForModel(selectedModel),
-                              value: _kieImageSizeOptionsForModel(selectedModel)
-                                      .contains(selectedIdeogramImageSize)
-                                  ? selectedIdeogramImageSize
-                                  : _kieImageSizeOptionsForModel(selectedModel)
-                                      .first,
-                              labelOf: (size) => size.label,
-                              onChanged: (value) {
-                                setSheetState(() {
-                                  selectedIdeogramImageSize = value;
-                                });
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _floatingPanelSurfaceSolid,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: _floatingPanelStrokeSolid,
-                                ),
-                              ),
-                              child: TextField(
-                                controller: promptController,
-                                maxLines: 4,
-                                minLines: 3,
-                                textInputAction: TextInputAction.done,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFFF3F3F2),
-                                ),
-                                onChanged: (_) {
-                                  setSheetState(() {
-                                    aiError = null;
-                                  });
-                                },
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: InputBorder.none,
-                                  hintText: 'Description...',
-                                  hintStyle: TextStyle(
-                                    color: Color(0xFFB8B7B5),
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 10),
-                            if (_kieMaxReferenceImages(selectedModel) > 1)
-                              Row(
-                                children: [
-                                  buildReferenceTile(
-                                    setSheetState: setSheetState,
-                                    index: 0,
-                                    label: 'Upload image 1',
-                                  ),
-                                  const SizedBox(width: 8),
-                                  buildReferenceTile(
-                                    setSheetState: setSheetState,
-                                    index: 1,
-                                    label: 'Upload image 2 (Optional)',
-                                  ),
-                                ],
-                              )
-                            else
-                              Row(
-                                children: [
-                                  buildReferenceTile(
-                                    setSheetState: setSheetState,
-                                    index: 0,
-                                    label: 'Upload image',
-                                  ),
-                                ],
-                              ),
-                            const SizedBox(height: 8),
-                            if (aiError != null)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: Text(
-                                  aiError!,
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFFB91C1C),
-                                  ),
-                                ),
-                              ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildTextEffectFloatingActionButton(
-                                    label: 'Cancel',
-                                    onTap: () {
-                                      sheetOpen = false;
-                                      Navigator.of(sheetContext).pop();
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: _buildTextEffectFloatingActionButton(
-                                    label: isUploadingReference
-                                        ? 'Uploading...'
-                                        : 'Generate',
-                                    onTap: isUploadingReference
-                                        ? () {}
-                                        : () => submitAiRequest(setSheetState),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      }
-
-                      return SingleChildScrollView(
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0.08, 0),
-                                  end: Offset.zero,
-                                ).animate(animation),
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: pageIndex == 2
-                              ? aiContent()
-                              : (pageIndex == 1
-                                  ? projectContent()
-                                  : rootContent()),
+                          ),
                         ),
-                      );
-                    },
+                      ),
+                    ),
                   ),
-                ),
+                  IgnorePointer(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            height: 1,
+                            color: aiSheetStroke.withOpacity(0.75),
+                          ),
+                          buildTopBorderPulse(),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -21991,24 +27240,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   ) async {
     if (_isAiCanvasGenerating || !mounted) return;
     final String apiKey = _kieApiKey.trim();
-    if (apiKey.isEmpty) {
-      _showExportMessage(
-        'KIE API key missing. Add --dart-define=KIE_API_KEY=...',
-        isError: true,
-      );
-      return;
-    }
     final bool hadWorkspaceBefore = _workspaceLayerForEdit(_layers) != null;
+    final double creditCost = _creditCostForAiQuality(request.quality);
+    final Duration expectedDuration = _estimateAiGenerateDuration(request);
 
     setState(() {
-      if (!hadWorkspaceBefore) {
-        _upsertSolidBackground(
-          solidSize: request.sizePreset.baseSize,
-          name: 'Background',
-        );
-      }
       _defaultKieAiImageModel = request.model;
       _defaultKieNanoVersion = request.nanoVersion;
+      _defaultKieNanoAspectRatio = request.nanoAspectRatio;
+      _defaultKieFluxAspectRatio = request.fluxAspectRatio;
+      _defaultKieSeedreamAspectRatio = request.seedreamAspectRatio;
       _defaultKieIdeogramStyle = request.ideogramStyle;
       _defaultKieIdeogramImageSize = request.ideogramImageSize;
       _defaultAiCanvasSizePreset = request.sizePreset;
@@ -22018,95 +27259,188 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _isAiCanvasGenerating = true;
       _aiCanvasGeneratingProgress = 0.0;
     });
-    _startAiCanvasGeneratingProgressEstimator();
+    _startAiCanvasGeneratingProgressEstimator(
+      expectedDuration: expectedDuration,
+    );
 
     try {
-      final Uint8List pngBytes = await _generateImageWithKie(
-        model: request.model,
-        nanoVersion: request.nanoVersion,
-        ideogramStyle: request.ideogramStyle,
-        ideogramImageSize: request.ideogramImageSize,
-        sizePreset: request.sizePreset,
-        quality: request.quality,
-        prompt: request.prompt,
-        referenceImages: request.referenceImages,
-      );
-      final ui.Image image = await _decodeUiImage(pngBytes);
-      if (!mounted) return;
-
-      _pushUndoSnapshot();
-      setState(() {
-        final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
-        if (!hadWorkspaceBefore || workspace == null) {
-          _upsertBackgroundLayer(
-            image: image,
-            thumbnailBytes: pngBytes,
+      if (apiKey.isEmpty) {
+        throw StateError(
+          'KIE backend proxy is not configured. Add --dart-define=SUPABASE_URL=... and --dart-define=SUPABASE_PUBLISHABLE_KEY=...',
+        );
+      }
+      await _runWithCreditReservation<void>(
+        operationType: 'ai_generate',
+        amount: creditCost,
+        metadata: <String, dynamic>{
+          'model': request.model.label,
+          'quality': request.quality.label,
+          'size_preset': request.sizePreset.label,
+          'reference_count': request.referenceImages.length,
+          'source': 'editor_generate',
+        },
+        run: () async {
+          final Uint8List pngBytes = await _generateImageWithKie(
+            model: request.model,
+            nanoVersion: request.nanoVersion,
+            nanoAspectRatio: request.nanoAspectRatio,
+            fluxAspectRatio: request.fluxAspectRatio,
+            seedreamAspectRatio: request.seedreamAspectRatio,
+            ideogramStyle: request.ideogramStyle,
+            ideogramImageSize: request.ideogramImageSize,
+            sizePreset: request.sizePreset,
+            quality: request.quality,
+            prompt: request.prompt,
+            referenceImages: request.referenceImages,
+            useOfficialNanoPrompt: true,
           );
-        } else {
-          final Size? workspaceSize = _workspaceSourceSize(workspace);
-          if (workspaceSize != null) {
-            _addOverlayImageLayer(
-              image: image,
-              thumbnailBytes: pngBytes,
-              workspaceSize: workspaceSize,
-            );
-          }
-        }
-      });
-      _showExportMessage('AI image generated successfully.');
+          final ui.Image image = await _decodeUiImage(pngBytes);
+          if (!mounted) return;
+
+          _pushUndoSnapshot();
+          setState(() {
+            final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+            if (!hadWorkspaceBefore || workspace == null) {
+              _upsertBackgroundLayer(
+                image: image,
+                thumbnailBytes: pngBytes,
+              );
+            } else {
+              final Size? workspaceSize = _workspaceSourceSize(workspace);
+              if (workspaceSize != null) {
+                _addOverlayImageLayer(
+                  image: image,
+                  thumbnailBytes: pngBytes,
+                  workspaceSize: workspaceSize,
+                );
+              }
+            }
+          });
+          unawaited(
+            _recordGeneratedImageInLibrary(
+              imageBytes: pngBytes,
+              prompt: request.prompt,
+              source: 'AI Generate',
+            ),
+          );
+          _showExportMessage('AI image generated successfully.');
+        },
+      );
     } catch (error) {
-      _showExportMessage(error.toString(), isError: true);
+      if (!mounted) return;
+      _showExportMessage(
+        _normalizeOperationErrorMessage(error),
+        isError: true,
+      );
     } finally {
       if (mounted) {
         await _completeAiCanvasGeneratingProgress();
-      } else {
-        _aiCanvasGeneratingProgressTimer?.cancel();
-        _aiCanvasGeneratingProgressTimer = null;
-      }
-      if (mounted) {
         setState(() {
           _isAiCanvasGenerating = false;
           _aiCanvasGeneratingProgress = 0.0;
           _aiCanvasGeneratingSizePreset = null;
         });
+      } else {
+        _aiCanvasGeneratingProgressTimer?.cancel();
+        _aiCanvasGeneratingProgressTimer = null;
+        _aiCanvasGeneratingStartedAt = null;
       }
     }
   }
 
-  void _startAiCanvasGeneratingProgressEstimator() {
+  Duration _estimateAiGenerateDuration(_AiImageGenerateRequest request) {
+    int seconds = 44;
+    switch (request.quality) {
+      case _AiGenerationQuality.k4:
+      case _AiGenerationQuality.high:
+        seconds += 26;
+      case _AiGenerationQuality.k2:
+        seconds += 14;
+      case _AiGenerationQuality.medium:
+      case _AiGenerationQuality.k1:
+        seconds += 8;
+    }
+    if (request.referenceImages.isNotEmpty) {
+      seconds += math.min(18, request.referenceImages.length * 4);
+    }
+    switch (request.model) {
+      case _KieAiImageModel.flux2Pro:
+      case _KieAiImageModel.seedream5Lite:
+      case _KieAiImageModel.gptImage15:
+        seconds += 8;
+      case _KieAiImageModel.ideogramV3Remix:
+      case _KieAiImageModel.nanoBanana:
+      case _KieAiImageModel.grokImagine:
+      case _KieAiImageModel.qwen:
+      case _KieAiImageModel.seedreamV4:
+      case _KieAiImageModel.zImage:
+      case _KieAiImageModel.imagen4:
+        seconds += 3;
+    }
+    final int safe = seconds.clamp(40, 90).toInt();
+    return Duration(seconds: safe);
+  }
+
+  Duration _estimateRegenerateDuration({
+    required _RegenerateGenerateRequest request,
+    required _AiGenerationQuality quality,
+  }) {
+    int seconds = 48;
+    switch (quality) {
+      case _AiGenerationQuality.k4:
+      case _AiGenerationQuality.high:
+        seconds += 18;
+      case _AiGenerationQuality.k2:
+        seconds += 12;
+      case _AiGenerationQuality.medium:
+      case _AiGenerationQuality.k1:
+        seconds += 7;
+    }
+    switch (request.model) {
+      case _RegenerateModel.flux2Pro:
+      case _RegenerateModel.seedream5Lite:
+        seconds += 6;
+      case _RegenerateModel.nanoBanana2:
+        seconds += 3;
+    }
+    return Duration(seconds: seconds.clamp(42, 88).toInt());
+  }
+
+  void _startAiCanvasGeneratingProgressEstimator({
+    Duration? expectedDuration,
+  }) {
     _aiCanvasGeneratingProgressTimer?.cancel();
+    _aiCanvasGeneratingStartedAt = DateTime.now();
+    _aiCanvasGeneratingExpectedDuration =
+        expectedDuration ?? const Duration(seconds: 58);
     _aiCanvasGeneratingProgressTimer = Timer.periodic(
-      const Duration(milliseconds: 110),
+      const Duration(milliseconds: 180),
       (_) {
         if (!mounted || (!_isAiCanvasGenerating && !_isExpandGenerating)) {
           _aiCanvasGeneratingProgressTimer?.cancel();
           _aiCanvasGeneratingProgressTimer = null;
+          _aiCanvasGeneratingStartedAt = null;
           return;
         }
+        final DateTime? startedAt = _aiCanvasGeneratingStartedAt;
+        if (startedAt == null) return;
         final double current = _aiCanvasGeneratingProgress;
-        final bool slowMode =
-            (_isUpscaleLayerProcessing && _upscaleEffectLayerId != null) ||
-                _isExpandGenerating;
-        final double step = slowMode
-            ? (current < 0.2
-                ? 0.0105
-                : current < 0.42
-                    ? 0.0084
-                    : current < 0.68
-                        ? 0.0059
-                        : current < 0.88
-                            ? 0.0036
-                            : 0.0019)
-            : (current < 0.24
-                ? 0.022
-                : current < 0.48
-                    ? 0.016
-                    : current < 0.74
-                        ? 0.011
-                        : current < 0.9
-                            ? 0.0065
-                            : 0.0032);
-        final double next = (current + step).clamp(0.0, 0.97).toDouble();
+        final int elapsedMs =
+            DateTime.now().difference(startedAt).inMilliseconds;
+        final int targetMs = math
+            .max(36000, _aiCanvasGeneratingExpectedDuration.inMilliseconds)
+            .toInt();
+        final double ratio = elapsedMs / targetMs;
+
+        double projected;
+        if (ratio <= 1.0) {
+          projected =
+              0.90 * Curves.easeOutCubic.transform(ratio.clamp(0.0, 1.0));
+        } else {
+          final double tail = ((ratio - 1.0) / 0.9).clamp(0.0, 1.0);
+          projected = 0.90 + (0.07 * Curves.easeOut.transform(tail));
+        }
+        final double next = projected.clamp(current, 0.97).toDouble();
         if ((next - current).abs() <= 0.0001) return;
         setState(() {
           _aiCanvasGeneratingProgress = next;
@@ -22118,6 +27452,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   Future<void> _completeAiCanvasGeneratingProgress() async {
     _aiCanvasGeneratingProgressTimer?.cancel();
     _aiCanvasGeneratingProgressTimer = null;
+    _aiCanvasGeneratingStartedAt = null;
     if (!mounted) return;
     setState(() {
       _aiCanvasGeneratingProgress = 1.0;
@@ -22481,122 +27816,295 @@ Hard requirements:
     throw const FormatException('OpenAI image response missing PNG payload.');
   }
 
-  Future<void> _openVectorGeneratorBottomSheet() async {
-    final bool allowSolidBackground = _workspaceLayerForEdit(_layers) != null;
-    bool sheetOpen = true;
-    _AiImageEngine selectedEngine = _defaultAiVectorEngine;
-    _AiImageModel selectedOpenAiModel = _defaultAiVectorModel;
-    _GeminiImageModel selectedGeminiModel = _defaultGeminiAiVectorModel;
-    _AiVectorKind selectedKind = _defaultAiVectorKind;
-    _AiVectorStyle selectedStyle = _defaultAiVectorStyle;
-    _AiVectorQuality selectedQuality = _defaultAiVectorQuality;
-    _AiVectorSize selectedSize = _defaultAiVectorSize;
-    _AiVectorBackground selectedBackground = allowSolidBackground
-        ? _defaultAiVectorBackground
-        : _AiVectorBackground.transparent;
+  Uri _elementsCatalogUri({
+    String? categorySlug,
+    int limit = 120,
+    int offset = 0,
+  }) {
+    final String category = (categorySlug ?? '').trim();
+    return Uri.parse('$_kSupabaseUrl/functions/v1/elements-catalog').replace(
+      queryParameters: <String, String>{
+        'limit': '$limit',
+        'offset': '$offset',
+        if (category.isNotEmpty) 'category': category,
+      },
+    );
+  }
 
-    final TextEditingController promptController =
-        TextEditingController(text: _lastVectorPrompt);
+  Future<_ElementsCatalogResponse> _fetchElementsCatalog({
+    String? categorySlug,
+    int limit = 120,
+    int offset = 0,
+  }) async {
+    final Uri uri = _elementsCatalogUri(
+      categorySlug: categorySlug,
+      limit: limit,
+      offset: offset,
+    );
+    final http.Response response = await http.get(
+      uri,
+      headers: <String, String>{
+        'Accept': 'application/json',
+      },
+    ).timeout(const Duration(seconds: 30));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Elements request failed (${response.statusCode}).');
+    }
+    final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid elements response.');
+    }
+    if (decoded['ok'] == false) {
+      throw StateError(
+          (decoded['error'] ?? 'Elements request failed.').toString());
+    }
+    return _ElementsCatalogResponse.fromJson(decoded);
+  }
+
+  Future<void> _beginPendingElementPlacement({
+    required _ElementsAssetItem selectedAsset,
+    required bool isDragPickup,
+    Offset? globalPosition,
+  }) async {
+    if (!mounted) return;
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    if (workspace == null) {
+      final _LoadedElementAsset loaded =
+          await _loadElementAsset(selectedAsset.fileUrl);
+      if (!mounted) return;
+      _pushUndoSnapshot();
+      setState(() {
+        _pendingElementPlacement = null;
+        _pendingElementPlacementPointerId = null;
+        _pendingElementPlacementGlobalPosition = null;
+        _pendingElementPlacementPointerDownGlobalPosition = null;
+        _pendingElementPlacementQueuedDropWorkspacePoint = null;
+        _pendingElementPlacementPositionNotifier.value = null;
+        _upsertBackgroundLayer(
+          image: loaded.image,
+          thumbnailBytes: loaded.bytes,
+        );
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _showExportMessage('Element added as workspace background.');
+      });
+      return;
+    }
+
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      throw StateError('Create or upload a workspace image first.');
+    }
+
+    final _PendingElementPlacement pendingPlacement =
+        _preparePendingElementPlacementLoading(
+      assetId: selectedAsset.id,
+      fileUrl: selectedAsset.fileUrl,
+      placeOnDrop: isDragPickup,
+    );
+
+    setState(() {
+      _pendingElementPlacement = pendingPlacement;
+      _pendingElementPlacementPointerId = null;
+      _pendingElementPlacementGlobalPosition = globalPosition;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      _pendingElementPlacementQueuedDropWorkspacePoint = null;
+      _pendingElementPlacementPositionNotifier.value = globalPosition;
+    });
+    unawaited(
+      _resolvePendingElementPlacementAsset(
+        selectedAsset: selectedAsset,
+        workspaceSize: workspaceSize,
+        placeOnDrop: isDragPickup,
+      ),
+    );
+    _showExportMessage(
+      isDragPickup
+          ? 'Element ready. Drag and release on canvas.'
+          : 'Element ready. Move it, then tap on canvas to place.',
+    );
+  }
+
+  Future<void> _insertElementAtCanvasCenter(
+      _ElementsAssetItem selectedAsset) async {
+    if (!mounted) return;
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    if (workspace == null) {
+      throw StateError('Create or upload a workspace image first.');
+    }
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      throw StateError('Create or upload a workspace image first.');
+    }
+    final _LoadedElementAsset loaded =
+        await _loadElementAsset(selectedAsset.fileUrl);
+    if (!mounted) return;
+    final Offset centeredPosition = Offset(
+      workspaceSize.width / 2,
+      workspaceSize.height / 2,
+    );
+    final double initialScale = _elementInitialLayerScaleForWorkspace(
+      image: loaded.image,
+      workspaceSize: workspaceSize,
+    );
+    _pushUndoSnapshot();
+    setState(() {
+      _addOverlayImageLayer(
+        image: loaded.image,
+        thumbnailBytes: loaded.bytes,
+        workspaceSize: workspaceSize,
+        position: centeredPosition,
+        initialLayerScaleOverride: initialScale,
+        layerNamePrefix: 'Overlay Element',
+      );
+      _isToolEnabled = false;
+      _resetMoveJoystickControls();
+      _pendingElementPlacement = null;
+      _pendingElementPlacementPointerId = null;
+      _pendingElementPlacementGlobalPosition = null;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      _pendingElementPlacementQueuedDropWorkspacePoint = null;
+      _pendingElementPlacementPositionNotifier.value = null;
+    });
+    _showExportMessage('Element added to canvas center.');
+  }
+
+  Future<void> _openVectorGeneratorBottomSheet() async {
+    bool sheetOpen = true;
+    bool didSelectElement = false;
+    final Map<String, List<_ElementsAssetItem>> assetsByCategory =
+        <String, List<_ElementsAssetItem>>{};
+    final Set<String> loadingCategories = <String>{};
+    String? selectedCategorySlug = _kDefaultElementsCategories.first.slug;
+    List<_ElementsCategory> categories =
+        List<_ElementsCategory>.from(_kDefaultElementsCategories);
+    bool isLoadingCatalog = true;
+    bool catalogRequested = false;
+    String? loadError;
+
+    Future<void> loadCatalog(StateSetter setSheetState) async {
+      setSheetState(() {
+        catalogRequested = true;
+        isLoadingCatalog = true;
+        loadError = null;
+      });
+      try {
+        final _ElementsCatalogResponse catalog = await _fetchElementsCatalog();
+        if (!sheetOpen || !mounted) return;
+        final List<_ElementsCategory> nextCategories = catalog
+                .categories.isEmpty
+            ? List<_ElementsCategory>.from(_kDefaultElementsCategories)
+            : List<_ElementsCategory>.from(catalog.categories)
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+        setSheetState(() {
+          categories = nextCategories;
+          for (final _ElementsAssetItem item in catalog.assets) {
+            assetsByCategory
+                .putIfAbsent(item.categorySlug, () => <_ElementsAssetItem>[])
+                .add(item);
+          }
+          if (selectedCategorySlug == null ||
+              !categories.any((entry) => entry.slug == selectedCategorySlug)) {
+            selectedCategorySlug =
+                categories.isEmpty ? null : categories.first.slug;
+          }
+          isLoadingCatalog = false;
+          loadError = null;
+        });
+      } catch (error) {
+        if (!sheetOpen || !mounted) return;
+        setSheetState(() {
+          isLoadingCatalog = false;
+          loadError = _normalizeOperationErrorMessage(error);
+        });
+        debugPrint('Elements catalog load failed: $error');
+      }
+    }
+
+    Future<void> loadCategoryAssets(
+      String categorySlug,
+      StateSetter setSheetState, {
+      bool force = false,
+    }) async {
+      if (!force && assetsByCategory.containsKey(categorySlug)) return;
+      if (loadingCategories.contains(categorySlug)) return;
+      setSheetState(() {
+        loadingCategories.add(categorySlug);
+        loadError = null;
+      });
+      try {
+        final _ElementsCatalogResponse catalog = await _fetchElementsCatalog(
+          categorySlug: categorySlug,
+          limit: 240,
+        );
+        if (!sheetOpen || !mounted) return;
+        setSheetState(() {
+          assetsByCategory[categorySlug] = catalog.assets;
+          loadingCategories.remove(categorySlug);
+        });
+      } catch (error) {
+        if (!sheetOpen || !mounted) return;
+        setSheetState(() {
+          loadingCategories.remove(categorySlug);
+          loadError = _normalizeOperationErrorMessage(error);
+        });
+        debugPrint('Elements category load failed [$categorySlug]: $error');
+      }
+    }
 
     try {
-      final _AiVectorSheetResult? sheetResult =
-          await showModalBottomSheet<_AiVectorSheetResult>(
+      await showModalBottomSheet<void>(
         context: context,
         isScrollControlled: false,
-        isDismissible: false,
-        enableDrag: false,
+        isDismissible: true,
+        enableDrag: true,
         barrierColor: Colors.transparent,
-        backgroundColor: const Color(0xFF1E1F22),
+        backgroundColor: _bottomSheetSurface,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
         ),
-        builder: (sheetContext) {
-          bool isGenerating = false;
-          Uint8List? generatedPngBytes;
-          _AiVectorRequest? generatedRequest;
-          String? generationError;
-
-          Future<void> generatePreview(
-            StateSetter setSheetState,
-          ) async {
-            if (isGenerating) return;
-            final String prompt = promptController.text.trim();
-            final _AiVectorBackground effectiveBackground = allowSolidBackground
-                ? selectedBackground
-                : _AiVectorBackground.transparent;
-            if (prompt.isEmpty) {
-              setSheetState(() {
-                generationError = 'Type a short description first.';
-              });
-              return;
-            }
-
-            setSheetState(() {
-              isGenerating = true;
-              generationError = null;
-            });
-
-            try {
-              final Uint8List pngBytes = selectedEngine == _AiImageEngine.openAi
-                  ? await _generateAiVectorPng(
-                      userInput: prompt,
-                      model: selectedOpenAiModel,
-                      kind: selectedKind,
-                      style: selectedStyle,
-                      quality: selectedQuality,
-                      size: selectedSize,
-                      background: effectiveBackground,
-                    )
-                  : await _generateGeminiVectorPng(
-                      userInput: prompt,
-                      model: selectedGeminiModel,
-                      kind: selectedKind,
-                      style: selectedStyle,
-                      size: selectedSize,
-                      background: effectiveBackground,
-                    );
-              if (!sheetContext.mounted || !sheetOpen) {
-                return;
-              }
-              setSheetState(() {
-                generatedPngBytes = pngBytes;
-                generatedRequest = _AiVectorRequest(
-                  prompt: prompt,
-                  engine: selectedEngine,
-                  openAiModel: selectedOpenAiModel,
-                  geminiModel: selectedGeminiModel,
-                  kind: selectedKind,
-                  style: selectedStyle,
-                  quality: selectedQuality,
-                  size: selectedSize,
-                  background: effectiveBackground,
-                );
-                generationError = null;
-              });
-            } catch (error) {
-              if (!sheetContext.mounted || !sheetOpen) {
-                return;
-              }
-              setSheetState(() {
-                generationError = error.toString();
-              });
-            } finally {
-              if (sheetContext.mounted && sheetOpen) {
-                setSheetState(() {
-                  isGenerating = false;
-                });
-              }
-            }
-          }
-
+        builder: (BuildContext sheetContext) {
           return SafeArea(
             top: false,
             child: SizedBox(
-              height: MediaQuery.sizeOf(sheetContext).height * 0.5,
+              height: MediaQuery.sizeOf(sheetContext).height * 0.74,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
                 child: StatefulBuilder(
-                  builder: (sheetContext, setSheetState) {
+                  builder:
+                      (BuildContext sheetContext, StateSetter setSheetState) {
+                    if (!catalogRequested &&
+                        isLoadingCatalog &&
+                        categories.isNotEmpty &&
+                        assetsByCategory.isEmpty) {
+                      unawaited(loadCatalog(setSheetState));
+                    }
+
+                    final String activeCategory =
+                        (selectedCategorySlug ?? '').trim();
+                    final bool isCategoryLoading = activeCategory.isNotEmpty &&
+                        loadingCategories.contains(activeCategory);
+                    final List<_ElementsAssetItem> visibleAssets =
+                        activeCategory.isEmpty
+                            ? const <_ElementsAssetItem>[]
+                            : (assetsByCategory[activeCategory] ??
+                                const <_ElementsAssetItem>[]);
+
+                    if (activeCategory.isNotEmpty &&
+                        !assetsByCategory.containsKey(activeCategory) &&
+                        !isCategoryLoading &&
+                        !isLoadingCatalog) {
+                      unawaited(
+                          loadCategoryAssets(activeCategory, setSheetState));
+                    }
+
                     return Column(
                       children: [
                         Container(
@@ -22607,400 +28115,218 @@ Hard requirements:
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'AI Vectors (PNG)',
-                                style: TextStyle(
-                                  color: Color(0xFFF3F3F2),
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          height: 34,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: categories.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 7),
+                            itemBuilder: (BuildContext context, int index) {
+                              final _ElementsCategory category =
+                                  categories[index];
+                              final bool selected =
+                                  category.slug == activeCategory;
+                              return InkWell(
+                                borderRadius: BorderRadius.circular(9),
+                                onTap: () {
+                                  setSheetState(() {
+                                    selectedCategorySlug = category.slug;
+                                  });
+                                  unawaited(
+                                    loadCategoryAssets(
+                                        category.slug, setSheetState),
+                                  );
+                                },
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 140),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 7,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: selected
+                                        ? kActiveAccent
+                                        : const Color(0xFF1E1F22),
+                                    borderRadius: BorderRadius.circular(9),
+                                    border: Border.all(
+                                      color: selected
+                                          ? Colors.transparent
+                                          : const Color(0xFF605E5E),
+                                    ),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      category.name,
+                                      style: TextStyle(
+                                        color: selected
+                                            ? kActiveAccentForeground
+                                            : const Color(0xFFD4D4D3),
+                                        fontSize: 11.2,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            InkWell(
-                              onTap: isGenerating
-                                  ? () {}
-                                  : () {
-                                      sheetOpen = false;
-                                      Navigator.of(sheetContext).pop();
-                                    },
-                              borderRadius: BorderRadius.circular(14),
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(
-                                  Icons.close_rounded,
-                                  size: 18,
-                                  color: Color(0xFFB8B7B5),
-                                ),
-                              ),
-                            ),
-                          ],
+                              );
+                            },
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              children: [
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 10,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E1F22),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: const Color(0xFF605E5E),
+                          child: Builder(
+                            builder: (_) {
+                              if (activeCategory.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No categories available.',
+                                    style: TextStyle(
+                                      color: Color(0xFF8D98A8),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
                                     ),
                                   ),
-                                  child: TextField(
-                                    controller: promptController,
-                                    maxLines: 2,
-                                    minLines: 1,
-                                    textInputAction: TextInputAction.done,
+                                );
+                              }
+                              if ((isLoadingCatalog || isCategoryLoading) &&
+                                  visibleAssets.isEmpty) {
+                                return _buildElementsLoadingGrid();
+                              }
+                              if (visibleAssets.isEmpty) {
+                                final bool hasLoadIssue = loadError != null &&
+                                    loadError!.trim().isNotEmpty;
+                                return Center(
+                                  child: Text(
+                                    hasLoadIssue
+                                        ? 'Could not load this category right now.'
+                                        : 'No elements in this category yet.\nUpload from Admin Panel (target: 20+).',
+                                    textAlign: TextAlign.center,
                                     style: const TextStyle(
-                                      fontSize: 13,
-                                      color: Color(0xFFF3F3F2),
-                                    ),
-                                    onChanged: (_) {
-                                      if (!sheetContext.mounted || !sheetOpen) {
-                                        return;
-                                      }
-                                      setSheetState(() {
-                                        generationError = null;
-                                      });
-                                    },
-                                    decoration: const InputDecoration(
-                                      isDense: true,
-                                      border: InputBorder.none,
-                                      hintText:
-                                          'e.g. coffee icon, modern camera outline',
-                                      hintStyle: TextStyle(fontSize: 12.5),
+                                      color: Color(0xFF8D98A8),
+                                      fontSize: 11.6,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.3,
                                     ),
                                   ),
+                                );
+                              }
+
+                              return GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(1, 2, 1, 10),
+                                itemCount: visibleAssets.length,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 4,
+                                  mainAxisSpacing: 6,
+                                  crossAxisSpacing: 6,
+                                  childAspectRatio: 0.78,
                                 ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  width: double.infinity,
-                                  height: 124,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E1F22),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: const Color(0xFF605E5E),
+                                itemBuilder: (BuildContext context, int index) {
+                                  final _ElementsAssetItem item =
+                                      visibleAssets[index];
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF18191D),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: const Color(0xFF605E5E),
+                                        width: 0.65,
+                                      ),
                                     ),
-                                  ),
-                                  clipBehavior: Clip.antiAlias,
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (generatedPngBytes != null &&
-                                          !isGenerating)
+                                    child: Column(
+                                      children: [
+                                        Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              7,
+                                              7,
+                                              7,
+                                              3,
+                                            ),
+                                            child: Image.network(
+                                              item.fileUrl,
+                                              fit: BoxFit.contain,
+                                              filterQuality: FilterQuality.high,
+                                              loadingBuilder:
+                                                  (context, child, progress) {
+                                                if (progress == null) {
+                                                  return child;
+                                                }
+                                                return const _ElementsShimmerTile(
+                                                  radius: 7,
+                                                );
+                                              },
+                                              errorBuilder: (_, __, ___) =>
+                                                  const Icon(
+                                                Icons
+                                                    .image_not_supported_outlined,
+                                                color: Color(0xFF7B8594),
+                                                size: 18,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                         Padding(
-                                          padding: const EdgeInsets.all(6),
-                                          child: Image.memory(
-                                            generatedPngBytes!,
-                                            fit: BoxFit.contain,
-                                            filterQuality: FilterQuality.high,
+                                          padding: const EdgeInsets.fromLTRB(
+                                            7,
+                                            0,
+                                            7,
+                                            7,
                                           ),
-                                        )
-                                      else
-                                        const Center(
-                                          child: Text(
-                                            'Preview',
-                                            style: TextStyle(
-                                              color: Color(0xFF7B8594),
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                      if (isGenerating)
-                                        Positioned.fill(
-                                          child: BackdropFilter(
-                                            filter: ui.ImageFilter.blur(
-                                              sigmaX: 7,
-                                              sigmaY: 7,
-                                            ),
-                                            child: Container(
-                                              color: const Color(0x50FFFFFF),
-                                            ),
-                                          ),
-                                        ),
-                                      if (isGenerating)
-                                        const Positioned.fill(
-                                          child: _AiShimmerPlaceholder(),
-                                        ),
-                                      if (isGenerating)
-                                        const Align(
-                                          alignment: Alignment.center,
-                                          child: Column(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                  strokeWidth: 2,
-                                                  color: Color(0xFF19191A),
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            height: 24,
+                                            child: FilledButton(
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: kActiveAccent,
+                                                foregroundColor:
+                                                    kActiveAccentForeground,
+                                                padding: EdgeInsets.zero,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(7),
                                                 ),
                                               ),
-                                              SizedBox(height: 8),
-                                              Text(
-                                                'Generating preview...',
+                                              onPressed: () {
+                                                if (didSelectElement ||
+                                                    !mounted) {
+                                                  return;
+                                                }
+                                                didSelectElement = true;
+                                                sheetOpen = false;
+                                                Navigator.of(sheetContext)
+                                                    .pop();
+                                                unawaited(
+                                                  _insertElementAtCanvasCenter(
+                                                          item)
+                                                      .catchError(
+                                                          (Object error) {
+                                                    if (!mounted) return;
+                                                    _showExportMessage(
+                                                      _normalizeOperationErrorMessage(
+                                                          error),
+                                                      isError: true,
+                                                    );
+                                                  }),
+                                                );
+                                              },
+                                              child: const Text(
+                                                'Add',
                                                 style: TextStyle(
-                                                  color: Color(0xFF3C4654),
-                                                  fontSize: 11.5,
-                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
                                                 ),
                                               ),
-                                            ],
+                                            ),
                                           ),
                                         ),
-                                    ],
-                                  ),
-                                ),
-                                if (generationError != null) ...[
-                                  const SizedBox(height: 6),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: Text(
-                                      generationError!,
-                                      style: const TextStyle(
-                                        color: Color(0xFFB91C1C),
-                                        fontSize: 11.5,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                      ],
                                     ),
-                                  ),
-                                ],
-                                const SizedBox(height: 6),
-                                if (generatedPngBytes == null)
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child:
-                                            _buildTextEffectFloatingActionButton(
-                                          label: 'Cancel',
-                                          onTap: isGenerating
-                                              ? () {}
-                                              : () {
-                                                  sheetOpen = false;
-                                                  Navigator.of(sheetContext)
-                                                      .pop();
-                                                },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child:
-                                            _buildTextEffectFloatingActionButton(
-                                          label: isGenerating
-                                              ? 'Generating...'
-                                              : 'Generate',
-                                          onTap: isGenerating
-                                              ? () {}
-                                              : () => generatePreview(
-                                                  setSheetState),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                else
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child:
-                                            _buildTextEffectFloatingActionButton(
-                                          label: isGenerating
-                                              ? 'Generating...'
-                                              : 'Regenerate',
-                                          onTap: isGenerating
-                                              ? () {}
-                                              : () => generatePreview(
-                                                  setSheetState),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child:
-                                            _buildTextEffectFloatingActionButton(
-                                          label: 'Use',
-                                          onTap: isGenerating
-                                              ? () {}
-                                              : () {
-                                                  if (generatedRequest ==
-                                                          null ||
-                                                      generatedPngBytes ==
-                                                          null) {
-                                                    return;
-                                                  }
-                                                  sheetOpen = false;
-                                                  Navigator.of(sheetContext)
-                                                      .pop(
-                                                    _AiVectorSheetResult(
-                                                      request:
-                                                          generatedRequest!,
-                                                      pngBytes:
-                                                          generatedPngBytes!,
-                                                    ),
-                                                  );
-                                                },
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiImageEngine>(
-                                  title: 'Engine',
-                                  selected: selectedEngine,
-                                  options: _AiImageEngine.values,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedEngine = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                if (selectedEngine == _AiImageEngine.openAi)
-                                  _buildAiVectorOptionRow<_AiImageModel>(
-                                    title: 'OpenAI Model',
-                                    selected: selectedOpenAiModel,
-                                    options: _AiImageModel.values,
-                                    labelFor: (item) => item.label,
-                                    onSelected: (value) {
-                                      setSheetState(() {
-                                        selectedOpenAiModel = value;
-                                      });
-                                    },
-                                  )
-                                else
-                                  _buildAiVectorOptionRow<_GeminiImageModel>(
-                                    title: 'Gemini Model',
-                                    selected: selectedGeminiModel,
-                                    options: _GeminiImageModel.values,
-                                    labelFor: (item) => item.label,
-                                    onSelected: (value) {
-                                      setSheetState(() {
-                                        selectedGeminiModel = value;
-                                      });
-                                    },
-                                  ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiVectorBackground>(
-                                  title: allowSolidBackground
-                                      ? 'Background'
-                                      : 'Background (workspace required)',
-                                  selected: selectedBackground,
-                                  options: _AiVectorBackground.values,
-                                  enabled: allowSolidBackground,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedBackground = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiVectorKind>(
-                                  title: 'Type',
-                                  selected: selectedKind,
-                                  options: _AiVectorKind.values,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedKind = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiVectorStyle>(
-                                  title: 'Style',
-                                  selected: selectedStyle,
-                                  options: _AiVectorStyle.values,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedStyle = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiVectorQuality>(
-                                  title: 'Quality',
-                                  selected: selectedQuality,
-                                  options: _AiVectorQuality.values,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedQuality = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                _buildAiVectorOptionRow<_AiVectorSize>(
-                                  title: 'Size',
-                                  selected: selectedSize,
-                                  options: _AiVectorSize.values,
-                                  labelFor: (item) => item.label,
-                                  onSelected: (value) {
-                                    setSheetState(() {
-                                      selectedSize = value;
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF1E1F22),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: const Color(0xFF605E5E),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.key_rounded,
-                                        size: 13,
-                                        color: Color(0xFFB8B7B5),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Text(
-                                          selectedEngine ==
-                                                  _AiImageEngine.openAi
-                                              ? (_isUsingEmbeddedOpenAiKey
-                                                  ? 'Embedded OpenAI key'
-                                                  : 'OPENAI_API_KEY from build')
-                                              : (_isUsingEmbeddedGeminiKey
-                                                  ? 'Embedded Gemini key'
-                                                  : 'GEMINI_API_KEY from build'),
-                                          style: const TextStyle(
-                                            color: Color(0xFF5A6472),
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
+                                  );
+                                },
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -23014,59 +28340,38 @@ Hard requirements:
       ).whenComplete(() {
         sheetOpen = false;
       });
-
-      if (sheetResult == null || !mounted) {
-        return;
-      }
-
-      await SchedulerBinding.instance.endOfFrame;
-      if (!mounted) return;
-
-      final ui.Image image = await _decodeUiImage(sheetResult.pngBytes);
-      if (!mounted) return;
-
-      _pushUndoSnapshot();
-      setState(() {
-        _lastVectorPrompt = sheetResult.request.prompt;
-        _defaultAiVectorEngine = sheetResult.request.engine;
-        _defaultAiVectorModel = sheetResult.request.openAiModel;
-        _defaultGeminiAiVectorModel = sheetResult.request.geminiModel;
-        _defaultAiVectorKind = sheetResult.request.kind;
-        _defaultAiVectorStyle = sheetResult.request.style;
-        _defaultAiVectorQuality = sheetResult.request.quality;
-        _defaultAiVectorSize = sheetResult.request.size;
-        _defaultAiVectorBackground = sheetResult.request.background;
-
-        final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
-        if (workspace == null) {
-          _upsertBackgroundLayer(
-            image: image,
-            thumbnailBytes: sheetResult.pngBytes,
-          );
-        } else {
-          final Size? workspaceSize = _workspaceSourceSize(workspace);
-          if (workspaceSize != null) {
-            _addOverlayImageLayer(
-              image: image,
-              thumbnailBytes: sheetResult.pngBytes,
-              workspaceSize: workspaceSize,
-            );
-          }
-        }
-      });
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _showExportMessage('AI PNG generated successfully.');
-      });
     } catch (error) {
-      _showExportMessage(
-        error.toString(),
-        isError: true,
-      );
-    } finally {
-      promptController.dispose();
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
     }
+  }
+
+  Widget _buildElementsLoadingGrid({int itemCount = 24}) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(1, 2, 1, 10),
+      itemCount: itemCount,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 6,
+        crossAxisSpacing: 6,
+        childAspectRatio: 1.0,
+      ),
+      itemBuilder: (BuildContext context, int index) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF18191D),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFF605E5E),
+              width: 0.65,
+            ),
+          ),
+          child: const Padding(
+            padding: EdgeInsets.all(7),
+            child: _ElementsShimmerTile(radius: 7),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildAiVectorOptionRow<T>({
@@ -23178,7 +28483,7 @@ Hard requirements:
         await showModalBottomSheet<_SolidProjectPreset>(
       context: context,
       barrierColor: Colors.transparent,
-      backgroundColor: const Color(0xFF1E1F22),
+      backgroundColor: _bottomSheetSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -23321,7 +28626,7 @@ Hard requirements:
       context: context,
       isScrollControlled: true,
       barrierColor: Colors.transparent,
-      backgroundColor: const Color(0xFF23262C),
+      backgroundColor: _bottomSheetSurface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -23829,6 +29134,87 @@ Hard requirements:
     }
   }
 
+  bool get _isCropQuickPresetsVisible {
+    if (!_isToolEnabled || _activeTool != EditorTool.crop) return false;
+    final EditorLayer? layer = _selectedCropLayer();
+    return layer != null && layer.image != null;
+  }
+
+  String _cropQuickPresetLabel(_CropRatioPreset preset) {
+    switch (preset) {
+      case _CropRatioPreset.ratio4x5:
+        return 'Instagram Post';
+      case _CropRatioPreset.ratio9x16Portrait:
+        return 'Story';
+      case _CropRatioPreset.ratio1x1:
+        return 'Square';
+      case _CropRatioPreset.ratio191x100:
+        return 'Facebook Post';
+      case _CropRatioPreset.free:
+        return 'Free';
+    }
+  }
+
+  Widget _buildCropQuickPresetStrip() {
+    final EditorLayer? selectedImage = _selectedCropLayer();
+    final _CropToolConfig? currentConfig = selectedImage == null
+        ? null
+        : _resolvedCropConfigForLayer(selectedImage.id);
+    final _CropRatioPreset? activePreset = currentConfig?.ratioPreset;
+    final bool enabled = currentConfig != null;
+    return Container(
+      height: 42,
+      alignment: Alignment.centerLeft,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _cropQuickPresets.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final _CropRatioPreset preset = _cropQuickPresets[index];
+          final bool selected = activePreset == preset;
+          final String label = _cropQuickPresetLabel(preset);
+          return Opacity(
+            opacity: enabled ? 1 : 0.55,
+            child: _BouncyInkWell(
+              borderRadius: BorderRadius.circular(12),
+              pressedScale: 0.96,
+              onTap: enabled
+                  ? () {
+                      _setCropRatioPreset(preset);
+                    }
+                  : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(
+                  color: selected ? kActiveAccent : const Color(0xFF1E1F22),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color:
+                        selected ? Colors.transparent : const Color(0xFF605E5E),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    color: selected
+                        ? kActiveAccentForeground
+                        : const Color(0xFFF3F3F2),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildBottomNav() {
     return Container(
       height: _bottomNavHeight,
@@ -23860,16 +29246,22 @@ Hard requirements:
           ),
           Expanded(
             child: _NavItem(
-              icon: Icons.polyline_rounded,
-              label: 'Vectors',
+              icon: Icons.category_rounded,
+              label: 'Elements',
               onTap: _openVectorGeneratorBottomSheet,
             ),
           ),
-          Expanded(
+          const Expanded(
             child: _NavItem(
-              icon: Icons.save_alt_outlined,
-              label: _isExporting ? 'Saving' : 'Save',
-              onTap: _isExporting ? null : _openExportBottomSheet,
+              icon: Icons.dashboard_customize_rounded,
+              label: 'Templates',
+            ),
+          ),
+          Expanded(
+            child: _PrimaryAddNavItem(
+              icon: Icons.menu_rounded,
+              iconSize: 23,
+              onTap: _openMainSidebar,
             ),
           ),
         ],
@@ -24083,8 +29475,7 @@ Hard requirements:
                             SizedBox(height: cardSpacing),
                         itemBuilder: (context, index) {
                           final _TextFontOption option = options[index];
-                          final bool selected =
-                              _isFontOptionActive(option, selectedTextLayer);
+                          final bool selected = index == selectedIndex;
                           final int titleWeight = _resolveSupportedWeight(
                             option.family,
                             600,
@@ -24097,7 +29488,9 @@ Hard requirements:
                               ),
                               onTap: () => _applyTextFontOption(option),
                               pressedScale: 0.986,
-                              child: Container(
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOutCubic,
                                 width: double.infinity,
                                 padding: EdgeInsets.symmetric(
                                   horizontal: scaled(10, min: 8),
@@ -24117,29 +29510,34 @@ Hard requirements:
                                     width: selected ? 0 : 0.55,
                                   ),
                                 ),
-                                child: Directionality(
-                                  textDirection: option.direction,
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          option.label,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: _fontAwareTextStyle(
-                                            family: option.family,
-                                            color: selected
-                                                ? const Color(0xFF19191A)
-                                                : _floatingPanelTextSecondary,
-                                            fontSize: scaled(14, min: 11),
-                                            fontWeight: _fontWeightFromValue(
-                                              titleWeight,
+                                child: AnimatedScale(
+                                  duration: const Duration(milliseconds: 180),
+                                  curve: Curves.easeOutCubic,
+                                  scale: selected ? 1.0 : 0.986,
+                                  child: Directionality(
+                                    textDirection: option.direction,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            option.label,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: _fontAwareTextStyle(
+                                              family: option.family,
+                                              color: selected
+                                                  ? const Color(0xFF19191A)
+                                                  : _floatingPanelTextSecondary,
+                                              fontSize: scaled(14, min: 11),
+                                              fontWeight: _fontWeightFromValue(
+                                                titleWeight,
+                                              ),
+                                              height: 1.0,
                                             ),
-                                            height: 1.0,
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
@@ -25167,6 +30565,8 @@ Hard requirements:
   Widget _buildTextEffectFloatingActionButton({
     required String label,
     required VoidCallback onTap,
+    IconData? icon,
+    bool accent = false,
   }) {
     final double uiScale = _textSidebarScale;
     final double height = (42 * uiScale).clamp(30, 42).toDouble();
@@ -25197,20 +30597,38 @@ Hard requirements:
                 height: height,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _floatingPanelSurfaceSolid,
+                  color: accent ? kActiveAccent : _floatingPanelSurfaceSolid,
                   borderRadius: borderRadius,
                   border: Border.all(
-                    color: _floatingPanelStrokeSolid,
-                    width: 0.5,
+                    color:
+                        accent ? Colors.transparent : _floatingPanelStrokeSolid,
+                    width: accent ? 0 : 0.5,
                   ),
                 ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: const Color(0xFFF3F3F2),
-                    fontSize: (13 * uiScale).clamp(10.5, 13).toDouble(),
-                    fontWeight: FontWeight.w800,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[
+                      Icon(
+                        icon,
+                        size: (16.4 * uiScale).clamp(13.2, 16.8).toDouble(),
+                        color: accent
+                            ? kActiveAccentForeground
+                            : const Color(0xFFD4D4D3),
+                      ),
+                      SizedBox(width: (6 * uiScale).clamp(4, 6).toDouble()),
+                    ],
+                    Text(
+                      label,
+                      style: TextStyle(
+                        color: accent
+                            ? kActiveAccentForeground
+                            : const Color(0xFFF3F3F2),
+                        fontSize: (13 * uiScale).clamp(10.5, 13).toDouble(),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -26009,9 +31427,15 @@ class _NavItem extends StatelessWidget {
 }
 
 class _PrimaryAddNavItem extends StatelessWidget {
-  const _PrimaryAddNavItem({this.onTap});
+  const _PrimaryAddNavItem({
+    this.onTap,
+    this.icon = Icons.add_rounded,
+    this.iconSize = 26,
+  });
 
   final VoidCallback? onTap;
+  final IconData icon;
+  final double iconSize;
 
   @override
   Widget build(BuildContext context) {
@@ -26023,14 +31447,14 @@ class _PrimaryAddNavItem extends StatelessWidget {
             width: 40,
             height: 40,
             decoration: const BoxDecoration(
-              color: Color(0xFF19191A),
+              color: kActiveAccent,
               shape: BoxShape.circle,
             ),
             alignment: Alignment.center,
-            child: const Icon(
-              Icons.add_rounded,
-              size: 26,
-              color: Colors.white,
+            child: Icon(
+              icon,
+              size: iconSize,
+              color: kActiveAccentForeground,
             ),
           ),
         ],
@@ -26650,7 +32074,8 @@ enum _PanClampMode {
 
 enum _CloneStrokeMode {
   clone,
-  erase,
+  restore,
+  transparentErase,
 }
 
 double _cloneHardnessToHardRadiusFactor(double hardness) {
@@ -26692,6 +32117,27 @@ double _cloneFlowOpacityFactor({
 
 bool _isUvInsideUnitSquare(Offset uv) {
   return uv.dx >= 0.0 && uv.dx <= 1.0 && uv.dy >= 0.0 && uv.dy <= 1.0;
+}
+
+double _brushShapeDistance({
+  required EraseBrushShape shape,
+  required double normalizedX,
+  required double normalizedY,
+}) {
+  final double x = normalizedX.abs();
+  final double y = normalizedY.abs();
+  switch (shape) {
+    case EraseBrushShape.round:
+      return math.sqrt((x * x) + (y * y));
+    case EraseBrushShape.square:
+      return math.max(x, y);
+    case EraseBrushShape.diamond:
+      return x + y;
+    case EraseBrushShape.horizontal:
+      return math.sqrt((x * x) + ((y / 0.62) * (y / 0.62)));
+    case EraseBrushShape.vertical:
+      return math.sqrt(((x / 0.62) * (x / 0.62)) + (y * y));
+  }
 }
 
 class _SnapLayerTarget {
@@ -26827,7 +32273,9 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.isToolEnabled,
     required this.pencilSettings,
     required this.cloneSettings,
+    required this.eraseSettings,
     required this.showCloneBrushPreview,
+    required this.showEraseBrushPreview,
     required this.marqueeMode,
     required this.marqueeSelection,
     required this.isCloneSourceArmed,
@@ -26836,6 +32284,7 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.cloneClearRequestToken,
     required this.cloneJoystickDrawPressed,
     required this.showCloneJoystickCursor,
+    required this.onCloneViewportScaleInteraction,
     required this.selectedLayerId,
     required this.onLayerSelected,
     required this.onLayerTransformChanged,
@@ -26878,7 +32327,9 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final bool isToolEnabled;
   final PencilSettings pencilSettings;
   final CloneStampSettings cloneSettings;
+  final EraseToolSettings eraseSettings;
   final bool showCloneBrushPreview;
+  final bool showEraseBrushPreview;
   final MarqueeSelectionMode marqueeMode;
   final MarqueeSelection? marqueeSelection;
   final bool isCloneSourceArmed;
@@ -26887,6 +32338,7 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final int cloneClearRequestToken;
   final bool cloneJoystickDrawPressed;
   final bool showCloneJoystickCursor;
+  final VoidCallback onCloneViewportScaleInteraction;
   final String? selectedLayerId;
   final ValueChanged<String?> onLayerSelected;
   final LayerTransformChanged onLayerTransformChanged;
@@ -27036,6 +32488,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       Duration(milliseconds: 320);
   static const Duration _expandViewportExitDuration =
       Duration(milliseconds: 300);
+  double _brushPreviewPulsePhase = 0.0;
 
   static const double _minScale = 0.2;
   static const double _maxScale = 8.0;
@@ -27064,7 +32517,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   void _syncVisualEffectTicker() {
     final bool shouldRun =
         (_isExpandToolActive && !widget.isExpandGenerating) ||
-            _isUpscaleMagicActive;
+            _isUpscaleMagicActive ||
+            widget.showCloneBrushPreview ||
+            widget.showEraseBrushPreview;
     if (shouldRun) {
       if (_visualEffectTicker == null) {
         _visualEffectTicker = createTicker(_onVisualEffectTick)..start();
@@ -27085,6 +32540,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     }
     if (_isUpscaleMagicActive) {
       _upscaleMagicPhase = (seconds * 0.66) % 1.0;
+    }
+    if (widget.showCloneBrushPreview || widget.showEraseBrushPreview) {
+      _brushPreviewPulsePhase = (seconds * 1.45) % 1.0;
     }
     _repaintCanvas();
   }
@@ -27130,7 +32588,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
               isToolEnabled: widget.isToolEnabled,
               editableImages: _editableImages,
               cloneSettings: widget.cloneSettings,
+              eraseSettings: widget.eraseSettings,
               showCloneBrushPreview: widget.showCloneBrushPreview,
+              showEraseBrushPreview: widget.showEraseBrushPreview,
               cloneSourcePointerUvResolver: _activeClonePointerUv,
               showCloneTargetPointer: widget.showCloneJoystickCursor,
               cloneTargetPointerUvResolver: _activeCloneTargetPointerUv,
@@ -27155,6 +32615,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
               showUpscaleMagicEffect: widget.showUpscaleMagicEffect,
               upscaleMagicLayerId: widget.upscaleMagicLayerId,
               upscaleMagicPhaseResolver: () => _upscaleMagicPhase,
+              brushPreviewPulsePhaseResolver: () => _brushPreviewPulsePhase,
             ),
             child: const SizedBox.expand(),
           ),
@@ -27505,7 +32966,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         _closeInlineTextEditing(rebuild: false);
       }
     }
-    if (widget.activeTool != EditorTool.clone || !widget.isToolEnabled) {
+    if ((widget.activeTool != EditorTool.clone &&
+            widget.activeTool != EditorTool.erase) ||
+        !widget.isToolEnabled) {
       _cloneSourceTapMode = false;
       _clonePreviewSourceSnapshot = null;
       _clonePreviewSourceLayerId = null;
@@ -27559,6 +33022,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       _cloneJoystickStrokeActive = false;
     }
     if (widget.activeTool != EditorTool.clone &&
+        widget.activeTool != EditorTool.erase &&
         _interaction == _CanvasInteraction.cloning) {
       _interaction = _CanvasInteraction.none;
       _gestureLayerId = null;
@@ -27598,6 +33062,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       _interaction = _CanvasInteraction.none;
       _gestureLayerId = null;
     }
+    if (widget.cropToolConfig != null &&
+        !widget.cropToolConfig!.ratioPreset.isFreeformHandleMode &&
+        _interaction == _CanvasInteraction.cropResizing) {
+      _interaction = _CanvasInteraction.none;
+      _gestureLayerId = null;
+    }
     if (widget.activeTool != EditorTool.expand &&
         _interaction == _CanvasInteraction.expandResizing) {
       _interaction = _CanvasInteraction.none;
@@ -27608,9 +33078,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       _interaction = _CanvasInteraction.none;
       _gestureLayerId = null;
     }
-    if (widget.activeTool == EditorTool.clone) {
+    if (widget.activeTool == EditorTool.clone ||
+        widget.activeTool == EditorTool.erase) {
       _primeSelectedCloneLayerBitmap();
-      if (widget.showCloneJoystickCursor) {
+      if ((widget.activeTool == EditorTool.clone ||
+              widget.activeTool == EditorTool.erase) &&
+          widget.showCloneJoystickCursor) {
         final EditorLayer? selectedCloneLayer = _selectedImageLayerForClone();
         if (selectedCloneLayer != null) {
           _ensureCloneTargetCursorUv(selectedCloneLayer);
@@ -28012,6 +33485,11 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     _setSmartGuides(const <_SmartGuideSegment>[], forceRepaint: false);
 
     if (details.pointerCount > 1) {
+      if (widget.isToolEnabled &&
+          (widget.activeTool == EditorTool.clone ||
+              widget.activeTool == EditorTool.erase)) {
+        widget.onCloneViewportScaleInteraction();
+      }
       _activeStroke = null;
       _activeSketchMaskPointsUv.clear();
       _activeSketchMaskRadiusUv = 0;
@@ -28136,7 +33614,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       return;
     }
 
-    if (widget.activeTool == EditorTool.clone) {
+    if (widget.activeTool == EditorTool.clone ||
+        widget.activeTool == EditorTool.erase) {
       _activeStroke = null;
       final Offset seedPoint = _pendingCloneDownScenePoint ?? scenePoint;
       _pendingCloneDownScenePoint = null;
@@ -28356,6 +33835,11 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       return;
     }
     if (details.pointerCount > 1) {
+      if (widget.isToolEnabled &&
+          (widget.activeTool == EditorTool.clone ||
+              widget.activeTool == EditorTool.erase)) {
+        widget.onCloneViewportScaleInteraction();
+      }
       if (!_multiTouchInitialized) {
         _multiTouchInitialized = true;
         _lastGestureScaleFactor = details.scale <= 0 ? 1.0 : details.scale;
@@ -28728,7 +34212,10 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       }
     }
     if (!widget.isToolEnabled) return;
-    if (widget.activeTool != EditorTool.clone) return;
+    if (widget.activeTool != EditorTool.clone &&
+        widget.activeTool != EditorTool.erase) {
+      return;
+    }
     final EditorLayer? workspace = _backgroundLayer(widget.layers);
     if (workspace == null) return;
     final Size? workspaceSize = _workspaceSourceSize(workspace);
@@ -28760,7 +34247,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       workspaceSize: workspaceSize,
     );
     final Offset scenePoint = _toScenePoint(details.localPosition);
-    if (widget.isToolEnabled && widget.activeTool == EditorTool.clone) {
+    if (widget.isToolEnabled &&
+        (widget.activeTool == EditorTool.clone ||
+            widget.activeTool == EditorTool.erase)) {
       _cloneTapAtPoint(scenePoint: scenePoint, artboard: artboard);
     }
   }
@@ -28793,6 +34282,32 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         workspaceSize: workspaceSize,
       );
       if (layerData == null) return;
+      if (!config.ratioPreset.isFreeformHandleMode) {
+        final Rect fixedFrame = _fixedCropViewportRect(
+          artboard: artboard,
+          config: config,
+        );
+        if (!fixedFrame.contains(details.localPosition)) return;
+        final Rect nextRectUv = _cropRectUvFromFixedViewportFrame(
+          fixedFrameViewport: fixedFrame,
+          layerData: layerData,
+          config: config,
+        );
+        final Rect currentRectUv = _clampCropRectUvCanvas(
+          config.cropRectUv,
+          aspectRatio: _cropUvAspectRatioCanvas(
+            config: config,
+            layerData: layerData,
+          ),
+        );
+        if (!_rectApproxEqual(nextRectUv, currentRectUv)) {
+          widget.onCropToolConfigChanged(
+            config.copyWith(cropRectUv: nextRectUv),
+          );
+        }
+        widget.onCropCommitRequested();
+        return;
+      }
       final double cropRotation =
           layerData.rotation + _cropPreviewRotation(config);
       final Rect cropRectLocal = _cropRectLocal(
@@ -28844,7 +34359,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
 
   Offset? _activeCloneTargetPointerUv() {
     if (!widget.showCloneJoystickCursor) return null;
-    if (!widget.isToolEnabled || widget.activeTool != EditorTool.clone) {
+    if (!widget.isToolEnabled ||
+        (widget.activeTool != EditorTool.clone &&
+            widget.activeTool != EditorTool.erase)) {
       return null;
     }
     final EditorLayer? selectedLayer = _selectedImageLayerForClone();
@@ -28865,6 +34382,204 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     );
   }
 
+  Offset? workspacePointFromGlobal(Offset globalPoint) {
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return null;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return null;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return null;
+    }
+    final RenderObject? renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) return null;
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    if (artboard.width <= 0 || artboard.height <= 0) {
+      return null;
+    }
+    final Offset localPoint = renderObject.globalToLocal(globalPoint);
+    final Offset scenePoint = _toScenePoint(localPoint);
+    if (!artboard.contains(scenePoint)) {
+      return null;
+    }
+    return Offset(
+      (((scenePoint.dx - artboard.left) / artboard.width)
+              .clamp(0.0, 1.0)
+              .toDouble()) *
+          workspaceSize.width,
+      (((scenePoint.dy - artboard.top) / artboard.height)
+              .clamp(0.0, 1.0)
+              .toDouble()) *
+          workspaceSize.height,
+    );
+  }
+
+  double? viewportLengthForSourceLength(double sourceLength) {
+    if (!sourceLength.isFinite || sourceLength <= 0) return null;
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) return null;
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return null;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return null;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    if (artboard.width <= 0 || workspaceSize.width <= 0) return null;
+    final double sourceToScene = artboard.width / workspaceSize.width;
+    final double sceneLength = sourceLength * sourceToScene;
+    final double viewportLength = sceneLength * _scale;
+    if (!viewportLength.isFinite || viewportLength <= 0) return null;
+    return viewportLength;
+  }
+
+  bool beginMoveJoystickSession({required String layerId}) {
+    if (!widget.isToolEnabled || widget.activeTool != EditorTool.move) {
+      return false;
+    }
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return false;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return false;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return false;
+    }
+    final EditorLayer? layer = _layerById(layerId);
+    if (layer == null || !layer.isVisible || layer.isBackground) {
+      return false;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+      selectedLayer: layer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (data == null) return false;
+    _interaction = _CanvasInteraction.movingLayer;
+    _gestureLayerId = layer.id;
+    _layerStartPosition = layer.position ??
+        Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+    _layerStartScenePoint = data.center;
+    _beginSnapSession(
+      layerId: layer.id,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+      selectedData: data,
+    );
+    _setSmartGuides(const <_SmartGuideSegment>[], forceRepaint: true);
+    return true;
+  }
+
+  Offset? moveLayerWithMoveJoystick({
+    required String layerId,
+    required Offset currentSourcePosition,
+    required Offset deltaSource,
+  }) {
+    if (!widget.isToolEnabled || widget.activeTool != EditorTool.move) {
+      return null;
+    }
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return null;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return null;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return null;
+    }
+    final EditorLayer? layer = _layerById(layerId);
+    if (layer == null || !layer.isVisible || layer.isBackground) {
+      return null;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+      selectedLayer: layer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (data == null) return null;
+    if (_interaction != _CanvasInteraction.movingLayer ||
+        _gestureLayerId != layerId ||
+        _snapSession == null) {
+      beginMoveJoystickSession(layerId: layerId);
+    }
+    final double sourceToSceneX = artboard.width / workspaceSize.width;
+    final double sourceToSceneY = artboard.height / workspaceSize.height;
+    if (!sourceToSceneX.isFinite ||
+        !sourceToSceneY.isFinite ||
+        sourceToSceneX <= 0 ||
+        sourceToSceneY <= 0) {
+      return null;
+    }
+    _transformStartWidthScene = data.width;
+    _transformStartHeightScene = data.height;
+    _transformStartRotation = data.rotation;
+    final Offset currentCenterScene = Offset(
+      artboard.left + (currentSourcePosition.dx * sourceToSceneX),
+      artboard.top + (currentSourcePosition.dy * sourceToSceneY),
+    );
+    final Offset rawCenter = currentCenterScene +
+        Offset(
+          deltaSource.dx * sourceToSceneX,
+          deltaSource.dy * sourceToSceneY,
+        );
+    final double safeScale = _scale <= 0 ? 1.0 : _scale;
+    final _MoveSnapResult snapped = _applyMoveSnapping(
+      rawCenter: rawCenter,
+      thresholdScene: _snapThresholdPx / safeScale,
+    );
+    _setSmartGuides(snapped.guides, forceRepaint: true);
+    if (snapped.guides.isEmpty) {
+      _smartGuideAutoHideTimer?.cancel();
+    } else {
+      _scheduleSmartGuideAutoHide();
+    }
+    return Offset(
+      ((snapped.center.dx - artboard.left) / sourceToSceneX)
+          .clamp(0.0, workspaceSize.width)
+          .toDouble(),
+      ((snapped.center.dy - artboard.top) / sourceToSceneY)
+          .clamp(0.0, workspaceSize.height)
+          .toDouble(),
+    );
+  }
+
+  void endMoveJoystickSession() {
+    if (_interaction == _CanvasInteraction.movingLayer) {
+      _interaction = _CanvasInteraction.none;
+      _gestureLayerId = null;
+    }
+    _smartGuideAutoHideTimer?.cancel();
+    _snapSession = null;
+    _moveSnapXActive = false;
+    _moveSnapYActive = false;
+    _resizeSnapActive = false;
+    _rotationSnapActive = false;
+    _setSmartGuides(const <_SmartGuideSegment>[], forceRepaint: true);
+  }
+
   Offset _ensureCloneTargetCursorUv(EditorLayer layer) {
     final Offset seed =
         _cloneTargetCursorUvByLayer[layer.id] ?? const Offset(0.5, 0.5);
@@ -28881,6 +34596,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   }
 
   bool _canStartCloneFromCursor(EditorLayer layer) {
+    if (widget.activeTool == EditorTool.erase) return true;
+    if (widget.activeTool != EditorTool.clone) return false;
     if (!(widget.isCloneBrushSelected || widget.isCloneEraseSelected)) {
       return false;
     }
@@ -28904,7 +34621,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   }
 
   void beginCloneJoystickDraw() {
-    if (!widget.isToolEnabled || widget.activeTool != EditorTool.clone) {
+    if (!widget.isToolEnabled ||
+        (widget.activeTool != EditorTool.clone &&
+            widget.activeTool != EditorTool.erase)) {
       return;
     }
     if (_cloneJoystickStrokeActive) return;
@@ -28923,7 +34642,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     Offset screenDelta, {
     required bool drawPressed,
   }) {
-    if (!widget.isToolEnabled || widget.activeTool != EditorTool.clone) {
+    if (!widget.isToolEnabled ||
+        (widget.activeTool != EditorTool.clone &&
+            widget.activeTool != EditorTool.erase)) {
       _finalizeCloneStrokeFromJoystick();
       return;
     }
@@ -29337,7 +35058,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       });
     } catch (_) {
       if (mounted) {
-        widget.onCanvasMessage('Could not prepare image for clone');
+        widget.onCanvasMessage('Could not prepare image for editing');
       }
     } finally {
       _bitmapLoadInFlight.remove(layer.id);
@@ -29476,6 +35197,29 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     return Offset(u, v);
   }
 
+  _ImageLayerSceneData? _resolveCloneStrokeLayerData({
+    required EditorLayer layer,
+    required Rect artboard,
+  }) {
+    if (layer.type != EditorLayerType.image || layer.image == null) {
+      return null;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return null;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null) return null;
+    final ui.Image image =
+        _editableImages[layer.id]?.displayImage ?? layer.image!;
+    return _buildImageLayerSceneData(
+      layer: layer,
+      image: image,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+      rotateHandleDistance: _topRotateHandleDistance,
+      moveHandleDistance: _bottomMoveHandleDistance,
+    );
+  }
+
   bool _startCloneGesture({
     required Offset scenePoint,
     required Rect artboard,
@@ -29503,19 +35247,39 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     required Rect artboard,
     required bool continuous,
   }) {
+    final bool isCloneTool = widget.activeTool == EditorTool.clone;
+    final bool isEraseTool = widget.activeTool == EditorTool.erase;
+    if (!isCloneTool && !isEraseTool) return false;
     final EditorLayer? layer = _selectedImageLayerForClone();
     if (layer == null) {
       widget.onCanvasMessage(
-        'Clone tool works only when an Image Layer is selected',
+        isEraseTool
+            ? 'Erase tool works only when an Image Layer is selected'
+            : 'Clone tool works only when an Image Layer is selected',
       );
       return false;
     }
     if (!artboard.contains(scenePoint)) return false;
 
-    final Offset tapUv = _toUv(scenePoint, artboard);
-    final bool isEraseStroke = widget.isCloneEraseSelected;
+    final _ImageLayerSceneData? layerDataForErase = isEraseTool
+        ? _resolveCloneStrokeLayerData(layer: layer, artboard: artboard)
+        : null;
+    if (isEraseTool && layerDataForErase == null) return false;
+    final Offset? eraseTapUv = isEraseTool
+        ? _scenePointToLayerUv(
+            scenePoint: scenePoint,
+            layerData: layerDataForErase!,
+          )
+        : null;
+    if (isEraseTool && eraseTapUv == null) return false;
+    final Offset tapUv = eraseTapUv ?? _toUv(scenePoint, artboard);
+    final _CloneStrokeMode strokeMode = isEraseTool
+        ? _CloneStrokeMode.transparentErase
+        : (widget.isCloneEraseSelected
+            ? _CloneStrokeMode.restore
+            : _CloneStrokeMode.clone);
 
-    if (_cloneSourceTapMode) {
+    if (isCloneTool && _cloneSourceTapMode) {
       _clonePointerUvByLayer[layer.id] = tapUv;
       _cloneSourceTapMode = false;
       _prepareEditableImageBuffer(layer);
@@ -29524,32 +35288,48 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       return true;
     }
 
-    if (!widget.isCloneBrushSelected && !isEraseStroke) {
+    if (isCloneTool &&
+        !widget.isCloneBrushSelected &&
+        !widget.isCloneEraseSelected) {
       return false;
     }
 
-    final Offset? sourceUv =
-        isEraseStroke ? null : _clonePointerUvByLayer[layer.id];
-    if (!isEraseStroke && sourceUv == null) {
+    final Offset? sourceUv = strokeMode == _CloneStrokeMode.clone
+        ? _clonePointerUvByLayer[layer.id]
+        : null;
+    if (strokeMode == _CloneStrokeMode.clone && sourceUv == null) {
       return false;
     }
 
     final _EditableImageBuffer? buffer = _editableImages[layer.id];
     if (buffer == null) {
       _prepareEditableImageBuffer(layer);
-      widget.onCanvasMessage('Preparing layer for clone, try again');
+      widget.onCanvasMessage('Preparing layer bitmap, try again');
       return false;
     }
 
     final _CloneStrokeSession stroke = _CloneStrokeSession(
       layerId: layer.id,
-      mode: isEraseStroke ? _CloneStrokeMode.erase : _CloneStrokeMode.clone,
-      sourceOffsetUv: isEraseStroke ? Offset.zero : (sourceUv! - tapUv),
-      settings: widget.cloneSettings,
-      artboardWidth: artboard.width,
+      mode: strokeMode,
+      sourceOffsetUv: strokeMode == _CloneStrokeMode.clone
+          ? (sourceUv! - tapUv)
+          : Offset.zero,
+      settings: strokeMode == _CloneStrokeMode.transparentErase
+          ? CloneStampSettings(
+              size: widget.eraseSettings.size,
+              hardness: widget.eraseSettings.hardness,
+              opacity: widget.eraseSettings.opacity,
+            )
+          : widget.cloneSettings,
+      brushShape: strokeMode == _CloneStrokeMode.transparentErase
+          ? widget.eraseSettings.shape
+          : EraseBrushShape.round,
+      artboardWidth: strokeMode == _CloneStrokeMode.transparentErase
+          ? math.max(1.0, layerDataForErase!.width)
+          : artboard.width,
       destPointsUv: <Offset>[tapUv],
     );
-    if (isEraseStroke) {
+    if (strokeMode != _CloneStrokeMode.clone) {
       _clonePreviewSourceSnapshot = null;
       _clonePreviewSourceLayerId = null;
     } else {
@@ -29714,7 +35494,23 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     final _EditableImageBuffer? buffer = _editableImages[layerId];
     if (buffer == null) return;
 
-    final Offset nextDestUv = _toUv(scenePoint, artboard);
+    Offset nextDestUv;
+    if (stroke.mode == _CloneStrokeMode.transparentErase) {
+      final EditorLayer? layer = _layerById(layerId);
+      if (layer == null) return;
+      final _ImageLayerSceneData? layerData =
+          _resolveCloneStrokeLayerData(layer: layer, artboard: artboard);
+      if (layerData == null) return;
+      final Offset? mappedUv = _scenePointToLayerUv(
+        scenePoint: scenePoint,
+        layerData: layerData,
+        clampToBounds: true,
+      );
+      if (mappedUv == null) return;
+      nextDestUv = mappedUv;
+    } else {
+      nextDestUv = _toUv(scenePoint, artboard);
+    }
     final Offset fromDestUv = _lastCloneDestUv ?? nextDestUv;
     final double radiusPx = math.max(
       1.0,
@@ -29756,6 +35552,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         toDestUv: toDestUv,
         sourceOffsetUv: stroke.sourceOffsetUv,
         settings: stroke.settings,
+        brushShape: stroke.brushShape,
         artboardWidth: stroke.artboardWidth,
       ),
     );
@@ -29786,7 +35583,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     for (final _ClonePendingSegment segment in pending) {
       final _EditableImageBuffer? buffer = _editableImages[segment.layerId];
       if (buffer == null) continue;
-      if (segment.mode == _CloneStrokeMode.erase) {
+      if (segment.mode == _CloneStrokeMode.restore) {
         if (buffer.cloneBasePreviewPixels.length !=
             buffer.previewPixels.length) {
           continue;
@@ -29800,8 +35597,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           toDestUv: segment.toDestUv,
           settings: segment.settings,
           artboardWidth: segment.artboardWidth,
+          brushShape: segment.brushShape,
         );
-      } else {
+      } else if (segment.mode == _CloneStrokeMode.clone) {
         final Uint8List sourcePixels;
         if (sharedSourceSnapshot != null &&
             sharedSourceLayerId == segment.layerId &&
@@ -29819,10 +35617,22 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           toDestUv: segment.toDestUv,
           sourceOffsetUv: segment.sourceOffsetUv,
           settings: segment.settings,
+          brushShape: segment.brushShape,
           artboardWidth: segment.artboardWidth,
           onSourceAdvanced: (sourceUv) {
             _clonePointerUvByLayer[segment.layerId] = sourceUv;
           },
+        );
+      } else {
+        _paintTransparentEraseSegmentOnPixels(
+          targetPixels: buffer.previewPixels,
+          targetWidth: buffer.previewWidth,
+          targetHeight: buffer.previewHeight,
+          fromDestUv: segment.fromDestUv,
+          toDestUv: segment.toDestUv,
+          settings: segment.settings,
+          artboardWidth: segment.artboardWidth,
+          brushShape: segment.brushShape,
         );
       }
       touchedLayerIds.add(segment.layerId);
@@ -29859,6 +35669,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     required Offset toDestUv,
     required Offset sourceOffsetUv,
     required CloneStampSettings settings,
+    required EraseBrushShape brushShape,
     required double artboardWidth,
     ValueChanged<Offset>? onSourceAdvanced,
   }) {
@@ -29867,6 +35678,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     final _CloneBrushMask brushMask = _resolveCloneBrushMask(
       radiusPx: radiusPx,
       hardness: settings.hardness,
+      brushShape: brushShape,
     );
     final Offset delta = toDestUv - fromDestUv;
     final double distancePx = delta.distance * targetWidth;
@@ -29934,12 +35746,14 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     required Offset toDestUv,
     required CloneStampSettings settings,
     required double artboardWidth,
+    required EraseBrushShape brushShape,
   }) {
     final double radiusPx =
         math.max(1.0, (settings.size * targetWidth / artboardWidth) / 2);
     final _CloneBrushMask brushMask = _resolveCloneBrushMask(
       radiusPx: radiusPx,
       hardness: settings.hardness,
+      brushShape: brushShape,
     );
     final Offset delta = toDestUv - fromDestUv;
     final double distancePx = delta.distance * targetWidth;
@@ -29975,6 +35789,65 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       );
       _applyRestoreStamp(
         sourcePixels: sourcePixels,
+        targetPixels: targetPixels,
+        width: targetWidth,
+        height: targetHeight,
+        destUv: destUv,
+        brushMask: brushMask,
+        opacityFactor: flowOpacityFactor,
+      );
+    }
+  }
+
+  void _paintTransparentEraseSegmentOnPixels({
+    required Uint8List targetPixels,
+    required int targetWidth,
+    required int targetHeight,
+    required Offset fromDestUv,
+    required Offset toDestUv,
+    required CloneStampSettings settings,
+    required double artboardWidth,
+    required EraseBrushShape brushShape,
+  }) {
+    final double radiusPx =
+        math.max(1.0, (settings.size * targetWidth / artboardWidth) / 2);
+    final _CloneBrushMask brushMask = _resolveCloneBrushMask(
+      radiusPx: radiusPx,
+      hardness: settings.hardness,
+      brushShape: brushShape,
+    );
+    final Offset delta = toDestUv - fromDestUv;
+    final double distancePx = delta.distance * targetWidth;
+    final double stampSpacingPx = _cloneStampSpacingPx(
+      radiusPx: radiusPx,
+      hardness: settings.hardness,
+    );
+    final bool stationary = distancePx <= 0.001;
+    final int steps =
+        stationary ? 1 : math.max(1, (distancePx / stampSpacingPx).ceil());
+    final double flowOpacityFactor = _cloneFlowOpacityFactor(
+      baseOpacityFactor: settings.opacity / 100,
+      radiusPx: radiusPx,
+      stampSpacingPx: stampSpacingPx,
+      stationary: stationary,
+    );
+    if (stationary) {
+      _applyTransparentEraseStamp(
+        targetPixels: targetPixels,
+        width: targetWidth,
+        height: targetHeight,
+        destUv: _clampUv(toDestUv),
+        brushMask: brushMask,
+        opacityFactor: flowOpacityFactor,
+      );
+      return;
+    }
+    for (int i = 1; i <= steps; i++) {
+      final double t = i / steps;
+      final Offset destUv = _clampUv(
+        Offset.lerp(fromDestUv, toDestUv, t) ?? toDestUv,
+      );
+      _applyTransparentEraseStamp(
         targetPixels: targetPixels,
         width: targetWidth,
         height: targetHeight,
@@ -30084,6 +35957,46 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     }
   }
 
+  void _applyTransparentEraseStamp({
+    required Uint8List targetPixels,
+    required int width,
+    required int height,
+    required Offset destUv,
+    required _CloneBrushMask brushMask,
+    required double opacityFactor,
+  }) {
+    final int destX = (destUv.dx * (width - 1)).round();
+    final int destY = (destUv.dy * (height - 1)).round();
+    final int radius = brushMask.radius;
+    final int maskWidth = brushMask.size;
+    final List<double> alphaGrid = brushMask.alphaGrid;
+
+    for (int y = -radius; y <= radius; y++) {
+      final int dy = destY + y;
+      if (dy < 0 || dy >= height) continue;
+      for (int x = -radius; x <= radius; x++) {
+        final int dx = destX + x;
+        if (dx < 0 || dx >= width) continue;
+        final int maskIndex = ((y + radius) * maskWidth) + (x + radius);
+        final double alpha = (alphaGrid[maskIndex] * opacityFactor).clamp(
+          0.0,
+          1.0,
+        );
+        if (alpha <= 0) continue;
+        final double keep = 1.0 - alpha;
+        final int pixelIndex = ((dy * width) + dx) * 4;
+        targetPixels[pixelIndex] =
+            (targetPixels[pixelIndex] * keep).round().clamp(0, 255);
+        targetPixels[pixelIndex + 1] =
+            (targetPixels[pixelIndex + 1] * keep).round().clamp(0, 255);
+        targetPixels[pixelIndex + 2] =
+            (targetPixels[pixelIndex + 2] * keep).round().clamp(0, 255);
+        targetPixels[pixelIndex + 3] =
+            (targetPixels[pixelIndex + 3] * keep).round().clamp(0, 255);
+      }
+    }
+  }
+
   void _enqueueFullResolutionCommit({
     required String layerId,
     required _CloneStrokeSession stroke,
@@ -30116,7 +36029,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         final Uint8List committedPixels = await _commitCloneBatchOnIsolate(
           pixels: fullSnapshot,
           basePixels:
-              batch.any((stroke) => stroke.mode == _CloneStrokeMode.erase)
+              batch.any((stroke) => stroke.mode == _CloneStrokeMode.restore)
                   ? Uint8List.fromList(buffer.cloneBaseFullPixels)
                   : null,
           width: buffer.fullWidth,
@@ -30184,6 +36097,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           .map(
             (stroke) => _CloneStrokePayload(
               modeIndex: stroke.mode.index,
+              brushShapeIndex: stroke.brushShape.index,
               sourceOffsetDx: stroke.sourceOffsetUv.dx,
               sourceOffsetDy: stroke.sourceOffsetUv.dy,
               brushSize: stroke.settings.size,
@@ -30246,29 +36160,35 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   _CloneBrushMask _resolveCloneBrushMask({
     required double radiusPx,
     required double hardness,
+    EraseBrushShape brushShape = EraseBrushShape.round,
   }) {
     final int radius = math.max(1, radiusPx.ceil());
     final int hardnessInt = hardness.round().clamp(0, 100);
-    final String key = '${radius}_$hardnessInt';
+    final String key = '${radius}_${hardnessInt}_${brushShape.name}';
     final _CloneBrushMask? cached = _cloneBrushMaskCache[key];
     if (cached != null) return cached;
 
     final int size = (radius * 2) + 1;
-    final double radiusSquared = radiusPx * radiusPx;
-    final double hardRadius =
-        radiusPx * _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
-    final double hardRadiusSquared = hardRadius * hardRadius;
+    final double safeRadius = math.max(0.0001, radiusPx);
+    final double hardStop =
+        _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
     final List<double> alphaGrid = List<double>.filled(size * size, 0);
 
     for (int y = -radius; y <= radius; y++) {
       for (int x = -radius; x <= radius; x++) {
-        final double distSquared = ((x * x) + (y * y)).toDouble();
-        if (distSquared > radiusSquared) continue;
+        final double normalizedDistance = _brushShapeDistance(
+          shape: brushShape,
+          normalizedX: x / safeRadius,
+          normalizedY: y / safeRadius,
+        );
+        if (normalizedDistance > 1.0) continue;
         double alpha = 1.0;
-        if (hardRadius < radiusPx && distSquared > hardRadiusSquared) {
-          final double dist = math.sqrt(distSquared);
+        if (hardStop < 1.0 && normalizedDistance > hardStop) {
           final double featherT =
-              ((dist - hardRadius) / (radiusPx - hardRadius)).clamp(0.0, 1.0);
+              ((normalizedDistance - hardStop) / (1.0 - hardStop)).clamp(
+            0.0,
+            1.0,
+          );
           alpha = _cloneSoftEdgeAlpha(featherT);
         }
         final int index = ((y + radius) * size) + (x + radius);
@@ -32012,6 +37932,58 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     );
   }
 
+  Rect _fixedCropViewportRect({
+    required Rect artboard,
+    required _CropToolConfig config,
+  }) {
+    return _fixedCropViewportRectFromArtboard(
+      artboard: artboard,
+      config: config,
+    );
+  }
+
+  Rect _cropRectUvFromFixedViewportFrame({
+    required Rect fixedFrameViewport,
+    required _ImageLayerSceneData layerData,
+    required _CropToolConfig config,
+  }) {
+    final double cropRotation =
+        layerData.rotation + _cropPreviewRotation(config);
+    final List<Offset> viewportCorners = <Offset>[
+      fixedFrameViewport.topLeft,
+      fixedFrameViewport.topRight,
+      fixedFrameViewport.bottomRight,
+      fixedFrameViewport.bottomLeft,
+    ];
+    final List<Offset> localCorners = viewportCorners.map((p) {
+      final Offset scene = _toScenePoint(p);
+      return _rotateVector(scene - layerData.center, -cropRotation);
+    }).toList(growable: false);
+    double minX = localCorners.first.dx;
+    double maxX = localCorners.first.dx;
+    double minY = localCorners.first.dy;
+    double maxY = localCorners.first.dy;
+    for (final Offset p in localCorners.skip(1)) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+    final Rect rawUv = Rect.fromLTRB(
+      (minX / layerData.width) + 0.5,
+      (minY / layerData.height) + 0.5,
+      (maxX / layerData.width) + 0.5,
+      (maxY / layerData.height) + 0.5,
+    );
+    return _clampCropRectUvCanvas(
+      rawUv,
+      aspectRatio: _cropUvAspectRatioCanvas(
+        config: config,
+        layerData: layerData,
+      ),
+    );
+  }
+
   Rect _clampCropRectUvCanvas(
     Rect rect, {
     double? aspectRatio,
@@ -32109,6 +38081,8 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       rotation: cropRotation,
     );
 
+    final bool freeformHandleMode = config.ratioPreset.isFreeformHandleMode;
+
     final double minCropExtent =
         math.min(cropRectLocal.width, cropRectLocal.height);
     final double tinyCropBoost =
@@ -32149,6 +38123,14 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     );
     _layerStartScenePoint = scenePoint;
     _gestureLayerId = config.layerId;
+
+    if (!freeformHandleMode) {
+      // Fixed-ratio modes keep the crop frame locked on screen.
+      // One-finger drag should not move/resize crop; user aligns image
+      // via pinch pan/zoom until double-tap commit.
+      _interaction = _CanvasInteraction.none;
+      return true;
+    }
 
     if (nearestCornerDistance <= cornerHandleRadius &&
         nearestCornerDistance <= nearestEdgeDistance &&
@@ -32207,6 +38189,10 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   }) {
     final double cropRotation =
         layerData.rotation + _cropPreviewRotation(config);
+    if (!config.ratioPreset.isFreeformHandleMode &&
+        _interaction == _CanvasInteraction.cropResizing) {
+      return;
+    }
     if (_interaction == _CanvasInteraction.cropMoving) {
       final double? uvAspect = _cropUvAspectRatioCanvas(
         config: config,
@@ -32432,6 +38418,7 @@ class _CloneStrokeSession {
     required this.mode,
     required this.sourceOffsetUv,
     required this.settings,
+    required this.brushShape,
     required this.artboardWidth,
     required this.destPointsUv,
   });
@@ -32440,6 +38427,7 @@ class _CloneStrokeSession {
   final _CloneStrokeMode mode;
   final Offset sourceOffsetUv;
   final CloneStampSettings settings;
+  final EraseBrushShape brushShape;
   final double artboardWidth;
   final List<Offset> destPointsUv;
 
@@ -32449,6 +38437,7 @@ class _CloneStrokeSession {
       mode: mode,
       sourceOffsetUv: sourceOffsetUv,
       settings: settings,
+      brushShape: brushShape,
       artboardWidth: artboardWidth,
       destPointsUv: List<Offset>.from(destPointsUv),
     );
@@ -32463,6 +38452,7 @@ class _ClonePendingSegment {
     required this.toDestUv,
     required this.sourceOffsetUv,
     required this.settings,
+    required this.brushShape,
     required this.artboardWidth,
   });
 
@@ -32472,6 +38462,7 @@ class _ClonePendingSegment {
   final Offset toDestUv;
   final Offset sourceOffsetUv;
   final CloneStampSettings settings;
+  final EraseBrushShape brushShape;
   final double artboardWidth;
 }
 
@@ -32490,6 +38481,7 @@ class _CloneBrushMask {
 class _CloneStrokePayload {
   const _CloneStrokePayload({
     required this.modeIndex,
+    required this.brushShapeIndex,
     required this.sourceOffsetDx,
     required this.sourceOffsetDy,
     required this.brushSize,
@@ -32500,6 +38492,7 @@ class _CloneStrokePayload {
   });
 
   final int modeIndex;
+  final int brushShapeIndex;
   final double sourceOffsetDx;
   final double sourceOffsetDy;
   final double brushSize;
@@ -32558,6 +38551,9 @@ void _applyStrokeToPixels({
   final int modeIndex =
       stroke.modeIndex.clamp(0, _CloneStrokeMode.values.length - 1);
   final _CloneStrokeMode mode = _CloneStrokeMode.values[modeIndex];
+  final int brushShapeIndex =
+      stroke.brushShapeIndex.clamp(0, EraseBrushShape.values.length - 1);
+  final EraseBrushShape brushShape = EraseBrushShape.values[brushShapeIndex];
   final Uint8List sourceSnapshot = mode == _CloneStrokeMode.clone
       ? Uint8List.fromList(pixels)
       : (basePixels ?? pixels);
@@ -32567,6 +38563,7 @@ void _applyStrokeToPixels({
   final _CloneBrushMask brushMask = _buildCloneBrushMaskForIsolate(
     radiusPx: radiusPx,
     hardness: stroke.hardness,
+    brushShape: brushShape,
   );
   final double opacityFactor = (stroke.opacity / 100).clamp(0.0, 1.0);
   final Offset sourceOffset =
@@ -32577,9 +38574,20 @@ void _applyStrokeToPixels({
   for (int i = 0; i < stroke.packedDestPoints.length; i += 2) {
     final Offset current =
         Offset(stroke.packedDestPoints[i], stroke.packedDestPoints[i + 1]);
-    if (mode == _CloneStrokeMode.erase) {
+    if (mode == _CloneStrokeMode.restore) {
       _paintRestoreSegmentOnPixelsForIsolate(
         sourcePixels: sourceSnapshot,
+        targetPixels: pixels,
+        targetWidth: width,
+        targetHeight: height,
+        fromDestUv: i == 0 ? current : previous,
+        toDestUv: current,
+        brushMask: brushMask,
+        hardness: stroke.hardness,
+        opacityFactor: opacityFactor,
+      );
+    } else if (mode == _CloneStrokeMode.transparentErase) {
+      _paintTransparentEraseSegmentOnPixelsForIsolate(
         targetPixels: pixels,
         targetWidth: width,
         targetHeight: height,
@@ -32831,28 +38839,126 @@ void _applyRestoreStampOnPixelsForIsolate({
   }
 }
 
+void _paintTransparentEraseSegmentOnPixelsForIsolate({
+  required Uint8List targetPixels,
+  required int targetWidth,
+  required int targetHeight,
+  required Offset fromDestUv,
+  required Offset toDestUv,
+  required _CloneBrushMask brushMask,
+  required double hardness,
+  required double opacityFactor,
+}) {
+  final int radius = brushMask.radius;
+  final double radiusPx = radius.toDouble();
+  final Offset delta = toDestUv - fromDestUv;
+  final double distancePx = delta.distance * targetWidth;
+  final double stampSpacingPx = _cloneStampSpacingPx(
+    radiusPx: radiusPx,
+    hardness: hardness,
+  );
+  final bool stationary = distancePx <= 0.001;
+  final int steps =
+      stationary ? 1 : math.max(1, (distancePx / stampSpacingPx).ceil());
+  final double flowOpacityFactor = _cloneFlowOpacityFactor(
+    baseOpacityFactor: opacityFactor,
+    radiusPx: radiusPx,
+    stampSpacingPx: stampSpacingPx,
+    stationary: stationary,
+  );
+  if (stationary) {
+    _applyTransparentEraseStampOnPixelsForIsolate(
+      targetPixels: targetPixels,
+      width: targetWidth,
+      height: targetHeight,
+      destUv: _clampUvStatic(toDestUv),
+      brushMask: brushMask,
+      opacityFactor: flowOpacityFactor,
+    );
+    return;
+  }
+  for (int i = 1; i <= steps; i++) {
+    final double t = i / steps;
+    final Offset destUv = _clampUvStatic(
+      Offset.lerp(fromDestUv, toDestUv, t) ?? toDestUv,
+    );
+    _applyTransparentEraseStampOnPixelsForIsolate(
+      targetPixels: targetPixels,
+      width: targetWidth,
+      height: targetHeight,
+      destUv: destUv,
+      brushMask: brushMask,
+      opacityFactor: flowOpacityFactor,
+    );
+  }
+}
+
+void _applyTransparentEraseStampOnPixelsForIsolate({
+  required Uint8List targetPixels,
+  required int width,
+  required int height,
+  required Offset destUv,
+  required _CloneBrushMask brushMask,
+  required double opacityFactor,
+}) {
+  final int destX = (destUv.dx * (width - 1)).round();
+  final int destY = (destUv.dy * (height - 1)).round();
+  final int radius = brushMask.radius;
+  final int maskWidth = brushMask.size;
+  final List<double> alphaGrid = brushMask.alphaGrid;
+
+  for (int y = -radius; y <= radius; y++) {
+    final int dy = destY + y;
+    if (dy < 0 || dy >= height) continue;
+    for (int x = -radius; x <= radius; x++) {
+      final int dx = destX + x;
+      if (dx < 0 || dx >= width) continue;
+      final int maskIndex = ((y + radius) * maskWidth) + (x + radius);
+      final double alpha = (alphaGrid[maskIndex] * opacityFactor).clamp(
+        0.0,
+        1.0,
+      );
+      if (alpha <= 0) continue;
+      final double keep = 1.0 - alpha;
+      final int pixelIndex = ((dy * width) + dx) * 4;
+      targetPixels[pixelIndex] =
+          (targetPixels[pixelIndex] * keep).round().clamp(0, 255);
+      targetPixels[pixelIndex + 1] =
+          (targetPixels[pixelIndex + 1] * keep).round().clamp(0, 255);
+      targetPixels[pixelIndex + 2] =
+          (targetPixels[pixelIndex + 2] * keep).round().clamp(0, 255);
+      targetPixels[pixelIndex + 3] =
+          (targetPixels[pixelIndex + 3] * keep).round().clamp(0, 255);
+    }
+  }
+}
+
 _CloneBrushMask _buildCloneBrushMaskForIsolate({
   required double radiusPx,
   required double hardness,
+  required EraseBrushShape brushShape,
 }) {
   final int radius = math.max(1, radiusPx.ceil());
   final int hardnessInt = hardness.round().clamp(0, 100);
   final int size = (radius * 2) + 1;
-  final double radiusSquared = radiusPx * radiusPx;
-  final double hardRadius =
-      radiusPx * _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
-  final double hardRadiusSquared = hardRadius * hardRadius;
+  final double safeRadius = math.max(0.0001, radiusPx);
+  final double hardStop =
+      _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
   final List<double> alphaGrid = List<double>.filled(size * size, 0);
 
   for (int y = -radius; y <= radius; y++) {
     for (int x = -radius; x <= radius; x++) {
-      final double distSquared = ((x * x) + (y * y)).toDouble();
-      if (distSquared > radiusSquared) continue;
+      final double normalizedDistance = _brushShapeDistance(
+        shape: brushShape,
+        normalizedX: x / safeRadius,
+        normalizedY: y / safeRadius,
+      );
+      if (normalizedDistance > 1.0) continue;
       double alpha = 1.0;
-      if (hardRadius < radiusPx && distSquared > hardRadiusSquared) {
-        final double dist = math.sqrt(distSquared);
+      if (hardStop < 1.0 && normalizedDistance > hardStop) {
         final double featherT =
-            ((dist - hardRadius) / (radiusPx - hardRadius)).clamp(0.0, 1.0);
+            ((normalizedDistance - hardStop) / (1.0 - hardStop))
+                .clamp(0.0, 1.0);
         alpha = _cloneSoftEdgeAlpha(featherT);
       }
       final int index = ((y + radius) * size) + (x + radius);
@@ -33361,8 +39467,10 @@ _ImageLayerSceneData? _buildImageLayerSceneData({
   // jumps when tools switch after clone preview edits.
   final Size logicalSize =
       layer.solidSize ?? Size(image.width.toDouble(), image.height.toDouble());
-  final Offset sourcePos = layer.position ??
-      Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+  final Offset sourcePos = layer.isBackground
+      ? Offset(workspaceSize.width / 2, workspaceSize.height / 2)
+      : (layer.position ??
+          Offset(workspaceSize.width / 2, workspaceSize.height / 2));
   final Offset center = artboard.topLeft +
       Offset(sourcePos.dx * unitScale, sourcePos.dy * unitScale);
   final double drawWidth = logicalSize.width * unitScale * layer.layerScale;
@@ -33970,6 +40078,29 @@ Rect _computeArtboardRect({
   return Rect.fromLTWH(left, topPadding, artboardWidth, artboardHeight);
 }
 
+Rect _fixedCropViewportRectFromArtboard({
+  required Rect artboard,
+  required _CropToolConfig config,
+}) {
+  final double aspect =
+      (config.ratioPreset.aspectRatio ?? 1.0).clamp(0.05, 20.0).toDouble();
+  final double maxWidth = (artboard.width * 0.9).clamp(40.0, artboard.width);
+  final double maxHeight = (artboard.height * 0.9).clamp(40.0, artboard.height);
+  double width = maxWidth;
+  double height = width / aspect;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspect;
+  }
+  width = width.clamp(24.0, artboard.width).toDouble();
+  height = height.clamp(24.0, artboard.height).toDouble();
+  return Rect.fromCenter(
+    center: artboard.center,
+    width: width,
+    height: height,
+  );
+}
+
 class _SkiaCanvasPainter extends CustomPainter {
   _SkiaCanvasPainter({
     required Listenable repaint,
@@ -33983,7 +40114,9 @@ class _SkiaCanvasPainter extends CustomPainter {
     required this.isToolEnabled,
     required this.editableImages,
     required this.cloneSettings,
+    required this.eraseSettings,
     required this.showCloneBrushPreview,
+    required this.showEraseBrushPreview,
     required this.cloneSourcePointerUvResolver,
     required this.showCloneTargetPointer,
     required this.cloneTargetPointerUvResolver,
@@ -34005,6 +40138,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     required this.showUpscaleMagicEffect,
     required this.upscaleMagicLayerId,
     required this.upscaleMagicPhaseResolver,
+    required this.brushPreviewPulsePhaseResolver,
   }) : super(repaint: repaint);
 
   final List<_BrushStroke> strokes;
@@ -34017,7 +40151,9 @@ class _SkiaCanvasPainter extends CustomPainter {
   final bool isToolEnabled;
   final Map<String, _EditableImageBuffer> editableImages;
   final CloneStampSettings cloneSettings;
+  final EraseToolSettings eraseSettings;
   final bool showCloneBrushPreview;
+  final bool showEraseBrushPreview;
   final Offset? Function() cloneSourcePointerUvResolver;
   final bool showCloneTargetPointer;
   final Offset? Function() cloneTargetPointerUvResolver;
@@ -34045,6 +40181,7 @@ class _SkiaCanvasPainter extends CustomPainter {
   final bool showUpscaleMagicEffect;
   final String? upscaleMagicLayerId;
   final double Function() upscaleMagicPhaseResolver;
+  final double Function() brushPreviewPulsePhaseResolver;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -34140,11 +40277,13 @@ class _SkiaCanvasPainter extends CustomPainter {
     if (cropToolConfig != null &&
         cropLayerData != null &&
         cropLayerData.layerId == cropToolConfig!.layerId) {
-      _drawCropPreview(
-        canvas,
-        cropLayerData,
-        cropToolConfig!,
-      );
+      if (cropToolConfig!.ratioPreset.isFreeformHandleMode) {
+        _drawCropPreview(
+          canvas,
+          cropLayerData,
+          cropToolConfig!,
+        );
+      }
     }
     if (isToolEnabled &&
         (activeTool == EditorTool.sketchReplace ||
@@ -34216,15 +40355,23 @@ class _SkiaCanvasPainter extends CustomPainter {
       );
     }
     final Offset? cloneTargetUv = cloneTargetPointerUvResolver();
+    final CloneStampSettings targetPointerSettings =
+        activeTool == EditorTool.erase
+            ? CloneStampSettings(
+                size: eraseSettings.size,
+                hardness: eraseSettings.hardness,
+                opacity: eraseSettings.opacity,
+              )
+            : cloneSettings;
     if (isToolEnabled &&
-        activeTool == EditorTool.clone &&
+        (activeTool == EditorTool.clone || activeTool == EditorTool.erase) &&
         showCloneTargetPointer &&
         cloneTargetUv != null) {
       _drawCloneTargetPointer(
         canvas,
         artboard,
         cloneTargetUv,
-        cloneSettings,
+        targetPointerSettings,
         viewScale: scale,
       );
     }
@@ -34236,6 +40383,22 @@ class _SkiaCanvasPainter extends CustomPainter {
         size,
         cloneSettings,
         viewScale: scale,
+        previewPulsePhase: brushPreviewPulsePhaseResolver(),
+      );
+    }
+    if (isToolEnabled &&
+        activeTool == EditorTool.erase &&
+        showEraseBrushPreview) {
+      _drawCloneBrushPreviewIndicator(
+        canvas,
+        size,
+        CloneStampSettings(
+          size: eraseSettings.size,
+          hardness: eraseSettings.hardness,
+          opacity: eraseSettings.opacity,
+        ),
+        viewScale: scale,
+        previewPulsePhase: brushPreviewPulsePhaseResolver(),
       );
     }
     final List<_SmartGuideSegment> smartGuides = smartGuidesResolver();
@@ -34243,6 +40406,14 @@ class _SkiaCanvasPainter extends CustomPainter {
       _drawSmartGuides(canvas, smartGuides, viewScale: scale);
     }
     canvas.restore();
+    if (cropToolConfig != null &&
+        !cropToolConfig!.ratioPreset.isFreeformHandleMode) {
+      _drawFixedCropPreviewOverlay(
+        canvas,
+        artboard: artboard,
+        config: cropToolConfig!,
+      );
+    }
     canvas.restore();
   }
 
@@ -34900,6 +41071,12 @@ class _SkiaCanvasPainter extends CustomPainter {
       );
     }
 
+    final bool freeformHandleMode = config.ratioPreset.isFreeformHandleMode;
+    if (!freeformHandleMode) {
+      canvas.restore();
+      return;
+    }
+
     final double invScale = (1 / scale).clamp(0.28, 2.4);
     final double cornerRadius = (6.2 * invScale).clamp(3.8, 10.5);
     final double edgeRadius = (5.6 * invScale).clamp(3.4, 9.2);
@@ -34933,6 +41110,54 @@ class _SkiaCanvasPainter extends CustomPainter {
       canvas.drawCircle(edge, edgeRadius, handleStrokePaint);
     }
     canvas.restore();
+  }
+
+  void _drawFixedCropPreviewOverlay(
+    Canvas canvas, {
+    required Rect artboard,
+    required _CropToolConfig config,
+  }) {
+    final Rect fixedFrame = _fixedCropViewportRectFromArtboard(
+      artboard: artboard,
+      config: config,
+    );
+    final Path outsidePath = Path.combine(
+      PathOperation.difference,
+      Path()..addRect(artboard),
+      Path()..addRect(fixedFrame),
+    );
+    canvas.drawPath(
+      outsidePath,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = const Color(0x5A0F172A),
+    );
+    final Paint framePaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2
+      ..color = const Color(0xFFEAF1FF);
+    canvas.drawRect(fixedFrame, framePaint);
+
+    final Paint gridPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.9
+      ..color = const Color(0x75EAF1FF);
+    final double thirdW = fixedFrame.width / 3;
+    final double thirdH = fixedFrame.height / 3;
+    for (int i = 1; i <= 2; i++) {
+      final double x = fixedFrame.left + (thirdW * i);
+      final double y = fixedFrame.top + (thirdH * i);
+      canvas.drawLine(
+        Offset(x, fixedFrame.top),
+        Offset(x, fixedFrame.bottom),
+        gridPaint,
+      );
+      canvas.drawLine(
+        Offset(fixedFrame.left, y),
+        Offset(fixedFrame.right, y),
+        gridPaint,
+      );
+    }
   }
 
   double _hash01(double seed) {
@@ -35445,6 +41670,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     Size canvasSize,
     CloneStampSettings settings, {
     required double viewScale,
+    required double previewPulsePhase,
   }) {
     final double safeScale = viewScale <= 0 ? 1.0 : viewScale;
     final Offset center = Offset(
@@ -35465,7 +41691,8 @@ class _SkiaCanvasPainter extends CustomPainter {
 
     final double coreAlpha = (0.14 + (0.30 * opacity)).clamp(0.08, 0.52);
     final double edgeAlpha = (0.04 + (0.20 * opacity)).clamp(0.02, 0.28);
-    final double outlineAlpha = (0.36 + (0.56 * opacity)).clamp(0.22, 0.92);
+    final double outlineAlpha = (0.58 + (0.36 * opacity)).clamp(0.34, 0.94);
+    const Color previewColor = Color(0xFF3CC7FF);
 
     final Paint fill = Paint()
       ..isAntiAlias = true
@@ -35473,20 +41700,28 @@ class _SkiaCanvasPainter extends CustomPainter {
         center,
         radius,
         <Color>[
-          Colors.white.withOpacity(coreAlpha),
-          Colors.white.withOpacity(coreAlpha),
-          Colors.white.withOpacity(edgeAlpha),
-          Colors.white.withOpacity(0.0),
+          previewColor.withOpacity((0.20 + coreAlpha).clamp(0.14, 0.72)),
+          previewColor
+              .withOpacity((0.18 + (coreAlpha * 0.9)).clamp(0.12, 0.66)),
+          previewColor.withOpacity((0.05 + edgeAlpha).clamp(0.03, 0.34)),
+          previewColor.withOpacity(0.0),
         ],
         <double>[0.0, hardStop, midStop, 1.0],
       );
     canvas.drawCircle(center, radius, fill);
 
+    final Paint darkOutline = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (2.1 / safeScale).clamp(0.9, 3.3)
+      ..color = const Color(0xFF0E1117).withOpacity(0.86);
+    canvas.drawCircle(center, radius, darkOutline);
+
     final Paint outline = Paint()
       ..isAntiAlias = true
       ..style = PaintingStyle.stroke
       ..strokeWidth = (1.1 / safeScale).clamp(0.45, 2.2)
-      ..color = Colors.white.withOpacity(outlineAlpha);
+      ..color = previewColor.withOpacity(outlineAlpha);
     canvas.drawCircle(center, radius, outline);
 
     if (hardnessFactor < 0.98) {
@@ -35494,10 +41729,24 @@ class _SkiaCanvasPainter extends CustomPainter {
         ..isAntiAlias = true
         ..style = PaintingStyle.stroke
         ..strokeWidth = (0.9 / safeScale).clamp(0.4, 2.0)
-        ..color = Colors.white
-            .withOpacity((0.18 + (0.34 * opacity)).clamp(0.1, 0.52));
+        ..color = previewColor
+            .withOpacity((0.24 + (0.38 * opacity)).clamp(0.16, 0.62));
       canvas.drawCircle(center, radius * hardStop, hardEdge);
     }
+
+    final double pulseT =
+        ((math.sin(previewPulsePhase * 2 * math.pi) + 1.0) * 0.5)
+            .clamp(0.0, 1.0)
+            .toDouble();
+    final double pulseRadius = radius * (1.0 + (0.26 * pulseT));
+    final double pulseOpacity =
+        (0.42 * (1.0 - pulseT) + (0.10 * opacity)).clamp(0.08, 0.56);
+    final Paint pulse = Paint()
+      ..isAntiAlias = true
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = (1.35 / safeScale).clamp(0.6, 2.4)
+      ..color = Colors.white.withOpacity(pulseOpacity);
+    canvas.drawCircle(center, pulseRadius, pulse);
   }
 
   void _drawMarqueeSelection(
@@ -35711,7 +41960,9 @@ class _SkiaCanvasPainter extends CustomPainter {
         oldDelegate.isToolEnabled != isToolEnabled ||
         oldDelegate.editableImages != editableImages ||
         oldDelegate.cloneSettings != cloneSettings ||
+        oldDelegate.eraseSettings != eraseSettings ||
         oldDelegate.showCloneBrushPreview != showCloneBrushPreview ||
+        oldDelegate.showEraseBrushPreview != showEraseBrushPreview ||
         oldDelegate.showCloneTargetPointer != showCloneTargetPointer ||
         oldDelegate.marqueeSelection != marqueeSelection ||
         oldDelegate.overlayCutConfig != overlayCutConfig ||
@@ -37215,9 +43466,6 @@ Map<String, Object> _prepareExpandSourcePayloadIsolate({
   required double topExpand,
   required double rightExpand,
   required double bottomExpand,
-  required int maxLongSide,
-  required int maxPixels,
-  required int sourceJpegQuality,
 }) {
   final double safeLeft = leftExpand.clamp(0.0, 3.0).toDouble();
   final double safeTop = topExpand.clamp(0.0, 3.0).toDouble();
@@ -37231,33 +43479,6 @@ Map<String, Object> _prepareExpandSourcePayloadIsolate({
     order: img.ChannelOrder.rgba,
     numChannels: 4,
   );
-
-  final double widthFactor = 1.0 + safeLeft + safeRight;
-  final double heightFactor = 1.0 + safeTop + safeBottom;
-  final double targetWidthF = working.width * widthFactor;
-  final double targetHeightF = working.height * heightFactor;
-
-  double scale = 1.0;
-  final int safeMaxLong = math.max(512, maxLongSide);
-  final int safeMaxPixels = math.max(1024 * 1024, maxPixels);
-  final double longSide = math.max(targetWidthF, targetHeightF);
-  if (longSide > safeMaxLong) {
-    scale = math.min(scale, safeMaxLong / longSide);
-  }
-  final double targetPixels = targetWidthF * targetHeightF;
-  if (targetPixels > safeMaxPixels) {
-    scale = math.min(scale, math.sqrt(safeMaxPixels / targetPixels));
-  }
-  if (scale < 0.999) {
-    final int scaledWidth = math.max(1, (working.width * scale).round());
-    final int scaledHeight = math.max(1, (working.height * scale).round());
-    working = img.copyResize(
-      working,
-      width: scaledWidth,
-      height: scaledHeight,
-      interpolation: img.Interpolation.linear,
-    );
-  }
 
   final int srcW = working.width;
   final int srcH = working.height;
@@ -37290,10 +43511,9 @@ Map<String, Object> _prepareExpandSourcePayloadIsolate({
     order: img.ChannelOrder.rgba,
     numChannels: 4,
   );
-  final int safeJpegQuality = sourceJpegQuality.clamp(70, 100).toInt();
   return <String, Object>{
     'sourceImageBytes': Uint8List.fromList(
-      img.encodeJpg(expandedImage, quality: safeJpegQuality),
+      img.encodePng(expandedImage, level: 2),
     ),
   };
 }
