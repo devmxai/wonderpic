@@ -5,9 +5,93 @@ WonderPic is a Flutter-based mobile photo editor prototype focused on a professi
 This README is a full handoff document for engineers and AI models.
 If a new model/session takes over, this file should be enough to continue development without losing context.
 
-## 0. Latest Continuation Notes (March 5, 2026)
+## 0. Latest Continuation Notes (March 6, 2026)
 
 This section is the **latest handoff checkpoint** and has higher priority than older notes when conflicts appear.
+
+### 0.55 Latest Handoff (March 6, 2026 - PNG Element Color Effect + Release Build)
+
+This subsection is the newest checkpoint for the Overlay Element PNG color workflow.
+
+#### What was completed in this thread
+- Added a dedicated `PNG Effect` card inside Overlay Image settings.
+- The card is collapsible/expandable and includes:
+  - enable/disable toggle
+  - quick color presets (White/Black)
+  - horizontal color palette picker
+  - fine-tune sliders: `Strength`, `Details`, `Threshold`, plus `RGB` sliders
+- Effect is restricted to **Elements PNG** layers only (not regular uploaded images).
+- Added robust element source metadata to image layers:
+  - `isCatalogElement`
+  - `elementAssetId`
+  - `elementMimeType`
+  - `elementFileUrl`
+- Connected PNG effect to render/export pipeline with color-matrix processing.
+- Added compatibility fallback for older existing `Overlay Element` layers that were created before metadata fields existed.
+- Release APK was built successfully.
+
+#### Release artifact
+- `build/app/outputs/flutter-apk/app-release.apk`
+- equivalent path: `build/app/outputs/apk/release/app-release.apk`
+
+#### Files touched (this thread)
+- `lib/main.dart`
+- `README.md`
+
+#### Next-thread verification checklist
+1. Insert a PNG element from Elements, double-tap/open settings, confirm `PNG Effect` card appears.
+2. Confirm white/black recolor is clean and immediate.
+3. Confirm regular gallery/uploaded image layers do **not** show `PNG Effect`.
+4. Validate export output preserves PNG effect color in final image.
+
+### 0.54 Latest Handoff (March 6, 2026 - Text Tool Activation + Bottom Sheet Dismiss Regression)
+
+This subsection is now the newest checkpoint for Text tool state flow and Text settings bottom sheet dismiss behavior.
+
+#### Requested UX contract (must be enforced)
+- Text tool button must be `inactive` (dark/normal) until user explicitly taps it.
+- After adding a text layer, the button becomes `available` (clickable), but still not `active` automatically.
+- Text button becomes `active` (yellow) only after explicit tap on the tool.
+- Tapping outside Text bottom sheet (canvas/empty area) must close only the sheet.
+- Text tool should not be implicitly deactivated by outside tap.
+- Text tool should be deactivated only by:
+  - tapping the same Text tool button again, or
+  - switching to another tool.
+
+#### Current status at handoff time
+- Top-button active color logic was re-bound to explicit text tool active state (`_isToolEnabled && _activeTool == EditorTool.text && _isTextSettingsDockEnabled`).
+- Text button handler was updated to follow explicit activation/deactivation flow instead of opening blindly.
+- Bottom-sheet dismiss path was refactored to avoid route-pop races and double-dismiss attempts.
+
+#### Current unresolved issue (still active, high priority)
+- Regression still reproduces on device/simulator:
+  - Text bottom sheet remains open in some outside-tap cases.
+  - Text tool highlight/selection state can desync from sheet visibility.
+  - In some interaction sequences, tool appears to toggle but sheet does not close, causing perceived unresponsive state.
+
+#### Reproduction (latest confirmed by user)
+1. Add a text layer.
+2. Open Text tool and change font/color.
+3. Tap outside bottom sheet on canvas.
+4. Observed (wrong): tool state changes/desync occurs while bottom sheet may remain visible.
+5. Expected: bottom sheet closes immediately; tool remains logically stable per contract above.
+
+#### Files touched (this thread)
+- `lib/main.dart`
+- `README.md`
+
+#### Next-thread strict checklist
+1. Reproduce exactly the 5-step sequence above before editing.
+2. Instrument Text sheet lifecycle with scoped logs:
+   - open request, dismiss request source (outside tap / tool tap / route dismiss), route closed callback.
+3. Keep a single source of truth for Text UI state machine:
+   - availability, active state, bottom-sheet open state.
+4. Verify no path closes/changes tool state without synchronizing sheet state.
+5. Re-test:
+   - outside tap close
+   - tap same tool to close
+   - switch to another tool
+   - repeated open/close cycles without freeze/desync.
 
 ### 0.53 Latest Handoff (March 5, 2026 - Photo-Only Release Mode + Add Sheet Height)
 

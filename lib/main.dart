@@ -7,6 +7,7 @@ import 'dart:ui' as ui;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wonderpic/firebase_options.dart';
 import 'package:wonderpic/library/wonderpic_library_screen.dart';
 import 'package:wonderpic/services/wonderpic_backend_client.dart';
@@ -6873,6 +6875,7 @@ class _ElementsAssetSelection {
 class _PendingElementPlacement {
   const _PendingElementPlacement({
     required this.assetId,
+    required this.assetMimeType,
     required this.fileUrl,
     required this.image,
     required this.thumbnailBytes,
@@ -6884,6 +6887,7 @@ class _PendingElementPlacement {
   });
 
   final String assetId;
+  final String? assetMimeType;
   final String fileUrl;
   final ui.Image? image;
   final Uint8List? thumbnailBytes;
@@ -6895,6 +6899,7 @@ class _PendingElementPlacement {
 
   _PendingElementPlacement copyWith({
     String? assetId,
+    String? assetMimeType,
     String? fileUrl,
     ui.Image? image,
     Uint8List? thumbnailBytes,
@@ -6906,6 +6911,7 @@ class _PendingElementPlacement {
   }) {
     return _PendingElementPlacement(
       assetId: assetId ?? this.assetId,
+      assetMimeType: assetMimeType ?? this.assetMimeType,
       fileUrl: fileUrl ?? this.fileUrl,
       image: image ?? this.image,
       thumbnailBytes: thumbnailBytes ?? this.thumbnailBytes,
@@ -8082,6 +8088,15 @@ class EditorLayer {
     this.imageBlurModeKey,
     this.imageBlurRadius,
     this.imageBlurAmount,
+    this.isCatalogElement = false,
+    this.elementAssetId,
+    this.elementMimeType,
+    this.elementFileUrl,
+    this.imagePngEffectEnabled = false,
+    this.imagePngEffectColor = const Color(0xFFFFFFFF),
+    this.imagePngEffectStrength = 100.0,
+    this.imagePngEffectDetails = 0.0,
+    this.imagePngEffectThreshold = 0.0,
     this.overlayShapeTypeKey,
     this.position,
     this.layerScale = 1.0,
@@ -8128,6 +8143,15 @@ class EditorLayer {
   final String? imageBlurModeKey;
   final double? imageBlurRadius;
   final double? imageBlurAmount;
+  final bool isCatalogElement;
+  final String? elementAssetId;
+  final String? elementMimeType;
+  final String? elementFileUrl;
+  final bool imagePngEffectEnabled;
+  final Color imagePngEffectColor;
+  final double imagePngEffectStrength;
+  final double imagePngEffectDetails;
+  final double imagePngEffectThreshold;
   final String? overlayShapeTypeKey;
   final Offset? position;
   final double layerScale;
@@ -8174,6 +8198,15 @@ class EditorLayer {
     String? imageBlurModeKey,
     double? imageBlurRadius,
     double? imageBlurAmount,
+    bool? isCatalogElement,
+    String? elementAssetId,
+    String? elementMimeType,
+    String? elementFileUrl,
+    bool? imagePngEffectEnabled,
+    Color? imagePngEffectColor,
+    double? imagePngEffectStrength,
+    double? imagePngEffectDetails,
+    double? imagePngEffectThreshold,
     String? overlayShapeTypeKey,
     Offset? position,
     double? layerScale,
@@ -8222,6 +8255,19 @@ class EditorLayer {
       imageBlurModeKey: imageBlurModeKey ?? this.imageBlurModeKey,
       imageBlurRadius: imageBlurRadius ?? this.imageBlurRadius,
       imageBlurAmount: imageBlurAmount ?? this.imageBlurAmount,
+      isCatalogElement: isCatalogElement ?? this.isCatalogElement,
+      elementAssetId: elementAssetId ?? this.elementAssetId,
+      elementMimeType: elementMimeType ?? this.elementMimeType,
+      elementFileUrl: elementFileUrl ?? this.elementFileUrl,
+      imagePngEffectEnabled:
+          imagePngEffectEnabled ?? this.imagePngEffectEnabled,
+      imagePngEffectColor: imagePngEffectColor ?? this.imagePngEffectColor,
+      imagePngEffectStrength:
+          imagePngEffectStrength ?? this.imagePngEffectStrength,
+      imagePngEffectDetails:
+          imagePngEffectDetails ?? this.imagePngEffectDetails,
+      imagePngEffectThreshold:
+          imagePngEffectThreshold ?? this.imagePngEffectThreshold,
       overlayShapeTypeKey: overlayShapeTypeKey ?? this.overlayShapeTypeKey,
       position: position ?? this.position,
       layerScale: layerScale ?? this.layerScale,
@@ -8244,6 +8290,126 @@ class _TextFontOption {
   final String preview;
   final TextDirection direction;
   final int defaultWeight;
+}
+
+class _CatalogTextFont {
+  const _CatalogTextFont({
+    required this.id,
+    required this.family,
+    required this.label,
+    required this.preview,
+    required this.direction,
+    required this.fileUrl,
+    required this.sortOrder,
+  });
+
+  final String id;
+  final String family;
+  final String label;
+  final String preview;
+  final TextDirection direction;
+  final String fileUrl;
+  final int sortOrder;
+
+  bool get isValid =>
+      family.isNotEmpty && label.isNotEmpty && fileUrl.isNotEmpty;
+
+  _TextFontOption toFontOption() {
+    return _TextFontOption(
+      family: family,
+      label: label,
+      preview: preview,
+      direction: direction,
+      defaultWeight: 400,
+    );
+  }
+
+  factory _CatalogTextFont.fromJson(Map<String, dynamic> json) {
+    final String locale =
+        (json['locale'] as String? ?? '').trim().toLowerCase();
+    final TextDirection direction =
+        (locale == 'arabic' || locale == 'ar' || locale == 'rtl')
+            ? TextDirection.rtl
+            : TextDirection.ltr;
+    final String fallbackPreview =
+        direction == TextDirection.rtl ? 'أبجد' : 'Aa';
+    final String preview = (json['preview'] as String? ?? '').trim();
+    return _CatalogTextFont(
+      id: (json['id'] as String? ?? '').trim(),
+      family: (json['family'] as String? ?? '').trim(),
+      label: (json['label'] as String? ?? '').trim(),
+      preview: preview.isEmpty ? fallbackPreview : preview,
+      direction: direction,
+      fileUrl: (json['file_url'] as String? ?? '').trim(),
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class _PersistedUploadedTextFont {
+  const _PersistedUploadedTextFont({
+    required this.family,
+    required this.label,
+    required this.preview,
+    required this.direction,
+    required this.base64Bytes,
+    required this.createdAtMs,
+  });
+
+  final String family;
+  final String label;
+  final String preview;
+  final TextDirection direction;
+  final String base64Bytes;
+  final int createdAtMs;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'family': family,
+      'label': label,
+      'preview': preview,
+      'direction': direction == TextDirection.rtl ? 'rtl' : 'ltr',
+      'base64Bytes': base64Bytes,
+      'createdAtMs': createdAtMs,
+    };
+  }
+
+  _TextFontOption toFontOption() {
+    return _TextFontOption(
+      family: family,
+      label: label,
+      preview: preview,
+      direction: direction,
+      defaultWeight: 400,
+    );
+  }
+
+  static _PersistedUploadedTextFont? fromJson(dynamic raw) {
+    if (raw is! Map) return null;
+    final Map<dynamic, dynamic> map = raw;
+    final String family = (map['family']?.toString() ?? '').trim();
+    final String label = (map['label']?.toString() ?? '').trim();
+    final String preview = (map['preview']?.toString() ?? '').trim();
+    final String directionRaw = (map['direction']?.toString() ?? 'ltr').trim();
+    final String base64Bytes = (map['base64Bytes']?.toString() ?? '').trim();
+    final int createdAtMs = map['createdAtMs'] is int
+        ? map['createdAtMs'] as int
+        : int.tryParse(map['createdAtMs']?.toString() ?? '') ??
+            DateTime.now().millisecondsSinceEpoch;
+    if (family.isEmpty || label.isEmpty || base64Bytes.isEmpty) {
+      return null;
+    }
+    return _PersistedUploadedTextFont(
+      family: family,
+      label: label,
+      preview: preview.isEmpty ? 'Aa' : preview,
+      direction: directionRaw.toLowerCase() == 'rtl'
+          ? TextDirection.rtl
+          : TextDirection.ltr,
+      base64Bytes: base64Bytes,
+      createdAtMs: createdAtMs,
+    );
+  }
 }
 
 class _TextFontFamilyPack {
@@ -8601,7 +8767,6 @@ final List<_TextFontOption> _kArabicFontOptions =
   packs: _kArabicFontPacks,
   preview: 'اكتب نصك هنا للمعاينة',
   direction: TextDirection.rtl,
-  appendWeightTag: true,
 );
 
 final Set<String> _kGoogleFontFamilies = <String>{
@@ -8613,38 +8778,58 @@ List<_TextFontOption> _buildTextFontOptionsFromPacks({
   required List<_TextFontFamilyPack> packs,
   required String preview,
   required TextDirection direction,
-  bool appendWeightTag = false,
 }) {
   final List<_TextFontOption> options = <_TextFontOption>[];
   for (final _TextFontFamilyPack pack in packs) {
-    final List<int> weights =
-        pack.weights.isEmpty ? _kDefaultCatalogWeights : pack.weights;
-    for (final int weight in weights) {
-      final String label = appendWeightTag && weights.length > 1
-          ? '${pack.label} ${_fontWeightTag(weight)}'
-          : pack.label;
-      options.add(
-        _TextFontOption(
-          family: pack.family,
-          label: label,
-          preview: preview,
-          direction: direction,
-          defaultWeight: weight,
-        ),
-      );
-    }
+    final List<int> weights = _normalizedFontWeights(
+      pack.weights.isEmpty ? _kDefaultCatalogWeights : pack.weights,
+    );
+    options.add(
+      _TextFontOption(
+        family: pack.family,
+        label: pack.label,
+        preview: preview,
+        direction: direction,
+        defaultWeight: _preferredDefaultFontWeight(weights),
+      ),
+    );
   }
   return List<_TextFontOption>.unmodifiable(options);
 }
 
-String _fontWeightTag(int weight) {
-  if (weight <= 300) return 'Light';
-  if (weight <= 400) return 'Regular';
-  if (weight <= 500) return 'Medium';
-  if (weight <= 600) return 'SemiBold';
-  if (weight <= 700) return 'Bold';
-  if (weight <= 800) return 'ExtraBold';
-  return 'Black';
+List<int> _normalizedFontWeights(List<int> rawWeights) {
+  final Set<int> unique = <int>{};
+  for (final int weight in rawWeights) {
+    if (weight < 100 || weight > 900) continue;
+    unique.add(weight);
+  }
+  if (unique.isEmpty) {
+    unique.addAll(_kDefaultCatalogWeights);
+  }
+  final List<int> sorted = unique.toList()..sort();
+  return List<int>.unmodifiable(sorted);
+}
+
+int _preferredDefaultFontWeight(List<int> weights) {
+  final List<int> normalized = _normalizedFontWeights(weights);
+  if (normalized.contains(400)) {
+    return 400;
+  }
+  return normalized.first;
+}
+
+String _normalizeFontFamilyKey(String family) {
+  final String lower = family.trim().toLowerCase();
+  if (lower.isEmpty) return '';
+  final StringBuffer buffer = StringBuffer();
+  for (final int codeUnit in lower.codeUnits) {
+    final bool isDigit = codeUnit >= 48 && codeUnit <= 57;
+    final bool isLetter = codeUnit >= 97 && codeUnit <= 122;
+    if (isDigit || isLetter) {
+      buffer.writeCharCode(codeUnit);
+    }
+  }
+  return buffer.toString();
 }
 
 TextStyle _fontAwareTextStyle({
@@ -8693,33 +8878,61 @@ const List<int> _kVariableFontWeights = <int>[
   900
 ];
 
-const Map<String, List<int>> _kFontWeightSupport = <String, List<int>>{
-  'Inter': _kVariableFontWeights,
-  'Nunito': _kVariableFontWeights,
-  'Merriweather': _kVariableFontWeights,
-  'PlayfairDisplay': _kVariableFontWeights,
-  'Oswald': _kVariableFontWeights,
-  'Montserrat': _kVariableFontWeights,
-  'Raleway': _kVariableFontWeights,
-  'Rubik': _kVariableFontWeights,
-  'Quicksand': _kVariableFontWeights,
-  'Karla': _kVariableFontWeights,
-  'Cabin': _kVariableFontWeights,
-  'Manrope': _kVariableFontWeights,
-  'Mulish': _kVariableFontWeights,
-  'SourceSans3': _kVariableFontWeights,
-  'WorkSans': _kVariableFontWeights,
-  'Cairo': _kVariableFontWeights,
-  'Changa': _kVariableFontWeights,
-  'ElMessiri': _kVariableFontWeights,
-  'ReemKufi': _kVariableFontWeights,
-  'NotoNaskhArabic': _kVariableFontWeights,
-  'NotoKufiArabic': _kVariableFontWeights,
-  'MarkaziText': _kVariableFontWeights,
-  'Mada': _kVariableFontWeights,
-  'Lemonada': _kVariableFontWeights,
-  'BalooBhaijaan2': _kVariableFontWeights,
+const Set<String> _kVariableWeightFamilies = <String>{
+  'Inter',
+  'Nunito',
+  'Merriweather',
+  'Playfair Display',
+  'Oswald',
+  'Montserrat',
+  'Raleway',
+  'Rubik',
+  'Quicksand',
+  'Karla',
+  'Cabin',
+  'Manrope',
+  'Mulish',
+  'Source Sans 3',
+  'Work Sans',
+  'Cairo',
+  'Changa',
+  'El Messiri',
+  'Reem Kufi',
+  'Noto Naskh Arabic',
+  'Noto Kufi Arabic',
+  'Markazi Text',
+  'Mada',
+  'Lemonada',
+  'Baloo Bhaijaan 2',
 };
+
+final Map<String, List<int>> _kFontWeightSupport = _buildFontWeightSupport();
+
+Map<String, List<int>> _buildFontWeightSupport() {
+  final Map<String, List<int>> support = <String, List<int>>{};
+  void register(String family, List<int> weights) {
+    final String cleanFamily = family.trim();
+    if (cleanFamily.isEmpty) return;
+    final List<int> normalizedWeights = _normalizedFontWeights(weights);
+    support[cleanFamily] = normalizedWeights;
+    final String normalizedKey = _normalizeFontFamilyKey(cleanFamily);
+    if (normalizedKey.isNotEmpty) {
+      support[normalizedKey] = normalizedWeights;
+    }
+  }
+
+  for (final _TextFontFamilyPack pack in _kEnglishFontPacks) {
+    register(pack.family, pack.weights);
+  }
+  for (final _TextFontFamilyPack pack in _kArabicFontPacks) {
+    register(pack.family, pack.weights);
+  }
+  for (final String family in _kVariableWeightFamilies) {
+    register(family, _kVariableFontWeights);
+  }
+
+  return Map<String, List<int>>.unmodifiable(support);
+}
 
 const List<Color> _kTextPalette = <Color>[
   Color(0xFF000000),
@@ -8772,8 +8985,17 @@ const List<Color> _kTextPalette = <Color>[
   Color(0xFFA21CAF),
   Color(0xFFDB2777),
 ];
+const List<String> _kExternalTextFontExtensions = <String>[
+  'ttf',
+  'otf',
+  'ttc',
+];
+const String _kUploadedTextFontsStorageKeyPrefix =
+    'wonderpic_uploaded_text_fonts_v1';
+const int _kUploadedTextFontsMaxCount = 20;
 
-class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
+class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
+    with TickerProviderStateMixin {
   static const int _historyLimit = 120;
   static const double _bottomNavHeight = 62;
   static const double _topToolButtonSize = 40;
@@ -8788,12 +9010,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   static const double _cloneJoystickKnobTravel = 17;
   static const double _cloneSetSourceDockButtonSize = 58;
   static const double _cloneJoystickHorizontalInset = 34;
+  static const double _moveJoystickMoveSensitivity = 2.0;
   static const double _moveJoystickRotationSensitivity = 0.0046;
   static const double _moveJoystickScaleSensitivity = 0.0036;
   static const double _joystickMinLayerScale = 0.02;
   static const double _joystickMaxLayerScale = 20.0;
   static const Duration _cloneJoystickCursorIdleTimeout = Duration(seconds: 5);
-  static const double _textQuickDockHeight = 36;
+  static const double _textQuickDockHeight = 40;
   static const double _textQuickDockBottomGap = 10;
   static const double _textFloatingPanelClearance = 6;
   static const double _bottomNavHorizontalInset = 2;
@@ -8853,6 +9076,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       TextEditingController();
   final ScrollController _textFontsFloatingScrollController =
       ScrollController();
+  final ScrollController _textColorFloatingStripController = ScrollController();
+  final ScrollController _textStrokeFloatingStripController =
+      ScrollController();
+  final ScrollController _textShadowFloatingStripController =
+      ScrollController();
+  final ScrollController _overlayShadowColorStripController =
+      ScrollController();
+  final ScrollController _pngEffectColorStripController = ScrollController();
   final FocusNode _textInputFocusNode = FocusNode();
   List<EditorLayer> _layers = <EditorLayer>[];
   int _nextLayerId = 1;
@@ -8894,8 +9125,38 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _isTextColorFloatingOpen = false;
   bool _isTextSettingsDockEnabled = false;
   bool _isTextSettingsBottomSheetOpen = false;
+  bool _isTextSettingsBottomSheetClosing = false;
+  bool _isTextSettingsBottomSheetDismissPending = false;
+  BuildContext? _textSettingsSheetContext;
+  final GlobalKey _textSettingsSheetKey = GlobalKey();
+  Rect? _textSettingsBottomSheetGlobalRect;
+  bool _textQuickDockStandaloneEnabled = false;
+  PersistentBottomSheetController<void>? _textSettingsBottomSheetController;
+  bool _isUploadingTextFont = false;
   String _textFontSearchQuery = '';
+  int _uploadedTextFontSeed = 0;
+  String _uploadedTextFontsOwnerKey = '';
+  bool _uploadedTextFontsLoaded = false;
+  int _uploadedTextFontsSyncToken = 0;
+  final List<_PersistedUploadedTextFont> _uploadedTextFontRecords =
+      <_PersistedUploadedTextFont>[];
+  final List<_TextFontOption> _uploadedTextFontOptions = <_TextFontOption>[];
+  final Set<String> _uploadedTextFontFamilies = <String>{};
+  bool _catalogTextFontsLoaded = false;
+  bool _isSyncingCatalogTextFonts = false;
+  final List<_CatalogTextFont> _catalogTextFonts = <_CatalogTextFont>[];
+  final List<_TextFontOption> _catalogEnglishTextFontOptions =
+      <_TextFontOption>[];
+  final List<_TextFontOption> _catalogArabicTextFontOptions =
+      <_TextFontOption>[];
+  final Set<String> _catalogTextFontFamilies = <String>{};
+  final Set<String> _catalogTextFontReadyFamilies = <String>{};
+  final Map<String, _CatalogTextFont> _catalogTextFontsByFamily =
+      <String, _CatalogTextFont>{};
+  final Map<String, Future<void>> _catalogTextFontLoadTasks =
+      <String, Future<void>>{};
   int _fontWarmupRequestToken = 0;
+  int _textFontApplyRequestToken = 0;
   String? _pendingTextFontFamily;
   int? _pendingTextFontWeight;
   _TextEffectFloatingPanel? _activeTextEffectFloatingPanel;
@@ -8939,6 +9200,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   _EditorSnapshot? _imageAdjustFloatingBaseline;
   String? _imageAdjustFloatingLayerId;
   _ImageAdjustSection _activeImageAdjustSection = _ImageAdjustSection.light;
+  String? _pngEffectExpandedLayerId;
   String? _inlineTextEditRequestLayerId;
   int _inlineTextEditRequestToken = 0;
   bool _isPhotoRoomRemoveBgFloatingOpen = false;
@@ -9028,6 +9290,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _backendClient = WonderPicBackendClient();
     unawaited(_syncEditorAccountStateBestEffort());
     unawaited(_refreshLibraryItems(fromSetState: true));
+    unawaited(_syncUploadedTextFontsForCurrentOwner(force: true));
+    unawaited(_syncCatalogTextFonts(force: true));
+    if (_kEnglishFontOptions.isNotEmpty) {
+      unawaited(
+        _ensureFontReady(
+          family: _kEnglishFontOptions.first.family,
+          weight: 400,
+        ),
+      );
+    }
     _authStateSubscription = FirebaseAuth.instance.authStateChanges().listen((
       User? user,
     ) {
@@ -9039,9 +9311,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           _freeTrialTotal = _defaultFreeTrialActions;
           _freeTrialRemaining = _defaultFreeTrialActions;
         });
+        unawaited(_syncUploadedTextFontsForCurrentOwner(force: true));
         return;
       }
       unawaited(_syncEditorAccountStateBestEffort());
+      unawaited(_syncUploadedTextFontsForCurrentOwner(force: true));
     });
     _textInputController.addListener(_onTextInputChanged);
     _textInputFocusNode.addListener(_onTextFocusChanged);
@@ -9051,12 +9325,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   @override
   void dispose() {
+    _textSettingsBottomSheetController?.close();
+    _textSettingsBottomSheetController = null;
     _authStateSubscription?.cancel();
     _backendClient.dispose();
     _textInputController.removeListener(_onTextInputChanged);
     _textInputFocusNode.removeListener(_onTextFocusChanged);
     _topToolsScrollController.dispose();
     _textFontsFloatingScrollController.dispose();
+    _textColorFloatingStripController.dispose();
+    _textStrokeFloatingStripController.dispose();
+    _textShadowFloatingStripController.dispose();
+    _overlayShadowColorStripController.dispose();
+    _pngEffectColorStripController.dispose();
     _textFontSearchController.dispose();
     _sketchReplacePromptController.dispose();
     _replaceObjectPromptController.dispose();
@@ -9595,6 +9876,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Widget _buildTopTools() {
+    final bool pointerModeActive = !_isToolEnabled;
+    final bool canOpenTextSettings = _selectedTextLayer() != null;
     final bool textSettingsActive = _isToolEnabled &&
         _activeTool == EditorTool.text &&
         _isTextSettingsDockEnabled;
@@ -9602,35 +9885,58 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       height: 56,
       child: SingleChildScrollView(
         controller: _topToolsScrollController,
+        dragStartBehavior: DragStartBehavior.down,
         scrollDirection: Axis.horizontal,
         clipBehavior: Clip.none,
         physics: const _TopToolsSnapPhysics(
           itemExtent: _topToolButtonSize + _topToolSpacing,
-          parent: BouncingScrollPhysics(),
+          parent: BouncingScrollPhysics(
+            decelerationRate: ScrollDecelerationRate.fast,
+          ),
         ),
         child: Row(
           children: [
             _toolButton(
+              filled: pointerModeActive,
+              onTap: _onPointerToolTap,
+              customChild: Transform.rotate(
+                angle: -math.pi / 4,
+                child: Icon(
+                  Icons.near_me_rounded,
+                  size: 18,
+                  color: pointerModeActive
+                      ? kActiveAccentForeground
+                      : WonderPicEditorScreen._iconColor,
+                ),
+              ),
+            ),
+            const SizedBox(width: _topToolSpacing),
+            _toolButton(
               icon: Icons.open_with_rounded,
               filled: _isToolEnabled && _activeTool == EditorTool.move,
-              onTap: () => _setActiveTool(EditorTool.move),
+              onTap: () => _setActiveTool(
+                EditorTool.move,
+                toggleWhenSame: false,
+              ),
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
               icon: Icons.crop_rounded,
               filled: _isToolEnabled && _activeTool == EditorTool.crop,
-              onTap: () => _setActiveTool(EditorTool.crop),
+              onTap: _onCropToolTap,
             ),
             const SizedBox(width: _topToolSpacing),
             _toolButton(
               filled: textSettingsActive,
-              onTap: _onTextSettingsToolTap,
+              onTap: canOpenTextSettings ? _onTextSettingsToolTap : null,
               customChild: Icon(
                 Icons.text_fields_rounded,
                 size: 18,
                 color: textSettingsActive
                     ? kActiveAccentForeground
-                    : WonderPicEditorScreen._iconColor,
+                    : (canOpenTextSettings
+                        ? WonderPicEditorScreen._iconColor
+                        : const Color(0xFF6E747D)),
               ),
             ),
             const SizedBox(width: _topToolSpacing),
@@ -9722,6 +10028,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         ),
       ),
     );
+  }
+
+  void _onPointerToolTap() {
+    if (_isToolEnabled) {
+      _setActiveTool(_activeTool, toggleWhenSame: true);
+    } else {
+      _closeToolSettingsSidebarIfOpen();
+      if (_isTextSettingsBottomSheetOpen &&
+          !_isTextSettingsBottomSheetClosing) {
+        _dismissTextSettingsBottomSheet(source: 'pointer_mode');
+      }
+    }
   }
 
   Widget _toolButton({
@@ -10151,9 +10469,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     if (workspaceSize == null) return;
     final Offset startPosition =
         _defaultLayerPositionForMoveJoystick(layer, workspaceSize);
-    _editorCanvasStateKey.currentState?.beginMoveJoystickSession(
-      layerId: layer.id,
-    );
+    final bool sessionStarted =
+        _editorCanvasStateKey.currentState?.beginMoveJoystickSession(
+              layerId: layer.id,
+            ) ??
+            false;
+    if (!sessionStarted) return;
+    _onTransformInteractionStart();
     setState(() {
       _moveJoystickLayerId = layer.id;
       _moveJoystickCurrentPosition = startPosition;
@@ -10178,8 +10500,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       workspaceSize,
     );
     final Offset deltaSource = Offset(
-      details.delta.dx * sourceUnitsPerPx,
-      details.delta.dy * sourceUnitsPerPx,
+      details.delta.dx * sourceUnitsPerPx * _moveJoystickMoveSensitivity,
+      details.delta.dy * sourceUnitsPerPx * _moveJoystickMoveSensitivity,
     );
     Offset? nextPosition = currentPosition;
     if (deltaSource.distanceSquared > 0.0) {
@@ -10203,12 +10525,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final String? layerId = _moveJoystickLayerId;
     if (layerId == null) return;
     _editorCanvasStateKey.currentState?.endMoveJoystickSession();
-    _onTransformInteractionEnd();
     setState(() {
       _moveJoystickOffset = Offset.zero;
       _moveJoystickLayerId = null;
       _moveJoystickCurrentPosition = null;
     });
+    _maybeEndMoveJoystickTransformInteraction();
   }
 
   void _onRotateJoystickPanStart(DragStartDetails details) {
@@ -10219,6 +10541,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
     final EditorLayer? layer = _activeMoveJoystickLayer();
     if (layer == null) return;
+    _editorCanvasStateKey.currentState?.beginRotateJoystickSession(
+      layerId: layer.id,
+    );
+    _onTransformInteractionStart();
     setState(() {
       _rotateJoystickLayerId = layer.id;
       _rotateJoystickCurrentRotation = layer.layerRotation;
@@ -10243,22 +10569,32 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       });
       return;
     }
-    final double nextRotation = currentRotation + delta;
+    final double rawRotation = currentRotation + delta;
+    final double nextRotation =
+        _editorCanvasStateKey.currentState?.rotateLayerWithMoveJoystick(
+              layerId: layerId,
+              rawRotation: rawRotation,
+            ) ??
+            rawRotation;
 
     _onLayerTransformChanged(layerId, layerRotation: nextRotation);
     setState(() {
       _rotateJoystickOffset = offset;
-      _rotateJoystickCurrentRotation = nextRotation;
+      // Keep the joystick baseline unsnapped so tiny deltas can accumulate
+      // and escape the magnetic snap zone naturally.
+      _rotateJoystickCurrentRotation = rawRotation;
     });
   }
 
   void _endRotateJoystickGesture() {
     if (_rotateJoystickLayerId == null) return;
+    _editorCanvasStateKey.currentState?.endRotateJoystickSession();
     setState(() {
       _rotateJoystickOffset = Offset.zero;
       _rotateJoystickLayerId = null;
       _rotateJoystickCurrentRotation = null;
     });
+    _maybeEndMoveJoystickTransformInteraction();
   }
 
   void _onScaleJoystickPanStart(DragStartDetails details) {
@@ -10269,6 +10605,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     );
     final EditorLayer? layer = _activeMoveJoystickLayer();
     if (layer == null) return;
+    _onTransformInteractionStart();
     setState(() {
       _scaleJoystickLayerId = layer.id;
       _scaleJoystickCurrentScale = layer.layerScale;
@@ -10312,10 +10649,21 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _scaleJoystickLayerId = null;
       _scaleJoystickCurrentScale = null;
     });
+    _maybeEndMoveJoystickTransformInteraction();
+  }
+
+  void _maybeEndMoveJoystickTransformInteraction() {
+    if (_moveJoystickLayerId != null ||
+        _rotateJoystickLayerId != null ||
+        _scaleJoystickLayerId != null) {
+      return;
+    }
+    _onTransformInteractionEnd();
   }
 
   void _resetMoveJoystickControls() {
     _editorCanvasStateKey.currentState?.endMoveJoystickSession();
+    _editorCanvasStateKey.currentState?.endRotateJoystickSession();
     _moveJoystickOffset = Offset.zero;
     _rotateJoystickOffset = Offset.zero;
     _scaleJoystickOffset = Offset.zero;
@@ -10325,6 +10673,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _moveJoystickCurrentPosition = null;
     _rotateJoystickCurrentRotation = null;
     _scaleJoystickCurrentScale = null;
+    _onTransformInteractionEnd();
   }
 
   Widget _buildMoveJoystickDock() {
@@ -10442,6 +10791,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   bool get _isTextQuickDockVisible {
+    // Text quick actions are integrated into the Text bottom sheet.
+    // Keep the standalone dock disabled to avoid lingering after sheet close.
+    if (!_textQuickDockStandaloneEnabled) return false;
     final EditorLayer? selected = _selectedLayer();
     return selected != null &&
         selected.isVisible &&
@@ -10513,11 +10865,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         child: SizedBox(
           height: _textQuickDockHeight,
           child: SingleChildScrollView(
+            dragStartBehavior: DragStartBehavior.down,
             scrollDirection: Axis.horizontal,
             clipBehavior: Clip.none,
             physics: const _TopToolsSnapPhysics(
               itemExtent: 94,
-              parent: BouncingScrollPhysics(),
+              parent: BouncingScrollPhysics(
+                decelerationRate: ScrollDecelerationRate.fast,
+              ),
             ),
             child: Row(
               children: [
@@ -10588,7 +10943,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required bool active,
     required VoidCallback onTap,
   }) {
-    final BorderRadius radius = BorderRadius.circular(12);
+    final BorderRadius radius = BorderRadius.circular(13);
     return _BouncyInkWell(
       borderRadius: radius,
       onTap: onTap,
@@ -10596,8 +10951,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        height: _textQuickDockHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        height: _textQuickDockHeight - 2,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
         decoration: BoxDecoration(
           color: active ? kActiveAccent : _floatingPanelSurfaceSolid,
           borderRadius: radius,
@@ -10611,16 +10966,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           children: [
             Icon(
               icon,
-              size: 12.5,
+              size: 13,
               color: active ? kActiveAccentForeground : const Color(0xFFF3F3F2),
             ),
-            const SizedBox(width: 5),
+            const SizedBox(width: 6),
             Text(
               label,
               style: TextStyle(
                 color:
                     active ? kActiveAccentForeground : const Color(0xFFF3F3F2),
-                fontSize: 11,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -10631,6 +10986,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   Widget _buildEditorCanvasPanel() {
+    final bool hideMoveSelectionControls = _moveJoystickLayerId != null ||
+        _rotateJoystickLayerId != null ||
+        _scaleJoystickLayerId != null;
     return SizedBox.expand(
       key: _canvasViewportKey,
       child: Stack(
@@ -10667,8 +11025,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   !_isCloneSourceArmed,
               onCloneViewportScaleInteraction:
                   _onCloneViewportScaleInteractionFromCanvas,
+              hideMoveSelectionControls: hideMoveSelectionControls,
               selectedLayerId: _selectedLayerId,
               onLayerSelected: _onLayerSelected,
+              onCanvasTap: _onCanvasTapped,
+              isTextSettingsBottomSheetOpen: _isTextSettingsBottomSheetOpen,
               onLayerTransformChanged: _onLayerTransformChanged,
               onLayerImageChanged: _onLayerImageChanged,
               onMarqueeSelectionChanged: _onMarqueeSelectionChanged,
@@ -11102,7 +11463,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       if (_isToolEnabled && tool == EditorTool.crop) {
         final EditorLayer? selectedImage = _selectedCropLayer();
         if (selectedImage != null) {
-          _selectedLayerId = selectedImage.id;
           _cropToolConfig = _resolvedCropConfigForLayer(selectedImage.id);
         } else {
           _cropToolConfig = null;
@@ -11111,7 +11471,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       if (_isToolEnabled && tool == EditorTool.expand) {
         final EditorLayer? selectedImage = _selectedExpandLayer();
         if (selectedImage != null) {
-          _selectedLayerId = selectedImage.id;
           _expandToolConfig = _resolvedExpandConfigForLayer(selectedImage.id);
         } else {
           _expandToolConfig = null;
@@ -11194,6 +11553,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     if (!_isToolEnabled || tool != EditorTool.erase) {
       _eraseBrushPreviewTimer?.cancel();
+    }
+    if (_isTextSettingsBottomSheetOpen &&
+        (!_isToolEnabled || _activeTool != EditorTool.text)) {
+      _dismissTextSettingsBottomSheet(source: 'tool_state_change');
     }
   }
 
@@ -13132,13 +13495,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _onTextSettingsToolTap() {
-    if (_isTextSettingsBottomSheetOpen) {
-      Navigator.of(context).maybePop();
+    if (_isTextSettingsBottomSheetClosing) return;
+    if (_selectedTextLayer() == null) return;
+    final bool textToolIsActive = _isToolEnabled &&
+        _activeTool == EditorTool.text &&
+        _isTextSettingsDockEnabled;
+    if (textToolIsActive) {
+      _setActiveTool(EditorTool.text);
       return;
-    }
-    if (_selectedTextLayer() == null) {
-      final String? created = _createTextLayer(shouldShowError: true);
-      if (created == null) return;
     }
     _setActiveTool(EditorTool.text, toggleWhenSame: false);
     setState(() {
@@ -13147,9 +13511,65 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _openTextSettingsBottomSheet();
   }
 
+  void _logTextSettingsSheetEvent(String event) {
+    assert(() {
+      debugPrint('[TextSheet] $event');
+      return true;
+    }());
+  }
+
+  void _scheduleTextSettingsSheetBoundsSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isTextSettingsBottomSheetOpen) return;
+      final BuildContext? sheetContext = _textSettingsSheetKey.currentContext;
+      if (sheetContext == null) return;
+      final RenderObject? renderObject = sheetContext.findRenderObject();
+      if (renderObject is! RenderBox || !renderObject.hasSize) return;
+      final Offset topLeft = renderObject.localToGlobal(Offset.zero);
+      _textSettingsBottomSheetGlobalRect = topLeft & renderObject.size;
+    });
+  }
+
+  bool _isGlobalPositionInsideTextSettingsSheet(Offset globalPosition) {
+    final BuildContext? sheetContext = _textSettingsSheetKey.currentContext;
+    final RenderObject? renderObject = sheetContext?.findRenderObject();
+    if (renderObject is RenderBox &&
+        renderObject.attached &&
+        renderObject.hasSize) {
+      final Offset localPosition = renderObject.globalToLocal(globalPosition);
+      final Rect localBounds = Offset.zero & renderObject.size;
+      if (localBounds.contains(localPosition)) {
+        return true;
+      }
+
+      final Offset topLeft = renderObject.localToGlobal(Offset.zero);
+      final Rect liveGlobalRect = topLeft & renderObject.size;
+      _textSettingsBottomSheetGlobalRect = liveGlobalRect;
+      return liveGlobalRect.contains(globalPosition);
+    }
+
+    final Rect? cachedRect = _textSettingsBottomSheetGlobalRect;
+    if (cachedRect != null) {
+      return cachedRect.contains(globalPosition);
+    }
+
+    // Avoid false dismissals when layout metrics are temporarily unavailable.
+    return true;
+  }
+
   Future<void> _openTextSettingsBottomSheet() async {
     final EditorLayer? selectedLayer = _selectedTextLayer();
     if (selectedLayer == null) return;
+    if (_isTextSettingsBottomSheetOpen ||
+        _isTextSettingsBottomSheetClosing ||
+        _textSettingsBottomSheetController != null) {
+      _logTextSettingsSheetEvent('open ignored (already open/closing)');
+      return;
+    }
+    final ScaffoldState? scaffoldState = _scaffoldKey.currentState;
+    if (scaffoldState == null) return;
+    _logTextSettingsSheetEvent('open requested');
+    unawaited(_syncCatalogTextFonts(force: true));
     _syncTextLocaleFromFamily(selectedLayer.textFontFamily);
 
     _TextSettingsBottomSheetTab activeTab = _TextSettingsBottomSheetTab.fonts;
@@ -13157,745 +13577,1081 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     String query = '';
     final TextEditingController searchController = TextEditingController();
     final ScrollController fontsController = ScrollController();
+    final ScrollController textColorController = ScrollController();
+    final ScrollController strokeColorController = ScrollController();
+    final ScrollController shadowColorController = ScrollController();
 
     setState(() {
       _isTextSettingsBottomSheetOpen = true;
+      _isTextSettingsBottomSheetClosing = false;
+      _isTextSettingsBottomSheetDismissPending = false;
       _isTextSettingsDockEnabled = true;
       _resetTextQuickFloatingPanels(clearSearch: false);
       _activeTextEffectFloatingPanel = null;
     });
+    _textSettingsSheetContext = null;
+    _textSettingsBottomSheetGlobalRect = null;
     _closeToolSettingsSidebarIfOpen();
 
     try {
-      await showModalBottomSheet<void>(
-        context: context,
-        isScrollControlled: true,
-        useSafeArea: true,
-        backgroundColor: Colors.transparent,
-        barrierColor: Colors.transparent,
-        builder: (BuildContext sheetContext) {
-          final double maxHeight =
-              MediaQuery.sizeOf(sheetContext).height * 0.52;
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
-            ),
-            child: StatefulBuilder(
-              builder: (context, modalSetState) {
-                final EditorLayer? selectedTextLayer = _selectedTextLayer();
-                if (selectedTextLayer == null) {
-                  return const SizedBox.shrink();
-                }
-                const double uiScale = 0.82;
-                double scaled(double value, {required double min}) =>
-                    math.max(min, value * uiScale);
+      final PersistentBottomSheetController<void> controller =
+          scaffoldState.showBottomSheet<void>(
+        (BuildContext sheetContext) {
+          _textSettingsSheetContext = sheetContext;
+          if (_isTextSettingsBottomSheetDismissPending &&
+              !_isTextSettingsBottomSheetClosing) {
+            _isTextSettingsBottomSheetDismissPending = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (!mounted) return;
+              _dismissTextSettingsBottomSheet(source: 'pending_after_attach');
+            });
+          }
+          final double viewportHeight = MediaQuery.sizeOf(sheetContext).height;
+          final Animation<double> routeAnimation =
+              ModalRoute.of(sheetContext)?.animation ??
+                  const AlwaysStoppedAnimation<double>(1);
+          return AnimatedBuilder(
+            animation: routeAnimation,
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+              ),
+              child: StatefulBuilder(
+                builder: (context, modalSetState) {
+                  final EditorLayer? selectedTextLayer = _selectedTextLayer();
+                  if (selectedTextLayer == null) {
+                    return const SizedBox.shrink();
+                  }
+                  const double uiScale = 0.82;
+                  double scaled(double value, {required double min}) =>
+                      math.max(min, value * uiScale);
 
-                final List<_TextFontOption> localeOptions =
-                    _fontOptionsForLocale(locale);
-                final List<_TextFontOption> options = _filteredTextFontOptions(
-                  locale: locale,
-                  query: query,
-                );
-                final String selectedFamily =
-                    selectedTextLayer.textFontFamily ??
-                        localeOptions.first.family;
-                final int selectedIndexRaw = _effectiveSelectedFontOptionIndex(
-                  options: options,
-                  selectedLayer: selectedTextLayer,
-                );
-                final int selectedIndex = selectedIndexRaw < 0
-                    ? 0
-                    : selectedIndexRaw
-                        .clamp(0, math.max(0, options.length - 1))
+                  final List<_TextFontOption> localeOptions =
+                      _fontOptionsForLocale(locale);
+                  final List<_TextFontOption> options =
+                      _filteredTextFontOptions(
+                    locale: locale,
+                    query: query,
+                  );
+                  final String selectedFamily =
+                      selectedTextLayer.textFontFamily ??
+                          localeOptions.first.family;
+                  final int selectedIndexRaw =
+                      _effectiveSelectedFontOptionIndex(
+                    options: options,
+                    selectedLayer: selectedTextLayer,
+                  );
+                  final int selectedIndex = selectedIndexRaw < 0
+                      ? 0
+                      : selectedIndexRaw
+                          .clamp(0, math.max(0, options.length - 1))
+                          .toInt();
+                  final bool canGoBack =
+                      options.isNotEmpty && selectedIndex > 0;
+                  final bool canGoNext =
+                      options.isNotEmpty && selectedIndex < options.length - 1;
+                  final Color selectedColor =
+                      selectedTextLayer.textColor ?? const Color(0xFF1F2937);
+                  final Color selectedStrokeColor =
+                      selectedTextLayer.textStrokeColor ??
+                          const Color(0xFFFFFFFF);
+                  final double selectedStrokeWidth =
+                      selectedTextLayer.textStrokeWidth ?? 0;
+                  final Color selectedShadowColor =
+                      selectedTextLayer.textShadowColor ??
+                          const Color(0xFF19191A);
+                  final double selectedShadowOffsetX =
+                      selectedTextLayer.textShadowOffsetX ?? 0;
+                  final double selectedShadowOffsetY =
+                      selectedTextLayer.textShadowOffsetY ?? 0;
+                  final double selectedShadowBlur =
+                      selectedTextLayer.textShadowBlur ?? 0;
+                  final double selectedShadowOpacity =
+                      selectedTextLayer.textShadowOpacity ?? 0;
+                  final double selectedTextOpacity =
+                      selectedTextLayer.textOpacity ?? 100;
+                  final double selectedTextBend =
+                      selectedTextLayer.textBend ?? 0;
+                  final int selectedWeight = _resolveSupportedWeight(
+                    selectedFamily,
+                    selectedTextLayer.textFontWeight ?? 400,
+                  );
+                  final List<int> availableWeights =
+                      _availableWeightsForFamily(selectedFamily);
+                  final double cardHeight = scaled(47, min: 38);
+                  final double cardSpacing = scaled(6, min: 4);
+                  final double itemExtent = cardHeight + cardSpacing;
+                  final bool showFontBrowser =
+                      activeTab == _TextSettingsBottomSheetTab.fonts;
+                  const double colorPickerScale = 0.94;
+                  const double effectSliderScale = 0.86;
+                  final double bottomSafeInset =
+                      MediaQuery.viewPaddingOf(sheetContext).bottom;
+                  final double quickDockSafeBottomGap = math.max(
+                    scaled(12, min: 10),
+                    bottomSafeInset + scaled(4, min: 3),
+                  );
+
+                  double resolveSheetHeight(_TextSettingsBottomSheetTab tab) {
+                    final double chromeHeight = 20 +
+                        4 +
+                        scaled(6, min: 5) +
+                        _textQuickDockHeight +
+                        quickDockSafeBottomGap;
+                    double tightHeight({
+                      required double contentHeight,
+                      required double minHeight,
+                      required double maxFraction,
+                    }) {
+                      return (chromeHeight + contentHeight)
+                          .clamp(minHeight, viewportHeight * maxFraction)
+                          .toDouble();
+                    }
+
+                    switch (tab) {
+                      case _TextSettingsBottomSheetTab.fonts:
+                        return (viewportHeight * 0.52)
+                            .clamp(324.0, viewportHeight * 0.62)
+                            .toDouble();
+                      case _TextSettingsBottomSheetTab.shadow:
+                        return tightHeight(
+                          contentHeight: scaled(304, min: 268),
+                          minHeight: 338,
+                          maxFraction: 0.64,
+                        );
+                      case _TextSettingsBottomSheetTab.stroke:
+                        return tightHeight(
+                          contentHeight: scaled(122, min: 106),
+                          minHeight: 178,
+                          maxFraction: 0.46,
+                        );
+                      case _TextSettingsBottomSheetTab.opacity:
+                      case _TextSettingsBottomSheetTab.blend:
+                        return tightHeight(
+                          contentHeight: scaled(78, min: 66),
+                          minHeight: 146,
+                          maxFraction: 0.36,
+                        );
+                      case _TextSettingsBottomSheetTab.weight:
+                      case _TextSettingsBottomSheetTab.color:
+                        return tightHeight(
+                          contentHeight: scaled(66, min: 56),
+                          minHeight: 132,
+                          maxFraction: 0.30,
+                        );
+                    }
+                  }
+
+                  void jumpFontSelection(int direction) {
+                    if (options.isEmpty) return;
+                    final int nextIndex = (selectedIndex + direction)
+                        .clamp(0, options.length - 1)
                         .toInt();
-                final bool canGoBack = options.isNotEmpty && selectedIndex > 0;
-                final bool canGoNext =
-                    options.isNotEmpty && selectedIndex < options.length - 1;
-                final Color selectedColor =
-                    selectedTextLayer.textColor ?? const Color(0xFF1F2937);
-                final Color selectedStrokeColor =
-                    selectedTextLayer.textStrokeColor ??
-                        const Color(0xFFFFFFFF);
-                final double selectedStrokeWidth =
-                    selectedTextLayer.textStrokeWidth ?? 0;
-                final Color selectedShadowColor =
-                    selectedTextLayer.textShadowColor ??
-                        const Color(0xFF19191A);
-                final double selectedShadowOffsetX =
-                    selectedTextLayer.textShadowOffsetX ?? 0;
-                final double selectedShadowOffsetY =
-                    selectedTextLayer.textShadowOffsetY ?? 0;
-                final double selectedShadowBlur =
-                    selectedTextLayer.textShadowBlur ?? 0;
-                final double selectedShadowOpacity =
-                    selectedTextLayer.textShadowOpacity ?? 0;
-                final double selectedTextOpacity =
-                    selectedTextLayer.textOpacity ?? 100;
-                final double selectedTextBend = selectedTextLayer.textBend ?? 0;
-                final int selectedWeight = _resolveSupportedWeight(
-                  selectedFamily,
-                  selectedTextLayer.textFontWeight ?? 400,
-                );
-                final List<int> availableWeights =
-                    _availableWeightsForFamily(selectedFamily);
-                final double cardHeight = scaled(47, min: 38);
-                final double cardSpacing = scaled(6, min: 4);
-                final double itemExtent = cardHeight + cardSpacing;
+                    if (nextIndex == selectedIndex) return;
+                    _applyTextFontOption(options[nextIndex]);
+                    modalSetState(() {});
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (!fontsController.hasClients) return;
+                      final double max =
+                          fontsController.position.maxScrollExtent;
+                      final double target =
+                          (nextIndex * itemExtent).clamp(0.0, max);
+                      fontsController.animateTo(
+                        target,
+                        duration: const Duration(milliseconds: 180),
+                        curve: Curves.easeOutCubic,
+                      );
+                    });
+                  }
 
-                void jumpFontSelection(int direction) {
-                  if (options.isEmpty) return;
-                  final int nextIndex = (selectedIndex + direction)
-                      .clamp(0, options.length - 1)
-                      .toInt();
-                  if (nextIndex == selectedIndex) return;
-                  _applyTextFontOption(options[nextIndex]);
-                  modalSetState(() {});
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (!fontsController.hasClients) return;
-                    final double max = fontsController.position.maxScrollExtent;
-                    final double target =
-                        (nextIndex * itemExtent).clamp(0.0, max);
-                    fontsController.animateTo(
-                      target,
-                      duration: const Duration(milliseconds: 180),
-                      curve: Curves.easeOutCubic,
-                    );
-                  });
-                }
-
-                Widget effectContent() {
-                  switch (activeTab) {
-                    case _TextSettingsBottomSheetTab.fonts:
-                      return const SizedBox.shrink();
-                    case _TextSettingsBottomSheetTab.weight:
-                      return Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(scaled(8, min: 6)),
-                        decoration: BoxDecoration(
-                          color: _floatingPanelSurface,
-                          borderRadius: BorderRadius.circular(
-                            scaled(12, min: 9),
-                          ),
+                  Widget buildTextEffectPanelFrame({required Widget child}) {
+                    return Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.fromLTRB(
+                        scaled(9, min: 7.5),
+                        scaled(9, min: 7.5),
+                        scaled(9, min: 7.5),
+                        scaled(13, min: 11),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      decoration: BoxDecoration(
+                        color: _floatingPanelSurface,
+                        borderRadius: BorderRadius.circular(
+                          scaled(15, min: 12),
                         ),
-                        child: SizedBox(
-                          height: scaled(42, min: 34),
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: availableWeights.length,
-                            separatorBuilder: (_, __) =>
-                                SizedBox(width: scaled(7, min: 5)),
-                            itemBuilder: (context, index) {
-                              final int weightValue = availableWeights[index];
-                              final bool isSelected =
-                                  selectedWeight == weightValue;
-                              return _BouncyInkWell(
-                                borderRadius: BorderRadius.circular(
-                                  scaled(8, min: 6),
-                                ),
-                                onTap: () {
+                        border: Border.all(
+                          color: _floatingPanelStroke,
+                          width: 0.45,
+                        ),
+                      ),
+                      child: child,
+                    );
+                  }
+
+                  Widget effectContent() {
+                    switch (activeTab) {
+                      case _TextSettingsBottomSheetTab.fonts:
+                        return const SizedBox.shrink();
+                      case _TextSettingsBottomSheetTab.weight:
+                        return buildTextEffectPanelFrame(
+                          child: SizedBox(
+                            height: scaled(44, min: 36),
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: availableWeights.length,
+                              separatorBuilder: (_, __) =>
+                                  SizedBox(width: scaled(7, min: 5)),
+                              itemBuilder: (context, index) {
+                                final int weightValue = availableWeights[index];
+                                final bool isSelected =
+                                    selectedWeight == weightValue;
+                                return _BouncyInkWell(
+                                  borderRadius: BorderRadius.circular(
+                                    scaled(8, min: 6),
+                                  ),
+                                  onTap: () {
+                                    _updateTextLayer(
+                                      selectedTextLayer.id,
+                                      textFontWeight: weightValue,
+                                      recordHistory: false,
+                                    );
+                                    modalSetState(() {});
+                                  },
+                                  pressedScale: 0.965,
+                                  child: Container(
+                                    width: scaled(36, min: 30),
+                                    height: scaled(36, min: 30),
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: isSelected
+                                          ? kActiveAccent
+                                          : _floatingPanelSurfaceSolid,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Text(
+                                      'B',
+                                      style: _fontAwareTextStyle(
+                                        family: selectedFamily,
+                                        color: isSelected
+                                            ? kActiveAccentForeground
+                                            : const Color(0xFFF3F3F2),
+                                        fontSize: scaled(16, min: 12),
+                                        fontWeight:
+                                            _fontWeightFromValue(weightValue),
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        );
+                      case _TextSettingsBottomSheetTab.color:
+                        return buildTextEffectPanelFrame(
+                          child: Padding(
+                            padding: EdgeInsets.only(
+                              bottom: scaled(5, min: 4),
+                            ),
+                            child: _buildHorizontalColorPickerWithNavigation(
+                              palette: _kTextPalette,
+                              selectedColor: selectedColor,
+                              controller: textColorController,
+                              stripScale: colorPickerScale,
+                              arrowScale: uiScale,
+                              onColorSelected: (color) {
+                                _updateTextLayer(
+                                  selectedTextLayer.id,
+                                  textColor: color,
+                                  recordHistory: false,
+                                );
+                                modalSetState(() {});
+                              },
+                            ),
+                          ),
+                        );
+                      case _TextSettingsBottomSheetTab.opacity:
+                        return buildTextEffectPanelFrame(
+                          child: _SettingsSliderTile(
+                            label: 'Opacity',
+                            value: selectedTextOpacity,
+                            min: 0,
+                            max: 100,
+                            valueText:
+                                '${selectedTextOpacity.toStringAsFixed(0)}%',
+                            scale: effectSliderScale,
+                            onChanged: (value) {
+                              _updateTextLayer(
+                                selectedTextLayer.id,
+                                textOpacity: value,
+                                recordHistory: false,
+                              );
+                              modalSetState(() {});
+                            },
+                          ),
+                        );
+                      case _TextSettingsBottomSheetTab.stroke:
+                        return buildTextEffectPanelFrame(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _SettingsSliderTile(
+                                label: 'Width',
+                                value: selectedStrokeWidth,
+                                min: 0,
+                                max: 28,
+                                valueText:
+                                    selectedStrokeWidth.toStringAsFixed(1),
+                                scale: effectSliderScale,
+                                onChanged: (value) {
                                   _updateTextLayer(
                                     selectedTextLayer.id,
-                                    textFontWeight: weightValue,
+                                    textStrokeWidth: value,
                                     recordHistory: false,
                                   );
                                   modalSetState(() {});
                                 },
-                                pressedScale: 0.965,
-                                child: Container(
-                                  width: scaled(34, min: 28),
-                                  height: scaled(34, min: 28),
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: isSelected
-                                        ? kActiveAccent
-                                        : _floatingPanelSurfaceSolid,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Text(
-                                    'B',
-                                    style: _fontAwareTextStyle(
-                                      family: selectedFamily,
-                                      color: isSelected
-                                          ? kActiveAccentForeground
-                                          : const Color(0xFFF3F3F2),
-                                      fontSize: scaled(16, min: 12),
-                                      fontWeight:
-                                          _fontWeightFromValue(weightValue),
-                                    ),
-                                  ),
+                              ),
+                              SizedBox(height: scaled(8, min: 6)),
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: scaled(5, min: 4),
                                 ),
+                                child:
+                                    _buildHorizontalColorPickerWithNavigation(
+                                  palette: _kTextPalette,
+                                  selectedColor: selectedStrokeColor,
+                                  controller: strokeColorController,
+                                  stripScale: colorPickerScale,
+                                  arrowScale: uiScale,
+                                  onColorSelected: (color) {
+                                    _updateTextLayer(
+                                      selectedTextLayer.id,
+                                      textStrokeColor: color,
+                                      recordHistory: false,
+                                    );
+                                    modalSetState(() {});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      case _TextSettingsBottomSheetTab.shadow:
+                        return buildTextEffectPanelFrame(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _SettingsSliderTile(
+                                label: 'Opacity',
+                                value: selectedShadowOpacity,
+                                min: 0,
+                                max: 100,
+                                valueText:
+                                    '${selectedShadowOpacity.toStringAsFixed(0)}%',
+                                scale: effectSliderScale,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textShadowOpacity: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                              ),
+                              SizedBox(height: scaled(9, min: 7)),
+                              _SettingsSliderTile(
+                                label: 'Blur',
+                                value: selectedShadowBlur,
+                                min: 0,
+                                max: 60,
+                                valueText:
+                                    selectedShadowBlur.toStringAsFixed(1),
+                                scale: effectSliderScale,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textShadowBlur: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                              ),
+                              SizedBox(height: scaled(9, min: 7)),
+                              _SettingsSliderTile(
+                                label: 'Vertical',
+                                value: selectedShadowOffsetY,
+                                min: -120,
+                                max: 120,
+                                valueText: _formatSignedValue(
+                                  selectedShadowOffsetY,
+                                  fractionDigits: 0,
+                                ),
+                                scale: effectSliderScale,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textShadowOffsetY: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                              ),
+                              SizedBox(height: scaled(9, min: 7)),
+                              _SettingsSliderTile(
+                                label: 'Horizontal',
+                                value: selectedShadowOffsetX,
+                                min: -120,
+                                max: 120,
+                                valueText: _formatSignedValue(
+                                  selectedShadowOffsetX,
+                                  fractionDigits: 0,
+                                ),
+                                scale: effectSliderScale,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textShadowOffsetX: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                              ),
+                              SizedBox(height: scaled(12, min: 10)),
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: scaled(8, min: 6),
+                                ),
+                                child:
+                                    _buildHorizontalColorPickerWithNavigation(
+                                  palette: _kTextPalette,
+                                  selectedColor: selectedShadowColor,
+                                  controller: shadowColorController,
+                                  stripScale: colorPickerScale,
+                                  arrowScale: uiScale,
+                                  onColorSelected: (color) {
+                                    _updateTextLayer(
+                                      selectedTextLayer.id,
+                                      textShadowColor: color,
+                                      recordHistory: false,
+                                    );
+                                    modalSetState(() {});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      case _TextSettingsBottomSheetTab.blend:
+                        return buildTextEffectPanelFrame(
+                          child: _SettingsSliderTile(
+                            label: 'Bend',
+                            value: selectedTextBend,
+                            min: -100,
+                            max: 100,
+                            valueText: _formatSignedValue(
+                              selectedTextBend,
+                              fractionDigits: 0,
+                            ),
+                            scale: effectSliderScale,
+                            onChanged: (value) {
+                              _updateTextLayer(
+                                selectedTextLayer.id,
+                                textBend: value,
+                                recordHistory: false,
                               );
+                              modalSetState(() {});
                             },
                           ),
-                        ),
-                      );
-                    case _TextSettingsBottomSheetTab.color:
-                      return Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(scaled(8, min: 6)),
-                        decoration: BoxDecoration(
-                          color: _floatingPanelSurface,
-                          borderRadius: BorderRadius.circular(
-                            scaled(12, min: 9),
-                          ),
-                        ),
-                        child: _buildHorizontalColorStrip(
-                          palette: _kTextPalette,
-                          selectedColor: selectedColor,
-                          scale: 0.86,
-                          onColorSelected: (color) {
-                            _updateTextLayer(
-                              selectedTextLayer.id,
-                              textColor: color,
-                              recordHistory: false,
-                            );
-                            modalSetState(() {});
-                          },
-                        ),
-                      );
-                    case _TextSettingsBottomSheetTab.opacity:
-                      return _SettingsSliderTile(
-                        label: 'Opacity',
-                        value: selectedTextOpacity,
-                        min: 0,
-                        max: 100,
-                        valueText: '${selectedTextOpacity.toStringAsFixed(0)}%',
-                        scale: 0.86,
-                        compact: true,
-                        onChanged: (value) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textOpacity: value,
-                            recordHistory: false,
-                          );
-                          modalSetState(() {});
-                        },
-                      );
-                    case _TextSettingsBottomSheetTab.stroke:
-                      return Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(scaled(8, min: 6)),
-                        decoration: BoxDecoration(
-                          color: _floatingPanelSurface,
-                          borderRadius: BorderRadius.circular(
-                            scaled(12, min: 9),
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _SettingsSliderTile(
-                              label: 'Width',
-                              value: selectedStrokeWidth,
-                              min: 0,
-                              max: 28,
-                              valueText: selectedStrokeWidth.toStringAsFixed(1),
-                              scale: 0.86,
-                              compact: true,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textStrokeWidth: value,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                            SizedBox(height: scaled(10, min: 7)),
-                            _buildHorizontalColorStrip(
-                              palette: _kTextPalette,
-                              selectedColor: selectedStrokeColor,
-                              scale: 0.8,
-                              onColorSelected: (color) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textStrokeColor: color,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    case _TextSettingsBottomSheetTab.shadow:
-                      return Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.all(scaled(8, min: 6)),
-                        decoration: BoxDecoration(
-                          color: _floatingPanelSurface,
-                          borderRadius: BorderRadius.circular(
-                            scaled(12, min: 9),
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildTextEffectMiniSlider(
-                              label: 'Opacity',
-                              value: selectedShadowOpacity,
-                              min: 0,
-                              max: 100,
-                              valueText:
-                                  '${selectedShadowOpacity.toStringAsFixed(0)}%',
-                              uiScale: 0.72,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOpacity: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                            SizedBox(height: scaled(2, min: 1)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Blur',
-                              value: selectedShadowBlur,
-                              min: 0,
-                              max: 60,
-                              valueText: selectedShadowBlur.toStringAsFixed(1),
-                              uiScale: 0.72,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowBlur: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                            SizedBox(height: scaled(2, min: 1)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Vertical',
-                              value: selectedShadowOffsetY,
-                              min: -120,
-                              max: 120,
-                              valueText: _formatSignedValue(
-                                selectedShadowOffsetY,
-                                fractionDigits: 0,
-                              ),
-                              uiScale: 0.72,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOffsetY: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                            SizedBox(height: scaled(2, min: 1)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Horizontal',
-                              value: selectedShadowOffsetX,
-                              min: -120,
-                              max: 120,
-                              valueText: _formatSignedValue(
-                                selectedShadowOffsetX,
-                                fractionDigits: 0,
-                              ),
-                              uiScale: 0.72,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOffsetX: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                            SizedBox(height: scaled(8, min: 6)),
-                            _buildHorizontalColorStrip(
-                              palette: _kTextPalette,
-                              selectedColor: selectedShadowColor,
-                              scale: 0.76,
-                              onColorSelected: (color) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowColor: color,
-                                  recordHistory: false,
-                                );
-                                modalSetState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      );
-                    case _TextSettingsBottomSheetTab.blend:
-                      return _SettingsSliderTile(
-                        label: 'Bend',
-                        value: selectedTextBend,
-                        min: -100,
-                        max: 100,
-                        valueText: _formatSignedValue(
-                          selectedTextBend,
-                          fractionDigits: 0,
-                        ),
-                        scale: 0.86,
-                        compact: true,
-                        onChanged: (value) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textBend: value,
-                            recordHistory: false,
-                          );
-                          modalSetState(() {});
-                        },
-                      );
+                        );
+                    }
                   }
-                }
 
-                return Container(
-                  height: maxHeight,
-                  decoration: const BoxDecoration(
-                    color: _bottomSheetSurface,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(22),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
-                    child: Column(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: const Color(0x665A616B),
-                            borderRadius: BorderRadius.circular(99),
+                  final Widget quickDock = SizedBox(
+                    height: _textQuickDockHeight,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0x211B1D22),
+                        borderRadius:
+                            BorderRadius.circular(scaled(13, min: 11)),
+                        border: Border.all(
+                          color: const Color(0x125D6470),
+                          width: 0.35,
+                        ),
+                      ),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SingleChildScrollView(
+                          dragStartBehavior: DragStartBehavior.down,
+                          scrollDirection: Axis.horizontal,
+                          clipBehavior: Clip.none,
+                          physics: const _TopToolsSnapPhysics(
+                            itemExtent: 94,
+                            parent: BouncingScrollPhysics(
+                              decelerationRate: ScrollDecelerationRate.fast,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              _buildTextQuickDockButton(
+                                icon: Icons.font_download_rounded,
+                                label: 'Fonts',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.fonts,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.fonts,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.format_bold_rounded,
+                                label: 'Weight',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.weight,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.weight,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.palette_outlined,
+                                label: 'Color',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.color,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.color,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.opacity_outlined,
+                                label: 'Opacity',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.opacity,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.opacity,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.border_color_rounded,
+                                label: 'Stroke',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.stroke,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.stroke,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.dark_mode_outlined,
+                                label: 'Shadow',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.shadow,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.shadow,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              _buildTextQuickDockButton(
+                                icon: Icons.rotate_90_degrees_ccw_rounded,
+                                label: 'Blend',
+                                active: activeTab ==
+                                    _TextSettingsBottomSheetTab.blend,
+                                onTap: () => modalSetState(
+                                  () => activeTab =
+                                      _TextSettingsBottomSheetTab.blend,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        SizedBox(height: scaled(8, min: 6)),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Container(
-                                height: scaled(36, min: 31),
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: scaled(10, min: 8),
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _floatingPanelSurface,
-                                  borderRadius: BorderRadius.circular(
-                                    scaled(11, min: 9),
-                                  ),
-                                ),
-                                child: TextField(
-                                  controller: searchController,
-                                  onChanged: (value) {
-                                    modalSetState(() {
-                                      query = value;
-                                    });
-                                    if (fontsController.hasClients) {
-                                      fontsController.jumpTo(0);
-                                    }
-                                  },
-                                  style: TextStyle(
-                                    color: _floatingPanelTextPrimary,
-                                    fontSize: scaled(12.5, min: 10.5),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  decoration: InputDecoration(
-                                    isCollapsed: true,
-                                    border: InputBorder.none,
-                                    hintText: 'Search font',
-                                    hintStyle: TextStyle(
-                                      color: _floatingPanelHint,
-                                      fontSize: scaled(12, min: 10),
-                                      fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  );
+                  final double perTabHeightBoost = switch (activeTab) {
+                    _TextSettingsBottomSheetTab.stroke => scaled(18, min: 14),
+                    _TextSettingsBottomSheetTab.shadow => scaled(30, min: 24),
+                    _ => 0.0,
+                  };
+                  final double targetHeight = (resolveSheetHeight(activeTab) +
+                          scaled(18, min: 14) +
+                          perTabHeightBoost)
+                      .clamp(136.0, viewportHeight * 0.70)
+                      .toDouble();
+
+                  _scheduleTextSettingsSheetBoundsSync();
+                  return AnimatedContainer(
+                    key: _textSettingsSheetKey,
+                    duration: const Duration(milliseconds: 260),
+                    curve: const Cubic(0.18, 0.9, 0.24, 1.04),
+                    height: targetHeight,
+                    decoration: const BoxDecoration(
+                      color: _bottomSheetSurface,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(22),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        10,
+                        8,
+                        10,
+                        12 + quickDockSafeBottomGap,
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: const Color(0x665A616B),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                          if (showFontBrowser) ...[
+                            SizedBox(height: scaled(8, min: 6)),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    height: scaled(33, min: 28),
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: scaled(9, min: 7),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            SizedBox(width: scaled(8, min: 6)),
-                            _buildTextFontArrowButton(
-                              icon: Icons.chevron_left_rounded,
-                              enabled: canGoBack,
-                              onTap: () => jumpFontSelection(-1),
-                              scale: uiScale,
-                            ),
-                            SizedBox(width: scaled(6, min: 4)),
-                            _buildTextFontArrowButton(
-                              icon: Icons.chevron_right_rounded,
-                              enabled: canGoNext,
-                              onTap: () => jumpFontSelection(1),
-                              scale: uiScale,
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: scaled(8, min: 6)),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _TextLocaleToggleButton(
-                                label: 'English',
-                                selected: locale == _TextFontLocale.english,
-                                scale: uiScale,
-                                onTap: () {
-                                  if (locale == _TextFontLocale.english) return;
-                                  modalSetState(() {
-                                    locale = _TextFontLocale.english;
-                                    _textFontLocale = _TextFontLocale.english;
-                                    query = '';
-                                    searchController.clear();
-                                  });
-                                  if (fontsController.hasClients) {
-                                    fontsController.jumpTo(0);
-                                  }
-                                },
-                              ),
-                            ),
-                            SizedBox(width: scaled(8, min: 6)),
-                            Expanded(
-                              child: _TextLocaleToggleButton(
-                                label: 'عربي',
-                                selected: locale == _TextFontLocale.arabic,
-                                scale: uiScale,
-                                fontFamily: 'Cairo',
-                                onTap: () {
-                                  if (locale == _TextFontLocale.arabic) return;
-                                  modalSetState(() {
-                                    locale = _TextFontLocale.arabic;
-                                    _textFontLocale = _TextFontLocale.arabic;
-                                    query = '';
-                                    searchController.clear();
-                                  });
-                                  if (fontsController.hasClients) {
-                                    fontsController.jumpTo(0);
-                                  }
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-                        SizedBox(height: scaled(8, min: 6)),
-                        Expanded(
-                          child: options.isEmpty
-                              ? Container(
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: _floatingPanelSurface,
-                                    borderRadius: BorderRadius.circular(
-                                      scaled(10, min: 8),
+                                    decoration: BoxDecoration(
+                                      color: _floatingPanelSurface,
+                                      borderRadius: BorderRadius.circular(
+                                        scaled(11, min: 9),
+                                      ),
                                     ),
-                                  ),
-                                  child: Text(
-                                    'No fonts found',
-                                    style: TextStyle(
-                                      color: _floatingPanelTextSecondary,
-                                      fontSize: scaled(12, min: 10),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                )
-                              : ListView.separated(
-                                  controller: fontsController,
-                                  itemCount: options.length,
-                                  padding: EdgeInsets.zero,
-                                  separatorBuilder: (_, __) =>
-                                      SizedBox(height: cardSpacing),
-                                  itemBuilder: (context, index) {
-                                    final _TextFontOption option =
-                                        options[index];
-                                    final bool isSelected =
-                                        index == selectedIndex;
-                                    final int titleWeight =
-                                        _resolveSupportedWeight(
-                                            option.family, 600);
-                                    return SizedBox(
-                                      height: cardHeight,
-                                      child: _BouncyInkWell(
-                                        borderRadius: BorderRadius.circular(
-                                          scaled(10, min: 8),
+                                    child: TextField(
+                                      controller: searchController,
+                                      onChanged: (value) {
+                                        modalSetState(() {
+                                          query = value;
+                                        });
+                                        _warmupCatalogFontsForCurrentTextBrowser(
+                                          locale: locale,
+                                          query: value,
+                                        );
+                                        if (fontsController.hasClients) {
+                                          fontsController.jumpTo(0);
+                                        }
+                                      },
+                                      style: TextStyle(
+                                        color: _floatingPanelTextPrimary,
+                                        fontSize: scaled(12, min: 10),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                      decoration: InputDecoration(
+                                        isCollapsed: true,
+                                        border: InputBorder.none,
+                                        hintText: 'Search font',
+                                        hintStyle: TextStyle(
+                                          color: _floatingPanelHint,
+                                          fontSize: scaled(11.5, min: 9.5),
+                                          fontWeight: FontWeight.w500,
                                         ),
-                                        onTap: () {
-                                          _applyTextFontOption(option);
-                                          modalSetState(() {});
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: scaled(8, min: 6)),
+                                _buildTextFontUploadButton(
+                                  scale: uiScale,
+                                  enabled: !_isUploadingTextFont,
+                                  loading: _isUploadingTextFont,
+                                  onTap: () {
+                                    unawaited(
+                                      _importExternalTextFont(
+                                        locale: locale,
+                                        onUiUpdated: () {
+                                          try {
+                                            modalSetState(() {
+                                              query = '';
+                                              searchController.clear();
+                                            });
+                                          } catch (_) {}
+                                          WidgetsBinding.instance
+                                              .addPostFrameCallback((_) {
+                                            if (fontsController.hasClients) {
+                                              fontsController.jumpTo(0);
+                                            }
+                                          });
                                         },
-                                        pressedScale: 0.986,
-                                        child: AnimatedContainer(
-                                          duration: const Duration(
-                                            milliseconds: 220,
-                                          ),
-                                          curve: Curves.easeOutCubic,
-                                          width: double.infinity,
-                                          padding: EdgeInsets.symmetric(
-                                            horizontal: scaled(10, min: 8),
-                                            vertical: scaled(8, min: 6),
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: isSelected
-                                                ? _floatingPanelSelected
-                                                : _floatingPanelSurface,
-                                            borderRadius: BorderRadius.circular(
-                                              scaled(10, min: 8),
-                                            ),
-                                          ),
-                                          child: AnimatedScale(
-                                            duration: const Duration(
-                                              milliseconds: 180,
-                                            ),
-                                            curve: Curves.easeOutCubic,
-                                            scale: isSelected ? 1.0 : 0.986,
-                                            child: Directionality(
-                                              textDirection: option.direction,
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      option.label,
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style:
-                                                          _fontAwareTextStyle(
-                                                        family: option.family,
-                                                        color: isSelected
-                                                            ? kActiveAccentForeground
-                                                            : _floatingPanelTextSecondary,
-                                                        fontSize:
-                                                            scaled(14, min: 11),
-                                                        fontWeight:
-                                                            _fontWeightFromValue(
-                                                          titleWeight,
-                                                        ),
-                                                        height: 1.0,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ),
-                                        ),
                                       ),
                                     );
                                   },
                                 ),
-                        ),
-                        SizedBox(height: scaled(8, min: 6)),
-                        SizedBox(
-                          height: _textQuickDockHeight,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            clipBehavior: Clip.none,
-                            physics: const _TopToolsSnapPhysics(
-                              itemExtent: 94,
-                              parent: BouncingScrollPhysics(),
+                                SizedBox(width: scaled(8, min: 6)),
+                                _buildTextFontArrowButton(
+                                  icon: Icons.chevron_left_rounded,
+                                  enabled: canGoBack,
+                                  onTap: () => jumpFontSelection(-1),
+                                  scale: uiScale,
+                                ),
+                                SizedBox(width: scaled(6, min: 4)),
+                                _buildTextFontArrowButton(
+                                  icon: Icons.chevron_right_rounded,
+                                  enabled: canGoNext,
+                                  onTap: () => jumpFontSelection(1),
+                                  scale: uiScale,
+                                ),
+                              ],
                             ),
-                            child: Row(
+                            SizedBox(height: scaled(8, min: 6)),
+                            Row(
                               children: [
-                                _buildTextQuickDockButton(
-                                  icon: Icons.font_download_rounded,
-                                  label: 'Fonts',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.fonts,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.fonts,
+                                Expanded(
+                                  child: _TextLocaleToggleButton(
+                                    label: 'English',
+                                    selected: locale == _TextFontLocale.english,
+                                    scale: uiScale,
+                                    onTap: () {
+                                      if (locale == _TextFontLocale.english) {
+                                        return;
+                                      }
+                                      modalSetState(() {
+                                        locale = _TextFontLocale.english;
+                                        _textFontLocale =
+                                            _TextFontLocale.english;
+                                        query = '';
+                                        searchController.clear();
+                                      });
+                                      _warmupCatalogFontsForCurrentTextBrowser(
+                                        locale: _TextFontLocale.english,
+                                        query: '',
+                                      );
+                                      if (fontsController.hasClients) {
+                                        fontsController.jumpTo(0);
+                                      }
+                                    },
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.format_bold_rounded,
-                                  label: 'Weight',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.weight,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.weight,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.palette_outlined,
-                                  label: 'Color',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.color,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.color,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.opacity_outlined,
-                                  label: 'Opacity',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.opacity,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.opacity,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.border_color_rounded,
-                                  label: 'Stroke',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.stroke,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.stroke,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.dark_mode_outlined,
-                                  label: 'Shadow',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.shadow,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.shadow,
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                _buildTextQuickDockButton(
-                                  icon: Icons.rotate_90_degrees_ccw_rounded,
-                                  label: 'Blend',
-                                  active: activeTab ==
-                                      _TextSettingsBottomSheetTab.blend,
-                                  onTap: () => modalSetState(
-                                    () => activeTab =
-                                        _TextSettingsBottomSheetTab.blend,
+                                SizedBox(width: scaled(8, min: 6)),
+                                Expanded(
+                                  child: _TextLocaleToggleButton(
+                                    label: 'عربي',
+                                    selected: locale == _TextFontLocale.arabic,
+                                    scale: uiScale,
+                                    fontFamily: 'Cairo',
+                                    onTap: () {
+                                      if (locale == _TextFontLocale.arabic) {
+                                        return;
+                                      }
+                                      modalSetState(() {
+                                        locale = _TextFontLocale.arabic;
+                                        _textFontLocale =
+                                            _TextFontLocale.arabic;
+                                        query = '';
+                                        searchController.clear();
+                                      });
+                                      _warmupCatalogFontsForCurrentTextBrowser(
+                                        locale: _TextFontLocale.arabic,
+                                        query: '',
+                                      );
+                                      if (fontsController.hasClients) {
+                                        fontsController.jumpTo(0);
+                                      }
+                                    },
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        ),
-                        if (activeTab != _TextSettingsBottomSheetTab.fonts) ...[
-                          SizedBox(height: scaled(8, min: 6)),
-                          effectContent(),
+                            SizedBox(height: scaled(8, min: 6)),
+                            Expanded(
+                              child: options.isEmpty
+                                  ? Container(
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: _floatingPanelSurface,
+                                        borderRadius: BorderRadius.circular(
+                                          scaled(10, min: 8),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        'No fonts found',
+                                        style: TextStyle(
+                                          color: _floatingPanelTextSecondary,
+                                          fontSize: scaled(12, min: 10),
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    )
+                                  : ListView.separated(
+                                      controller: fontsController,
+                                      itemCount: options.length,
+                                      padding: EdgeInsets.zero,
+                                      separatorBuilder: (_, __) =>
+                                          SizedBox(height: cardSpacing),
+                                      itemBuilder: (context, index) {
+                                        final _TextFontOption option =
+                                            options[index];
+                                        final bool isSelected =
+                                            index == selectedIndex;
+                                        final int titleWeight =
+                                            _resolveSupportedWeight(
+                                                option.family, 600);
+                                        return SizedBox(
+                                          height: cardHeight,
+                                          child: _BouncyInkWell(
+                                            borderRadius: BorderRadius.circular(
+                                              scaled(10, min: 8),
+                                            ),
+                                            onTap: () {
+                                              _applyTextFontOption(option);
+                                              modalSetState(() {});
+                                            },
+                                            pressedScale: 0.986,
+                                            child: AnimatedContainer(
+                                              duration: const Duration(
+                                                milliseconds: 220,
+                                              ),
+                                              curve: Curves.easeOutCubic,
+                                              width: double.infinity,
+                                              padding: EdgeInsets.symmetric(
+                                                horizontal: scaled(10, min: 8),
+                                                vertical: scaled(8, min: 6),
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: isSelected
+                                                    ? _floatingPanelSelected
+                                                    : _floatingPanelSurface,
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                  scaled(10, min: 8),
+                                                ),
+                                              ),
+                                              child: AnimatedScale(
+                                                duration: const Duration(
+                                                  milliseconds: 180,
+                                                ),
+                                                curve: Curves.easeOutCubic,
+                                                scale: isSelected ? 1.0 : 0.986,
+                                                child: Directionality(
+                                                  textDirection:
+                                                      option.direction,
+                                                  child: Row(
+                                                    children: [
+                                                      Expanded(
+                                                        child: Text(
+                                                          option.label,
+                                                          maxLines: 1,
+                                                          overflow: TextOverflow
+                                                              .ellipsis,
+                                                          style:
+                                                              _fontAwareTextStyle(
+                                                            family:
+                                                                option.family,
+                                                            color: isSelected
+                                                                ? kActiveAccentForeground
+                                                                : _floatingPanelTextSecondary,
+                                                            fontSize: scaled(14,
+                                                                min: 11),
+                                                            fontWeight:
+                                                                _fontWeightFromValue(
+                                                              titleWeight,
+                                                            ),
+                                                            height: 1.0,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                          if (!showFontBrowser) ...[
+                            Expanded(
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 260),
+                                reverseDuration:
+                                    const Duration(milliseconds: 200),
+                                switchInCurve:
+                                    const Cubic(0.18, 0.9, 0.24, 1.08),
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, animation) {
+                                  final Animation<double> fade =
+                                      CurvedAnimation(
+                                    parent: animation,
+                                    curve: Curves.easeOutCubic,
+                                    reverseCurve: Curves.easeInCubic,
+                                  );
+                                  final Animation<double> pop = CurvedAnimation(
+                                    parent: animation,
+                                    curve: const Cubic(0.18, 0.92, 0.3, 1.06),
+                                    reverseCurve: Curves.easeInCubic,
+                                  );
+                                  return FadeTransition(
+                                    opacity: fade,
+                                    child: SlideTransition(
+                                      position: Tween<Offset>(
+                                        begin: const Offset(0, 0.05),
+                                        end: Offset.zero,
+                                      ).animate(fade),
+                                      child: ScaleTransition(
+                                        scale: Tween<double>(
+                                          begin: 0.985,
+                                          end: 1,
+                                        ).animate(pop),
+                                        alignment: Alignment.topCenter,
+                                        child: child,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: KeyedSubtree(
+                                  key: ValueKey<String>(
+                                    'text-sheet-tab-${activeTab.name}',
+                                  ),
+                                  child: SingleChildScrollView(
+                                    physics: const BouncingScrollPhysics(),
+                                    child: Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom: scaled(8, min: 6),
+                                      ),
+                                      child: effectContent(),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          SizedBox(height: scaled(14, min: 12)),
+                          quickDock,
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                );
-              },
+                  );
+                },
+              ),
             ),
+            builder: (context, child) {
+              final double t = routeAnimation.value.clamp(0.0, 1.0).toDouble();
+              final double moveFade =
+                  Curves.easeOutCubic.transform(t).clamp(0.0, 1.0).toDouble();
+              final double pop = const Cubic(
+                0.16,
+                1.16,
+                0.3,
+                1.02,
+              ).transform(t).clamp(0.0, 1.08).toDouble();
+              final Widget animatedSheet = Transform.translate(
+                offset: Offset(0, (1 - moveFade) * 34),
+                child: Opacity(
+                  opacity: moveFade,
+                  child: Transform.scale(
+                    alignment: Alignment.bottomCenter,
+                    scale: 0.968 + (0.032 * pop),
+                    child: child,
+                  ),
+                ),
+              );
+              return animatedSheet;
+            },
           );
         },
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        enableDrag: true,
       );
+      _textSettingsBottomSheetController = controller;
+      await controller.closed;
     } finally {
-      searchController.dispose();
-      fontsController.dispose();
+      final bool closedByRouteDismiss = !_isTextSettingsBottomSheetClosing;
+      _textSettingsSheetContext = null;
+      _textSettingsBottomSheetGlobalRect = null;
+      _textSettingsBottomSheetController = null;
+      _isTextSettingsBottomSheetDismissPending = false;
+      _logTextSettingsSheetEvent(
+        closedByRouteDismiss
+            ? 'route closed (barrier/gesture dismiss)'
+            : 'route closed (programmatic dismiss)',
+      );
       if (mounted) {
+        final bool keepTextToolDock = _isToolEnabled &&
+            _activeTool == EditorTool.text &&
+            _selectedTextLayer() != null;
         setState(() {
           _isTextSettingsBottomSheetOpen = false;
-          _isTextSettingsDockEnabled = false;
+          _isTextSettingsBottomSheetClosing = false;
+          _isTextSettingsDockEnabled = keepTextToolDock;
           _resetTextQuickFloatingPanels(clearSearch: false);
           _activeTextEffectFloatingPanel = null;
         });
+      } else {
+        _isTextSettingsBottomSheetClosing = false;
       }
     }
+  }
+
+  void _onCanvasTapped() {
+    if (!_isTextSettingsBottomSheetOpen) return;
+    _logTextSettingsSheetEvent('canvas tap outside sheet');
+    _dismissTextSettingsBottomSheet(source: 'outside_tap');
+  }
+
+  void _dismissTextSettingsBottomSheet({
+    String source = 'unspecified',
+  }) {
+    if (!_isTextSettingsBottomSheetOpen || _isTextSettingsBottomSheetClosing) {
+      return;
+    }
+    final PersistentBottomSheetController<void>? controller =
+        _textSettingsBottomSheetController;
+    if (controller != null) {
+      final bool keepTextToolDock = _isToolEnabled &&
+          _activeTool == EditorTool.text &&
+          _selectedTextLayer() != null;
+      if (mounted) {
+        setState(() {
+          _isTextSettingsBottomSheetClosing = true;
+          _isTextSettingsBottomSheetOpen = false;
+          _isTextSettingsBottomSheetDismissPending = false;
+          _isTextSettingsDockEnabled = keepTextToolDock;
+          _resetTextQuickFloatingPanels(clearSearch: false);
+          _activeTextEffectFloatingPanel = null;
+        });
+      } else {
+        _isTextSettingsBottomSheetClosing = true;
+        _isTextSettingsBottomSheetOpen = false;
+        _isTextSettingsBottomSheetDismissPending = false;
+        _isTextSettingsDockEnabled = keepTextToolDock;
+        _resetTextQuickFloatingPanels(clearSearch: false);
+        _activeTextEffectFloatingPanel = null;
+      }
+      _logTextSettingsSheetEvent(
+        'dismiss requested from $source -> close persistent sheet',
+      );
+      controller.close();
+      return;
+    }
+    final BuildContext? sheetContext = _textSettingsSheetContext;
+    if (sheetContext != null && !sheetContext.mounted) {
+      _textSettingsSheetContext = null;
+    }
+    _isTextSettingsBottomSheetDismissPending = true;
+    _logTextSettingsSheetEvent(
+      'dismiss queued from $source (controller not attached yet)',
+    );
   }
 
   void _onCloneToolTap() {
@@ -13911,6 +14667,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
     _setActiveTool(EditorTool.erase, toggleWhenSame: false);
     unawaited(_openEraseSettingsBottomSheet());
+  }
+
+  void _onCropToolTap() {
+    final EditorLayer? cropLayer = _selectedCropLayer();
+    if (cropLayer == null) {
+      _showExportMessage(
+        'Select an image layer first from Layers.',
+        isError: true,
+      );
+      return;
+    }
+    _setActiveTool(EditorTool.crop, toggleWhenSame: false);
   }
 
   void _resetBlurPreviewSession({
@@ -15331,7 +16099,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   EditorLayer? _selectedCropLayer() {
     final EditorLayer? selectedImage = _selectedImageLayer();
     if (selectedImage != null) return selectedImage;
-    return _workspaceLayerForEdit(_layers);
+    return null;
   }
 
   EditorLayer? _selectedExpandLayer() {
@@ -15416,6 +16184,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       _isImageAdjustFloatingOpen = false;
       _imageAdjustFloatingBaseline = null;
       _imageAdjustFloatingLayerId = null;
+      _pngEffectExpandedLayerId = null;
       _isPhotoRoomRemoveBgFloatingOpen = false;
       _isPhotoRoomRemoveBgProcessing = false;
     });
@@ -16563,6 +17332,85 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     });
   }
 
+  bool _isPngMimeType(String? mimeType) {
+    final String normalized = (mimeType ?? '').trim().toLowerCase();
+    if (normalized == 'image/png') return true;
+    if (normalized.endsWith('/png')) return true;
+    if (normalized == 'png') return true;
+    return false;
+  }
+
+  bool _isCatalogElementPngLayer(EditorLayer layer) {
+    if (layer.type != EditorLayerType.image) return false;
+    if (layer.isBackground) return false;
+    final bool isElementLayer = layer.isCatalogElement ||
+        layer.name.trim().toLowerCase().startsWith('overlay element');
+    if (!isElementLayer) return false;
+    if (_isPngMimeType(layer.elementMimeType)) return true;
+    final String mimeType = (layer.elementMimeType ?? '').trim();
+    if (mimeType.isNotEmpty) return false;
+    final String lowerUrl = (layer.elementFileUrl ?? '').trim().toLowerCase();
+    if (lowerUrl.isNotEmpty) {
+      return lowerUrl.endsWith('.png') || lowerUrl.contains('.png?');
+    }
+    return !layer.isCatalogElement;
+  }
+
+  void _updateImagePngEffectLayer(
+    String layerId, {
+    bool? imagePngEffectEnabled,
+    Color? imagePngEffectColor,
+    double? imagePngEffectStrength,
+    double? imagePngEffectDetails,
+    double? imagePngEffectThreshold,
+    bool recordHistory = true,
+  }) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+    final EditorLayer current = nextLayers[index];
+    if (!_isCatalogElementPngLayer(current)) return;
+
+    final bool nextEnabled =
+        imagePngEffectEnabled ?? current.imagePngEffectEnabled;
+    final Color nextColor =
+        (imagePngEffectColor ?? current.imagePngEffectColor).withAlpha(255);
+    final double nextStrength =
+        (imagePngEffectStrength ?? current.imagePngEffectStrength)
+            .clamp(0.0, 100.0)
+            .toDouble();
+    final double nextDetails =
+        (imagePngEffectDetails ?? current.imagePngEffectDetails)
+            .clamp(0.0, 100.0)
+            .toDouble();
+    final double nextThreshold =
+        (imagePngEffectThreshold ?? current.imagePngEffectThreshold)
+            .clamp(-100.0, 100.0)
+            .toDouble();
+
+    if (nextEnabled == current.imagePngEffectEnabled &&
+        nextColor == current.imagePngEffectColor &&
+        (nextStrength - current.imagePngEffectStrength).abs() < 0.0001 &&
+        (nextDetails - current.imagePngEffectDetails).abs() < 0.0001 &&
+        (nextThreshold - current.imagePngEffectThreshold).abs() < 0.0001) {
+      return;
+    }
+
+    nextLayers[index] = current.copyWith(
+      imagePngEffectEnabled: nextEnabled,
+      imagePngEffectColor: nextColor,
+      imagePngEffectStrength: nextStrength,
+      imagePngEffectDetails: nextDetails,
+      imagePngEffectThreshold: nextThreshold,
+    );
+    if (recordHistory) {
+      _pushUndoSnapshot();
+    }
+    setState(() {
+      _layers = nextLayers;
+    });
+  }
+
   void _updateImageAdjustmentLayer(
     String layerId, {
     double? imageAdjustBrightness,
@@ -16668,8 +17516,225 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }
   }
 
+  Uri _textFontsCatalogUri({
+    String? locale,
+    int limit = 500,
+    int offset = 0,
+  }) {
+    final String cleanLocale = (locale ?? '').trim().toLowerCase();
+    return Uri.parse('$_kSupabaseUrl/functions/v1/fonts-catalog').replace(
+      queryParameters: <String, String>{
+        'limit': '$limit',
+        'offset': '$offset',
+        if (cleanLocale.isNotEmpty) 'locale': cleanLocale,
+      },
+    );
+  }
+
+  Future<List<_CatalogTextFont>> _fetchTextFontsCatalog({
+    String? locale,
+    int limit = 500,
+    int offset = 0,
+  }) async {
+    final Uri uri = _textFontsCatalogUri(
+      locale: locale,
+      limit: limit,
+      offset: offset,
+    );
+    final http.Response response = await http.get(
+      uri,
+      headers: <String, String>{'Accept': 'application/json'},
+    ).timeout(const Duration(seconds: 30));
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Fonts request failed (${response.statusCode}).');
+    }
+
+    final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid fonts response.');
+    }
+    if (decoded['ok'] == false) {
+      throw StateError(
+          (decoded['error'] ?? 'Fonts request failed.').toString());
+    }
+
+    final List<dynamic> rawFonts =
+        (decoded['fonts'] as List<dynamic>?) ?? const <dynamic>[];
+    final List<_CatalogTextFont> fonts = <_CatalogTextFont>[];
+    for (final dynamic entry in rawFonts) {
+      if (entry is! Map) continue;
+      final Map<String, dynamic> jsonEntry = Map<String, dynamic>.from(
+        entry.map((key, value) => MapEntry(key.toString(), value)),
+      );
+      final _CatalogTextFont item = _CatalogTextFont.fromJson(jsonEntry);
+      if (!item.isValid) continue;
+      fonts.add(item);
+    }
+    return fonts;
+  }
+
+  Future<void> _syncCatalogTextFonts({bool force = false}) async {
+    if (!_isSupabaseEdgeProxyConfigured()) return;
+    if (_isSyncingCatalogTextFonts) return;
+    if (!force && _catalogTextFontsLoaded) return;
+
+    if (mounted) {
+      setState(() {
+        _isSyncingCatalogTextFonts = true;
+      });
+    } else {
+      _isSyncingCatalogTextFonts = true;
+    }
+
+    try {
+      final List<_CatalogTextFont> fetched = await _fetchTextFontsCatalog(
+        limit: 1000,
+      );
+      fetched.sort((a, b) {
+        final int sortCompare = a.sortOrder.compareTo(b.sortOrder);
+        if (sortCompare != 0) return sortCompare;
+        return a.label.toLowerCase().compareTo(b.label.toLowerCase());
+      });
+
+      final Set<String> seenFamilies = <String>{};
+      final List<_CatalogTextFont> merged = <_CatalogTextFont>[];
+      final List<_TextFontOption> englishOptions = <_TextFontOption>[];
+      final List<_TextFontOption> arabicOptions = <_TextFontOption>[];
+      final Set<String> familySet = <String>{};
+      final Map<String, _CatalogTextFont> byFamily =
+          <String, _CatalogTextFont>{};
+      for (final _CatalogTextFont item in fetched) {
+        final String family = item.family.trim();
+        if (family.isEmpty || !seenFamilies.add(family)) continue;
+        merged.add(item);
+        familySet.add(family);
+        byFamily[family] = item;
+        final _TextFontOption option = item.toFontOption();
+        if (item.direction == TextDirection.rtl) {
+          arabicOptions.add(option);
+        } else {
+          englishOptions.add(option);
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _catalogTextFontsLoaded = true;
+        _catalogTextFonts
+          ..clear()
+          ..addAll(merged);
+        _catalogEnglishTextFontOptions
+          ..clear()
+          ..addAll(englishOptions);
+        _catalogArabicTextFontOptions
+          ..clear()
+          ..addAll(arabicOptions);
+        _catalogTextFontFamilies
+          ..clear()
+          ..addAll(familySet);
+        _catalogTextFontsByFamily
+          ..clear()
+          ..addAll(byFamily);
+      });
+      _warmupCatalogFontsForCurrentTextBrowser(
+        locale: _textFontLocale,
+        query: _textFontSearchQuery,
+      );
+
+      final EditorLayer? selectedTextLayer = _selectedTextLayer();
+      if (selectedTextLayer != null) {
+        unawaited(
+          _ensureFontReady(
+            family: selectedTextLayer.textFontFamily ?? '',
+            weight: selectedTextLayer.textFontWeight ?? 400,
+          ),
+        );
+      }
+    } catch (error) {
+      debugPrint('Text fonts catalog load failed: $error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncingCatalogTextFonts = false;
+        });
+      } else {
+        _isSyncingCatalogTextFonts = false;
+      }
+    }
+  }
+
+  Future<void> _ensureCatalogTextFontReady(String family) async {
+    final String normalizedFamily = family.trim();
+    if (normalizedFamily.isEmpty) return;
+    if (_catalogTextFontReadyFamilies.contains(normalizedFamily)) return;
+    final _CatalogTextFont? catalogFont =
+        _catalogTextFontsByFamily[normalizedFamily];
+    if (catalogFont == null) return;
+
+    final Future<void>? inFlightTask =
+        _catalogTextFontLoadTasks[normalizedFamily];
+    if (inFlightTask != null) {
+      await inFlightTask;
+      return;
+    }
+
+    final Future<void> loadTask = () async {
+      try {
+        final Uri uri = Uri.parse(catalogFont.fileUrl);
+        final http.Response response = await http.get(
+          uri,
+          headers: <String, String>{'Accept': '*/*'},
+        ).timeout(const Duration(seconds: 30));
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          throw StateError(
+            'Font download failed for "$normalizedFamily" (${response.statusCode}).',
+          );
+        }
+
+        final Uint8List bytes = response.bodyBytes;
+        if (bytes.isEmpty) {
+          throw const FormatException('Downloaded font file is empty.');
+        }
+
+        final FontLoader loader = FontLoader(normalizedFamily);
+        loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+        await loader.load();
+        _catalogTextFontReadyFamilies.add(normalizedFamily);
+      } catch (error) {
+        debugPrint('Catalog font warmup failed [$normalizedFamily]: $error');
+      }
+    }();
+
+    _catalogTextFontLoadTasks[normalizedFamily] = loadTask;
+    try {
+      await loadTask;
+    } finally {
+      _catalogTextFontLoadTasks.remove(normalizedFamily);
+    }
+  }
+
   void _syncTextLocaleFromFamily(String? family) {
     if (family == null) return;
+    for (final _TextFontOption option in _uploadedTextFontOptions) {
+      if (option.family != family) continue;
+      _textFontLocale = option.direction == TextDirection.rtl
+          ? _TextFontLocale.arabic
+          : _TextFontLocale.english;
+      return;
+    }
+    for (final _TextFontOption option in _catalogArabicTextFontOptions) {
+      if (option.family == family) {
+        _textFontLocale = _TextFontLocale.arabic;
+        return;
+      }
+    }
+    for (final _TextFontOption option in _catalogEnglishTextFontOptions) {
+      if (option.family == family) {
+        _textFontLocale = _TextFontLocale.english;
+        return;
+      }
+    }
     if (_kArabicFontOptions.any((option) => option.family == family)) {
       _textFontLocale = _TextFontLocale.arabic;
       return;
@@ -16690,13 +17755,41 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   List<_TextFontOption> _fontOptionsForLocale(_TextFontLocale locale) {
-    return locale == _TextFontLocale.english
+    final List<_TextFontOption> localCatalog = locale == _TextFontLocale.english
         ? _kEnglishFontOptions
         : _kArabicFontOptions;
+    final List<_TextFontOption> remoteCatalog =
+        locale == _TextFontLocale.english
+            ? _catalogEnglishTextFontOptions
+            : _catalogArabicTextFontOptions;
+
+    final Set<String> seenFamilies = <String>{};
+    final List<_TextFontOption> merged = <_TextFontOption>[];
+    void addFonts(List<_TextFontOption> source) {
+      for (final _TextFontOption option in source) {
+        final String family = option.family.trim();
+        if (family.isEmpty || !seenFamilies.add(family)) continue;
+        merged.add(option);
+      }
+    }
+
+    addFonts(_uploadedTextFontOptions);
+    addFonts(remoteCatalog);
+    addFonts(localCatalog);
+    return merged;
   }
 
   _TextFontOption? _fontOptionByFamily(String? family) {
     if (family == null) return null;
+    for (final _TextFontOption option in _uploadedTextFontOptions) {
+      if (option.family == family) return option;
+    }
+    for (final _TextFontOption option in _catalogEnglishTextFontOptions) {
+      if (option.family == family) return option;
+    }
+    for (final _TextFontOption option in _catalogArabicTextFontOptions) {
+      if (option.family == family) return option;
+    }
     for (final _TextFontOption option in _kEnglishFontOptions) {
       if (option.family == family) return option;
     }
@@ -16722,9 +17815,238 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     }).toList();
   }
 
+  String _uploadedTextFontsOwnerFromCurrentUser() {
+    final String uid = FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+    return uid.isEmpty ? 'guest_local' : uid;
+  }
+
+  String _uploadedTextFontsStorageKeyForOwner(String ownerKey) {
+    return '${_kUploadedTextFontsStorageKeyPrefix}_$ownerKey';
+  }
+
+  Future<void> _persistUploadedTextFontsForOwner(String ownerKey) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String key = _uploadedTextFontsStorageKeyForOwner(ownerKey);
+    if (_uploadedTextFontRecords.isEmpty) {
+      await prefs.remove(key);
+      return;
+    }
+    final String encoded = jsonEncode(
+      _uploadedTextFontRecords
+          .map((item) => item.toJson())
+          .toList(growable: false),
+    );
+    await prefs.setString(key, encoded);
+  }
+
+  Future<void> _syncUploadedTextFontsForCurrentOwner({
+    bool force = false,
+  }) async {
+    final String ownerKey = _uploadedTextFontsOwnerFromCurrentUser();
+    if (!force &&
+        _uploadedTextFontsLoaded &&
+        _uploadedTextFontsOwnerKey == ownerKey) {
+      return;
+    }
+    final int requestToken = ++_uploadedTextFontsSyncToken;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String key = _uploadedTextFontsStorageKeyForOwner(ownerKey);
+    final String raw = prefs.getString(key) ?? '';
+    final List<_PersistedUploadedTextFont> loadedRecords =
+        <_PersistedUploadedTextFont>[];
+    final List<_TextFontOption> loadedOptions = <_TextFontOption>[];
+    final Set<String> loadedFamilies = <String>{};
+
+    if (raw.trim().isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is List) {
+          for (final dynamic entry in decoded) {
+            final _PersistedUploadedTextFont? record =
+                _PersistedUploadedTextFont.fromJson(entry);
+            if (record == null) continue;
+            if (loadedFamilies.contains(record.family)) continue;
+            try {
+              final Uint8List bytes = base64Decode(record.base64Bytes);
+              final FontLoader loader = FontLoader(record.family);
+              loader.addFont(
+                Future<ByteData>.value(ByteData.sublistView(bytes)),
+              );
+              await loader.load();
+            } catch (_) {
+              continue;
+            }
+            loadedFamilies.add(record.family);
+            loadedRecords.add(record);
+            loadedOptions.add(record.toFontOption());
+          }
+        }
+      } catch (_) {
+        // Ignore malformed persisted payload and keep empty fonts list.
+      }
+    }
+
+    loadedRecords.sort(
+      (a, b) => b.createdAtMs.compareTo(a.createdAtMs),
+    );
+    final Map<String, int> createdAtByFamily = <String, int>{
+      for (final _PersistedUploadedTextFont record in loadedRecords)
+        record.family: record.createdAtMs,
+    };
+    loadedOptions.sort((a, b) {
+      final int aCreatedAt = createdAtByFamily[a.family] ?? 0;
+      final int bCreatedAt = createdAtByFamily[b.family] ?? 0;
+      return bCreatedAt.compareTo(aCreatedAt);
+    });
+
+    if (!mounted || requestToken != _uploadedTextFontsSyncToken) return;
+    setState(() {
+      _uploadedTextFontsOwnerKey = ownerKey;
+      _uploadedTextFontsLoaded = true;
+      _uploadedTextFontRecords
+        ..clear()
+        ..addAll(loadedRecords);
+      _uploadedTextFontOptions
+        ..clear()
+        ..addAll(loadedOptions);
+      _uploadedTextFontFamilies
+        ..clear()
+        ..addAll(loadedFamilies);
+      _uploadedTextFontSeed = loadedRecords.length;
+    });
+  }
+
+  String _uploadedFontLabelFromFileName(String rawName) {
+    String normalized = rawName.trim();
+    final int dotIndex = normalized.lastIndexOf('.');
+    if (dotIndex > 0) {
+      normalized = normalized.substring(0, dotIndex);
+    }
+    normalized = normalized
+        .replaceAll(RegExp(r'[_\-]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (normalized.isEmpty) {
+      return 'Custom Font';
+    }
+    return normalized;
+  }
+
+  Future<void> _importExternalTextFont({
+    required _TextFontLocale locale,
+    VoidCallback? onUiUpdated,
+  }) async {
+    if (_isUploadingTextFont) return;
+    setState(() {
+      _isUploadingTextFont = true;
+    });
+    if (mounted) {
+      onUiUpdated?.call();
+    }
+    try {
+      final FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: _kExternalTextFontExtensions,
+        allowMultiple: false,
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+      final PlatformFile picked = result.files.first;
+      Uint8List? bytes = picked.bytes;
+      final String? path = picked.path;
+      if ((bytes == null || bytes.isEmpty) && path != null && path.isNotEmpty) {
+        bytes = await File(path).readAsBytes();
+      }
+      if (bytes == null || bytes.isEmpty) {
+        _showExportMessage(
+          'Could not read selected font file.',
+          isError: true,
+        );
+        return;
+      }
+      final String fileName =
+          picked.name.trim().isEmpty ? 'custom_font.ttf' : picked.name.trim();
+      final String extension =
+          fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+      if (!_kExternalTextFontExtensions.contains(extension)) {
+        _showExportMessage(
+          'Unsupported font format. Use TTF, OTF, or TTC.',
+          isError: true,
+        );
+        return;
+      }
+
+      final String label = _uploadedFontLabelFromFileName(fileName);
+      final String ownerKey = _uploadedTextFontsOwnerFromCurrentUser();
+      if (!_uploadedTextFontsLoaded || _uploadedTextFontsOwnerKey != ownerKey) {
+        await _syncUploadedTextFontsForCurrentOwner(force: true);
+      }
+      final int nextSeed = _uploadedTextFontSeed + 1;
+      final String runtimeFamily =
+          'UploadedFont_${DateTime.now().millisecondsSinceEpoch}_$nextSeed';
+      final FontLoader loader = FontLoader(runtimeFamily);
+      loader.addFont(Future<ByteData>.value(ByteData.sublistView(bytes)));
+      await loader.load();
+
+      final _TextFontOption option = _TextFontOption(
+        family: runtimeFamily,
+        label: label,
+        preview: locale == _TextFontLocale.arabic ? 'أبجد' : 'Aa',
+        direction: locale == _TextFontLocale.arabic
+            ? TextDirection.rtl
+            : TextDirection.ltr,
+        defaultWeight: 400,
+      );
+      final _PersistedUploadedTextFont persistedRecord =
+          _PersistedUploadedTextFont(
+        family: runtimeFamily,
+        label: label,
+        preview: option.preview,
+        direction: option.direction,
+        base64Bytes: base64Encode(bytes),
+        createdAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      setState(() {
+        _uploadedTextFontsOwnerKey = ownerKey;
+        _uploadedTextFontsLoaded = true;
+        _uploadedTextFontSeed = nextSeed;
+        _uploadedTextFontFamilies.add(runtimeFamily);
+        _uploadedTextFontOptions.insert(0, option);
+        _uploadedTextFontRecords.insert(0, persistedRecord);
+        while (_uploadedTextFontRecords.length > _kUploadedTextFontsMaxCount) {
+          final _PersistedUploadedTextFont removed =
+              _uploadedTextFontRecords.removeLast();
+          _uploadedTextFontOptions
+              .removeWhere((entry) => entry.family == removed.family);
+          _uploadedTextFontFamilies.remove(removed.family);
+        }
+      });
+      await _persistUploadedTextFontsForOwner(ownerKey);
+      _showExportMessage('Font "$label" uploaded.');
+      if (mounted) {
+        onUiUpdated?.call();
+      }
+    } catch (_) {
+      _showExportMessage(
+        'Could not import font. Please choose a valid TTF/OTF/TTC file.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploadingTextFont = false;
+        });
+        onUiUpdated?.call();
+      }
+    }
+  }
+
   void _openTextFontsFloatingPanel() {
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
+    unawaited(_syncCatalogTextFonts(force: true));
     _syncTextLocaleFromFamily(selectedTextLayer.textFontFamily);
     setState(() {
       _resetTextQuickFloatingPanels();
@@ -16734,6 +18056,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     });
     _textFontSearchQuery = '';
     _textFontSearchController.clear();
+    _warmupCatalogFontsForCurrentTextBrowser(
+      locale: _textFontLocale,
+      query: '',
+    );
     _closeToolSettingsSidebarIfOpen();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_textFontsFloatingScrollController.hasClients) {
@@ -16756,10 +18082,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     final EditorLayer? selectedTextLayer = _selectedTextLayer();
     if (selectedTextLayer == null) return;
     final int currentWeight = selectedTextLayer.textFontWeight ?? 400;
-    final int requestedWeight =
-        option.defaultWeight > 0 ? option.defaultWeight : currentWeight;
     final int nextWeight =
-        _resolveSupportedWeight(option.family, requestedWeight);
+        _resolveSupportedWeight(option.family, currentWeight);
+    _syncTextLocaleFromFamily(option.family);
+    _updateTextLayer(
+      selectedTextLayer.id,
+      textFontFamily: option.family,
+      textFontWeight: nextWeight,
+      recordHistory: false,
+    );
+    final int requestToken = ++_textFontApplyRequestToken;
     setState(() {
       _pendingTextFontFamily = option.family;
       _pendingTextFontWeight = nextWeight;
@@ -16769,6 +18101,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         option,
         layerId: selectedTextLayer.id,
         initialResolvedWeight: nextWeight,
+        requestToken: requestToken,
       ),
     );
   }
@@ -16777,13 +18110,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     _TextFontOption option, {
     required String layerId,
     required int initialResolvedWeight,
+    required int requestToken,
   }) async {
-    final int requestToken = ++_fontWarmupRequestToken;
     await _ensureFontReady(
       family: option.family,
       weight: initialResolvedWeight,
     );
-    if (!mounted || requestToken != _fontWarmupRequestToken) {
+    if (!mounted || requestToken != _textFontApplyRequestToken) {
       return;
     }
     final int liveIndex = _layers.indexWhere((layer) => layer.id == layerId);
@@ -16792,23 +18125,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       return;
     }
     final EditorLayer liveLayer = _layers[liveIndex];
-    final int liveCurrentWeight = liveLayer.textFontWeight ?? 400;
-    final int liveRequestedWeight =
-        option.defaultWeight > 0 ? option.defaultWeight : liveCurrentWeight;
-    final int liveNextWeight =
-        _resolveSupportedWeight(option.family, liveRequestedWeight);
-    _syncTextLocaleFromFamily(option.family);
-    _updateTextLayer(
-      layerId,
-      textFontFamily: option.family,
-      textFontWeight: liveNextWeight,
-      recordHistory: false,
-    );
+    if ((liveLayer.textFontFamily ?? '').trim() != option.family.trim()) {
+      _clearPendingTextFontOptionIfCurrent(requestToken);
+      return;
+    }
     _clearPendingTextFontOptionIfCurrent(requestToken);
+    if (mounted && requestToken == _textFontApplyRequestToken) {
+      setState(() {});
+    }
   }
 
   void _clearPendingTextFontOptionIfCurrent(int requestToken) {
-    if (!mounted || requestToken != _fontWarmupRequestToken) return;
+    if (!mounted || requestToken != _textFontApplyRequestToken) return;
     if (_pendingTextFontFamily == null && _pendingTextFontWeight == null) {
       return;
     }
@@ -16823,8 +18151,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required int weight,
   }) async {
     final String normalizedFamily = family.trim();
-    if (normalizedFamily.isEmpty ||
-        !_kGoogleFontFamilies.contains(normalizedFamily)) {
+    if (normalizedFamily.isEmpty) {
+      return;
+    }
+    if (_catalogTextFontFamilies.contains(normalizedFamily)) {
+      await _ensureCatalogTextFontReady(normalizedFamily);
+      return;
+    }
+    if (!_kGoogleFontFamilies.contains(normalizedFamily)) {
       return;
     }
     try {
@@ -16835,6 +18169,30 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       await GoogleFonts.pendingFonts();
     } catch (_) {
       // Keep current font when runtime fetch fails; avoid forced visual swap.
+    }
+  }
+
+  void _warmupCatalogFontsForCurrentTextBrowser({
+    required _TextFontLocale locale,
+    required String query,
+    int limit = 16,
+  }) {
+    if (_catalogTextFontFamilies.isEmpty || limit <= 0) return;
+    final List<_TextFontOption> options = _filteredTextFontOptions(
+      locale: locale,
+      query: query,
+    );
+    if (options.isEmpty) return;
+    int warmed = 0;
+    for (final _TextFontOption option in options) {
+      final String family = option.family.trim();
+      if (family.isEmpty) continue;
+      if (!_catalogTextFontFamilies.contains(family)) continue;
+      if (_catalogTextFontReadyFamilies.contains(family)) continue;
+      if (_catalogTextFontLoadTasks.containsKey(family)) continue;
+      unawaited(_ensureCatalogTextFontReady(family));
+      warmed++;
+      if (warmed >= limit) break;
     }
   }
 
@@ -16896,8 +18254,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   List<int> _availableWeightsForFamily(String family) {
-    if (_kFontWeightSupport.containsKey(family)) {
-      return _kFontWeightSupport[family]!;
+    if (_uploadedTextFontFamilies.contains(family)) {
+      return const <int>[400];
+    }
+    if (_catalogTextFontFamilies.contains(family)) {
+      return const <int>[400];
+    }
+    final List<int>? exact = _kFontWeightSupport[family];
+    if (exact != null && exact.isNotEmpty) {
+      return exact;
+    }
+    final String normalizedFamily = _normalizeFontFamilyKey(family);
+    final List<int>? normalized = _kFontWeightSupport[normalizedFamily];
+    if (normalized != null && normalized.isNotEmpty) {
+      return normalized;
     }
     if (_kGoogleFontFamilies.contains(family)) {
       return _kVariableFontWeights;
@@ -16921,34 +18291,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   bool _fontOptionMatchesLayer(_TextFontOption option, EditorLayer layer) {
     final String selectedFamily = layer.textFontFamily ?? '';
-    if (selectedFamily != option.family) {
-      return false;
-    }
-    final int selectedWeight = _resolveSupportedWeight(
-      option.family,
-      layer.textFontWeight ?? 400,
-    );
-    final int optionWeight = _resolveSupportedWeight(
-      option.family,
-      option.defaultWeight,
-    );
-    return selectedWeight == optionWeight;
+    return selectedFamily == option.family;
   }
 
   bool _pendingFontOptionMatches(_TextFontOption option) {
     final String? pendingFamily = _pendingTextFontFamily;
-    final int? pendingWeight = _pendingTextFontWeight;
-    if (pendingFamily == null || pendingWeight == null) return false;
-    if (pendingFamily != option.family) return false;
-    final int resolvedPendingWeight = _resolveSupportedWeight(
-      option.family,
-      pendingWeight,
-    );
-    final int optionWeight = _resolveSupportedWeight(
-      option.family,
-      option.defaultWeight,
-    );
-    return resolvedPendingWeight == optionWeight;
+    return pendingFamily != null && pendingFamily == option.family;
   }
 
   int _selectedFontOptionIndex({
@@ -17274,55 +18622,237 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     required Color selectedColor,
     required ValueChanged<Color> onColorSelected,
     double? scale,
+    ScrollController? controller,
   }) {
     final double uiScale = scale ?? _textSidebarScale;
     double scaled(double value, {required double min}) =>
         math.max(min, value * uiScale);
-    final double swatchWidth = scaled(34, min: 24);
-    final double swatchHeight = scaled(22, min: 16);
-    final double radius = scaled(6, min: 4);
-    final double spacing = scaled(6, min: 4);
-    final double stripHeight = swatchHeight + scaled(6, min: 4);
+    final double swatchHeight = scaled(30, min: 22);
+    final double radius = scaled(9, min: 7);
+    final double stripHeight = swatchHeight + scaled(8, min: 6);
 
     return SizedBox(
       height: stripHeight,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        primary: false,
-        itemCount: palette.length,
-        separatorBuilder: (_, __) => SizedBox(width: spacing),
-        itemBuilder: (context, index) {
-          final Color color = palette[index];
-          final bool isSelected = selectedColor == color;
-          return GestureDetector(
-            onTap: () => onColorSelected(color),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 120),
-              width: swatchWidth,
-              height: swatchHeight,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(radius),
-                border: Border.all(
-                  color: isSelected
-                      ? const Color(0xFFFFFFFF)
-                      : const Color(0x1A4F5358),
-                  width: isSelected ? 1.1 : 0.6,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final (
+            swatchWidth: double swatchWidth,
+            spacing: double spacing,
+            step: _,
+          ) = _resolveColorStripMetrics(
+            viewportWidth: constraints.maxWidth,
+            scale: uiScale,
+          );
+          return ListView.separated(
+            controller: controller,
+            scrollDirection: Axis.horizontal,
+            primary: false,
+            itemCount: palette.length,
+            separatorBuilder: (_, __) => SizedBox(width: spacing),
+            itemBuilder: (context, index) {
+              final Color color = palette[index];
+              final bool isSelected = selectedColor == color;
+              return GestureDetector(
+                onTap: () => onColorSelected(color),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  width: swatchWidth,
+                  height: swatchHeight,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(radius),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFFFFFFFF)
+                          : const Color(0x1A4F5358),
+                      width: isSelected ? 1.1 : 0.6,
+                    ),
+                    boxShadow: isSelected
+                        ? const <BoxShadow>[
+                            BoxShadow(
+                              color: Color(0x2219191A),
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
                 ),
-                boxShadow: isSelected
-                    ? const <BoxShadow>[
-                        BoxShadow(
-                          color: Color(0x2219191A),
-                          blurRadius: 2,
-                          offset: Offset(0, 1),
-                        ),
-                      ]
-                    : null,
-              ),
-            ),
+              );
+            },
           );
         },
       ),
+    );
+  }
+
+  ({
+    double swatchWidth,
+    double spacing,
+    double step,
+  }) _resolveColorStripMetrics({
+    required double viewportWidth,
+    required double scale,
+  }) {
+    final double safeScale = scale.clamp(0.55, 1.35).toDouble();
+    final double spacing = math.max(5, 7 * safeScale);
+    final double baseSwatchWidth = math.max(30, 42 * safeScale);
+    if (!viewportWidth.isFinite || viewportWidth <= 0) {
+      return (
+        swatchWidth: baseSwatchWidth,
+        spacing: spacing,
+        step: baseSwatchWidth + spacing,
+      );
+    }
+    final int visibleSlots =
+        ((viewportWidth + spacing) / (baseSwatchWidth + spacing))
+            .floor()
+            .clamp(4, 8)
+            .toInt();
+    final double swatchWidth =
+        ((viewportWidth - ((visibleSlots - 1) * spacing)) / visibleSlots)
+            .clamp(26.0, 92.0)
+            .toDouble();
+    return (
+      swatchWidth: swatchWidth,
+      spacing: spacing,
+      step: swatchWidth + spacing,
+    );
+  }
+
+  int _paletteColorIndexByValue(List<Color> palette, Color selectedColor) {
+    final int index = palette.indexWhere(
+      (candidate) => candidate.value == selectedColor.value,
+    );
+    return index < 0 ? 0 : index;
+  }
+
+  void _animateColorStripToIndex({
+    required ScrollController controller,
+    required int index,
+    double scale = 0.94,
+  }) {
+    if (index < 0 || !controller.hasClients) return;
+    final (
+      swatchWidth: _,
+      spacing: _,
+      step: double step,
+    ) = _resolveColorStripMetrics(
+      viewportWidth: controller.position.viewportDimension,
+      scale: scale,
+    );
+    final double maxOffset = controller.position.maxScrollExtent;
+    final double targetOffset = (index * step).clamp(0.0, maxOffset);
+    controller.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _snapColorStripToNearest({
+    required ScrollController controller,
+    required int paletteLength,
+    double scale = 0.94,
+  }) {
+    if (!controller.hasClients || paletteLength <= 1) return;
+    final (
+      swatchWidth: _,
+      spacing: _,
+      step: double step,
+    ) = _resolveColorStripMetrics(
+      viewportWidth: controller.position.viewportDimension,
+      scale: scale,
+    );
+    if (step <= 0) return;
+    final double pixels =
+        controller.offset.clamp(0.0, controller.position.maxScrollExtent);
+    final int nearestIndex =
+        (pixels / step).round().clamp(0, paletteLength - 1);
+    final double snappedOffset =
+        (nearestIndex * step).clamp(0.0, controller.position.maxScrollExtent);
+    if ((snappedOffset - pixels).abs() < 0.6) return;
+    controller.animateTo(
+      snappedOffset,
+      duration: const Duration(milliseconds: 170),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildHorizontalColorPickerWithNavigation({
+    required List<Color> palette,
+    required Color selectedColor,
+    required ValueChanged<Color> onColorSelected,
+    required ScrollController controller,
+    required double arrowScale,
+    double stripScale = 0.94,
+  }) {
+    if (palette.isEmpty) return const SizedBox.shrink();
+    final int selectedIndex = _paletteColorIndexByValue(palette, selectedColor);
+    final bool canGoBack = selectedIndex > 0;
+    final bool canGoNext = selectedIndex < palette.length - 1;
+    final double navScale = (arrowScale + 0.10).clamp(0.8, 1.3).toDouble();
+
+    void jumpColor(int direction) {
+      final int nextIndex =
+          (selectedIndex + direction).clamp(0, palette.length - 1).toInt();
+      if (nextIndex == selectedIndex) return;
+      onColorSelected(palette[nextIndex]);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _animateColorStripToIndex(
+          controller: controller,
+          index: nextIndex,
+          scale: stripScale,
+        );
+      });
+    }
+
+    return Row(
+      children: [
+        _buildTextFontArrowButton(
+          icon: Icons.chevron_left_rounded,
+          enabled: canGoBack,
+          onTap: () => jumpColor(-1),
+          scale: navScale,
+        ),
+        SizedBox(width: (6 * navScale).clamp(5, 9).toDouble()),
+        Expanded(
+          child: NotificationListener<ScrollEndNotification>(
+            onNotification: (_) {
+              _snapColorStripToNearest(
+                controller: controller,
+                paletteLength: palette.length,
+                scale: stripScale,
+              );
+              return false;
+            },
+            child: _buildHorizontalColorStrip(
+              palette: palette,
+              selectedColor: selectedColor,
+              scale: stripScale,
+              controller: controller,
+              onColorSelected: (color) {
+                onColorSelected(color);
+                final int nextIndex = _paletteColorIndexByValue(palette, color);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _animateColorStripToIndex(
+                    controller: controller,
+                    index: nextIndex,
+                    scale: stripScale,
+                  );
+                });
+              },
+            ),
+          ),
+        ),
+        SizedBox(width: (6 * navScale).clamp(5, 9).toDouble()),
+        _buildTextFontArrowButton(
+          icon: Icons.chevron_right_rounded,
+          enabled: canGoNext,
+          onTap: () => jumpColor(1),
+          scale: navScale,
+        ),
+      ],
     );
   }
 
@@ -18354,6 +19884,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   Widget _buildImageLayerSettingsPanel(EditorLayer imageLayer) {
     final bool isOverlay = !imageLayer.isBackground;
+    final bool showPngEffectCard = _isCatalogElementPngLayer(imageLayer);
     final _OverlayCutConfig config = _resolvedOverlayCutConfigForLayer(
       imageLayer.id,
     );
@@ -18384,6 +19915,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           ),
           const SizedBox(height: 10),
         ],
+        if (showPngEffectCard) ...[
+          _buildImagePngEffectCard(imageLayer),
+          const SizedBox(height: 10),
+        ],
         _buildSidebarLauncherCard(
           title: 'Adjustment',
           subtitle: adjustFloatingOpen ? 'Floating panel active' : null,
@@ -18391,6 +19926,293 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
           onTap: _openImageAdjustFloatingPanel,
         ),
       ],
+    );
+  }
+
+  Widget _buildImagePngEffectCard(EditorLayer layer) {
+    final bool expanded = _pngEffectExpandedLayerId == layer.id;
+    final bool enabled = layer.imagePngEffectEnabled;
+    final Color selectedColor = layer.imagePngEffectColor.withAlpha(255);
+    final double strength = layer.imagePngEffectStrength.clamp(0.0, 100.0);
+    final double details = layer.imagePngEffectDetails.clamp(0.0, 100.0);
+    final double threshold = layer.imagePngEffectThreshold.clamp(-100.0, 100.0);
+
+    Widget presetChip(String label, Color color) {
+      final bool selected = selectedColor.value == color.value;
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(9),
+          onTap: () {
+            _updateImagePngEffectLayer(
+              layer.id,
+              imagePngEffectEnabled: true,
+              imagePngEffectColor: color,
+            );
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: selected ? kActiveAccent : const Color(0xFF1E1F22),
+              borderRadius: BorderRadius.circular(9),
+              border: Border.all(
+                color: selected ? Colors.transparent : const Color(0xFF605E5E),
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: selected
+                    ? kActiveAccentForeground
+                    : const Color(0xFFF3F3F2),
+                fontSize: 11.2,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 170),
+      curve: Curves.easeOut,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: expanded ? const Color(0xFF17191D) : const Color(0xFF1E1F22),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: expanded ? const Color(0x446D7380) : const Color(0x2B4F5358),
+          width: 0.55,
+        ),
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () {
+                setState(() {
+                  _pngEffectExpandedLayerId = expanded ? null : layer.id;
+                });
+              },
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'PNG Effect',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFFF3F3F2),
+                        ),
+                      ),
+                    ),
+                    Text(
+                      enabled ? 'Enabled' : 'Disabled',
+                      style: TextStyle(
+                        color: enabled
+                            ? const Color(0xFFE6F24A)
+                            : const Color(0xFF9CA3AF),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: const Color(0xFFC6CCD7),
+                      size: 19,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 170),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeOut,
+            child: expanded
+                ? Padding(
+                    key: const ValueKey<String>('png_effect_expanded'),
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                    child: Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: WonderPicEditorScreen._panelBg,
+                            borderRadius: BorderRadius.circular(11),
+                            border: Border.all(
+                              color: const Color(0x244F5358),
+                              width: 0.4,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Apply tint to PNG element',
+                                  style: TextStyle(
+                                    fontSize: 11.6,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFF3F3F2),
+                                  ),
+                                ),
+                              ),
+                              Switch.adaptive(
+                                value: enabled,
+                                activeColor: kActiveAccent,
+                                onChanged: (value) {
+                                  _updateImagePngEffectLayer(
+                                    layer.id,
+                                    imagePngEffectEnabled: value,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (enabled) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: presetChip('White', Colors.white)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                  child: presetChip('Black', Colors.black)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          _buildHorizontalColorPickerWithNavigation(
+                            palette: _kTextPalette,
+                            selectedColor: selectedColor,
+                            controller: _pngEffectColorStripController,
+                            stripScale: 0.88,
+                            arrowScale: 0.84,
+                            onColorSelected: (color) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectColor: color.withAlpha(255),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 8),
+                          _SettingsSliderTile(
+                            label: 'Strength',
+                            value: strength,
+                            min: 0,
+                            max: 100,
+                            valueText: '${strength.toStringAsFixed(0)}%',
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectStrength: value,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          _SettingsSliderTile(
+                            label: 'Details',
+                            value: details,
+                            min: 0,
+                            max: 100,
+                            valueText: '${details.toStringAsFixed(0)}%',
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectDetails: value,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          _SettingsSliderTile(
+                            label: 'Threshold',
+                            value: threshold,
+                            min: -100,
+                            max: 100,
+                            valueText: _formatSignedValue(threshold,
+                                fractionDigits: 0),
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectThreshold: value,
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          _SettingsSliderTile(
+                            label: 'Red',
+                            value: selectedColor.red.toDouble(),
+                            min: 0,
+                            max: 255,
+                            valueText: '${selectedColor.red}',
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectColor:
+                                    selectedColor.withRed(value.round()),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          _SettingsSliderTile(
+                            label: 'Green',
+                            value: selectedColor.green.toDouble(),
+                            min: 0,
+                            max: 255,
+                            valueText: '${selectedColor.green}',
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectColor:
+                                    selectedColor.withGreen(value.round()),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 6),
+                          _SettingsSliderTile(
+                            label: 'Blue',
+                            value: selectedColor.blue.toDouble(),
+                            min: 0,
+                            max: 255,
+                            valueText: '${selectedColor.blue}',
+                            compact: true,
+                            onChanged: (value) {
+                              _updateImagePngEffectLayer(
+                                layer.id,
+                                imagePngEffectColor:
+                                    selectedColor.withBlue(value.round()),
+                              );
+                            },
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(
+                    key: ValueKey<String>('png_effect_closed')),
+          ),
+        ],
+      ),
     );
   }
 
@@ -18824,9 +20646,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                                 },
                               ),
                               SizedBox(height: scaled(8, min: 6)),
-                              _buildHorizontalColorStrip(
+                              _buildHorizontalColorPickerWithNavigation(
                                 palette: _kTextPalette,
                                 selectedColor: selectedShadowColor,
+                                controller: _overlayShadowColorStripController,
+                                stripScale: 0.94,
+                                arrowScale: uiScale,
                                 onColorSelected: (color) {
                                   _updateOverlayImageLayer(
                                     selectedOverlay.id,
@@ -19376,10 +21201,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   Widget _buildCropSettingsPanel() {
     final EditorLayer? selectedImageLayer = _selectedCropLayer();
-    final bool enabled = selectedImageLayer != null;
-    final bool isWorkspaceCrop = selectedImageLayer?.isBackground ?? false;
-    final _CropToolConfig? config =
-        enabled ? _resolvedCropConfigForLayer(selectedImageLayer.id) : null;
+    if (selectedImageLayer == null) {
+      return const _ToolHintCard(
+        title: 'Crop Tool',
+        message:
+            'Select an image layer from Layers first. Crop works only with image layers.',
+      );
+    }
+    final bool isWorkspaceCrop = selectedImageLayer.isBackground;
+    final _CropToolConfig config =
+        _resolvedCropConfigForLayer(selectedImageLayer.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -19412,38 +21243,32 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
                   itemBuilder: (context, index) {
                     final _CropRatioPreset preset =
                         _CropRatioPreset.values[index];
-                    final bool selected =
-                        enabled && config?.ratioPreset == preset;
-                    return Opacity(
-                      opacity: enabled ? 1 : 0.55,
-                      child: ChoiceChip(
-                        selected: selected,
-                        onSelected: enabled
-                            ? (_) {
-                                _setCropRatioPreset(preset);
-                                _closeToolSettingsSidebarIfOpen();
-                              }
-                            : null,
-                        label: Text(
-                          preset.label,
-                          style: TextStyle(
-                            color: selected
-                                ? kActiveAccentForeground
-                                : const Color(0xFFB8B7B5),
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
-                          ),
-                        ),
-                        backgroundColor: const Color(0xFF1E1F22),
-                        selectedColor: kActiveAccent,
-                        side: BorderSide(
+                    final bool selected = config.ratioPreset == preset;
+                    return ChoiceChip(
+                      selected: selected,
+                      onSelected: (_) {
+                        _setCropRatioPreset(preset);
+                        _closeToolSettingsSidebarIfOpen();
+                      },
+                      label: Text(
+                        preset.label,
+                        style: TextStyle(
                           color: selected
-                              ? Colors.transparent
-                              : const Color(0xFF605E5E),
+                              ? kActiveAccentForeground
+                              : const Color(0xFFB8B7B5),
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
                         ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(9),
-                        ),
+                      ),
+                      backgroundColor: const Color(0xFF1E1F22),
+                      selectedColor: kActiveAccent,
+                      side: BorderSide(
+                        color: selected
+                            ? Colors.transparent
+                            : const Color(0xFF605E5E),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(9),
                       ),
                     );
                   },
@@ -19465,7 +21290,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: enabled && !isWorkspaceCrop
+                  onPressed: !isWorkspaceCrop
                       ? () => _rotateCropQuarterTurns(-1)
                       : null,
                   icon: const Icon(
@@ -19493,7 +21318,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: enabled && !isWorkspaceCrop
+                  onPressed: !isWorkspaceCrop
                       ? () => _rotateCropQuarterTurns(1)
                       : null,
                   icon: const Icon(
@@ -19523,15 +21348,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         ),
         const SizedBox(height: 10),
         Opacity(
-          opacity: enabled && !isWorkspaceCrop ? 1 : 0.55,
+          opacity: !isWorkspaceCrop ? 1 : 0.55,
           child: _SettingsSliderTile(
             label: 'Straighten',
-            value: config?.straightenDegrees ?? 0.0,
+            value: config.straightenDegrees,
             min: -30,
             max: 30,
-            valueText:
-                '${(config?.straightenDegrees ?? 0.0).toStringAsFixed(1)}°',
-            onChanged: enabled && !isWorkspaceCrop
+            valueText: '${config.straightenDegrees.toStringAsFixed(1)}°',
+            onChanged: !isWorkspaceCrop
                 ? (value) => _updateCropToolConfig(straightenDegrees: value)
                 : (_) {},
           ),
@@ -22826,6 +24650,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   bool _layerHasImageEffectsForExport(EditorLayer layer) {
     if (layer.type != EditorLayerType.image) return false;
     if (_layerHasImageAdjustmentsForExport(layer)) return true;
+    if (_isPngColorEffectActive(layer)) return true;
     if ((layer.imageShadowOpacity ?? 0).abs() > 0.001) return true;
     if ((layer.imageShadowBlur ?? 0).abs() > 0.001) return true;
     if ((layer.imageShadowOffsetX ?? 0).abs() > 0.001) return true;
@@ -23646,6 +25471,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _imageAdjustFloatingBaseline = null;
         _imageAdjustFloatingLayerId = null;
       }
+      if (selected == null || !_isCatalogElementPngLayer(selected)) {
+        _pngEffectExpandedLayerId = null;
+      } else if (_pngEffectExpandedLayerId != selected.id) {
+        _pngEffectExpandedLayerId = null;
+      }
       if (_isCropFloatingOpen) {
         if (selected == null ||
             selected.type != EditorLayerType.image ||
@@ -23673,6 +25503,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         _syncTextLocaleFromFamily(selected?.textFontFamily);
       }
     });
+    final EditorLayer? liveSelected = _selectedLayer();
+    if (liveSelected?.type == EditorLayerType.text) {
+      unawaited(
+        _ensureFontReady(
+          family: liveSelected?.textFontFamily ?? '',
+          weight: liveSelected?.textFontWeight ?? 400,
+        ),
+      );
+    }
     if (layerId == null) _sketchReplaceBrushPreviewTimer?.cancel();
     _syncTextInputFromSelectedLayer();
   }
@@ -23836,6 +25675,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
     Offset? position,
     double? initialLayerScaleOverride,
     String layerNamePrefix = 'Overlay Image',
+    bool isCatalogElement = false,
+    String? elementAssetId,
+    String? elementMimeType,
+    String? elementFileUrl,
   }) {
     final int overlayImageCount = _layers
         .where(
@@ -23872,6 +25715,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       position: resolvedPosition,
       layerScale: initialScale,
       layerRotation: 0.0,
+      isCatalogElement: isCatalogElement,
+      elementAssetId: elementAssetId,
+      elementMimeType: elementMimeType,
+      elementFileUrl: elementFileUrl,
     );
     _layers = <EditorLayer>[..._layers, overlay];
     _selectedLayerId = newId;
@@ -23905,6 +25752,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   _PendingElementPlacement _preparePendingElementPlacement({
     required String assetId,
+    String? assetMimeType,
     required String fileUrl,
     required ui.Image image,
     required Uint8List thumbnailBytes,
@@ -23928,6 +25776,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
         .toDouble();
     return _PendingElementPlacement(
       assetId: assetId,
+      assetMimeType: assetMimeType,
       fileUrl: fileUrl,
       image: image,
       thumbnailBytes: thumbnailBytes,
@@ -23941,11 +25790,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
 
   _PendingElementPlacement _preparePendingElementPlacementLoading({
     required String assetId,
+    String? assetMimeType,
     required String fileUrl,
     bool placeOnDrop = false,
   }) {
     return _PendingElementPlacement(
       assetId: assetId,
+      assetMimeType: assetMimeType,
       fileUrl: fileUrl,
       image: null,
       thumbnailBytes: null,
@@ -23988,6 +25839,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
       final _PendingElementPlacement readyPlacement =
           _preparePendingElementPlacement(
         assetId: selectedAsset.id,
+        assetMimeType: selectedAsset.mimeType,
         fileUrl: selectedAsset.fileUrl,
         image: loaded.image,
         thumbnailBytes: loaded.bytes,
@@ -24082,6 +25934,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
             _clampSourcePositionToWorkspace(workspacePoint, workspaceSize),
         initialLayerScaleOverride: pending.initialLayerScale!,
         layerNamePrefix: pending.layerNamePrefix,
+        isCatalogElement: true,
+        elementAssetId: pending.assetId,
+        elementMimeType: pending.assetMimeType,
+        elementFileUrl: pending.fileUrl,
       );
       _isToolEnabled = false;
       _pendingElementPlacement = null;
@@ -24094,6 +25950,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen> {
   }
 
   void _onGlobalElementPlacementPointerEvent(PointerEvent event) {
+    if (_isTextSettingsBottomSheetOpen &&
+        !_isTextSettingsBottomSheetClosing &&
+        event is PointerDownEvent) {
+      if (!_isGlobalPositionInsideTextSettingsSheet(event.position)) {
+        _logTextSettingsSheetEvent('global outside tap at ${event.position}');
+        _dismissTextSettingsBottomSheet(source: 'global_outside_tap');
+      }
+    }
+
     final _PendingElementPlacement? pending = _pendingElementPlacement;
     if (pending == null) return;
 
@@ -27903,6 +29768,7 @@ Hard requirements:
     final _PendingElementPlacement pendingPlacement =
         _preparePendingElementPlacementLoading(
       assetId: selectedAsset.id,
+      assetMimeType: selectedAsset.mimeType,
       fileUrl: selectedAsset.fileUrl,
       placeOnDrop: isDragPickup,
     );
@@ -27962,6 +29828,10 @@ Hard requirements:
         position: centeredPosition,
         initialLayerScaleOverride: initialScale,
         layerNamePrefix: 'Overlay Element',
+        isCatalogElement: true,
+        elementAssetId: selectedAsset.id,
+        elementMimeType: selectedAsset.mimeType,
+        elementFileUrl: selectedAsset.fileUrl,
       );
       _isToolEnabled = false;
       _resetMoveJoystickControls();
@@ -28622,6 +30492,7 @@ Hard requirements:
 
   Future<void> _openLayersBottomSheet() async {
     final Set<String> mergeSelection = <String>{};
+    bool mergeSelectionMode = false;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -28643,8 +30514,12 @@ Hard requirements:
                       _layers.reversed.toList(growable: false);
                   mergeSelection.removeWhere(
                       (id) => !_layers.any((layer) => layer.id == id));
-                  final bool canMergeSelection =
-                      mergeSelection.length >= 2 && !_isLayersMergeInProgress;
+                  if (mergeSelection.isEmpty) {
+                    mergeSelectionMode = false;
+                  }
+                  final bool canMergeSelection = mergeSelectionMode &&
+                      mergeSelection.length >= 2 &&
+                      !_isLayersMergeInProgress;
                   return Column(
                     children: [
                       Container(
@@ -28703,6 +30578,7 @@ Hard requirements:
                                         Set<String>.from(mergeSelection);
                                     await _mergeLayersByIds(targetIds);
                                     mergeSelection.clear();
+                                    mergeSelectionMode = false;
                                     if (context.mounted) {
                                       setSheetState(() {});
                                     }
@@ -28793,20 +30669,43 @@ Hard requirements:
                                 child: _LayerRow(
                                   layer: layer,
                                   selected: _selectedLayerId == layer.id,
-                                  mergeSelected:
+                                  mergeSelected: mergeSelectionMode &&
                                       mergeSelection.contains(layer.id),
                                   reorderHandle: reorderHandle,
                                   onTap: () {
-                                    _onLayerSelected(layer.id);
+                                    if (mergeSelectionMode) {
+                                      if (mergeSelection.contains(layer.id)) {
+                                        mergeSelection.remove(layer.id);
+                                      } else {
+                                        mergeSelection.add(layer.id);
+                                      }
+                                      if (mergeSelection.isEmpty) {
+                                        mergeSelectionMode = false;
+                                      }
+                                    } else {
+                                      _onLayerSelected(layer.id);
+                                    }
+                                    setSheetState(() {});
+                                  },
+                                  onLongPress: () {
+                                    mergeSelectionMode = true;
                                     if (mergeSelection.contains(layer.id)) {
                                       mergeSelection.remove(layer.id);
                                     } else {
                                       mergeSelection.add(layer.id);
                                     }
+                                    if (mergeSelection.isEmpty) {
+                                      mergeSelectionMode = false;
+                                    }
                                     setSheetState(() {});
                                   },
                                   onToggleVisibility: () {
                                     _toggleLayerVisibility(layer.id);
+                                    mergeSelection
+                                        .removeWhere((id) => id == layer.id);
+                                    if (mergeSelection.isEmpty) {
+                                      mergeSelectionMode = false;
+                                    }
                                     setSheetState(() {});
                                   },
                                   onDuplicate: () {
@@ -28904,6 +30803,10 @@ Hard requirements:
           _expandToolConfig!.layerId == layerId) {
         _expandToolConfig = null;
       }
+      if (!nextLayers[index].isVisible &&
+          _pngEffectExpandedLayerId == layerId) {
+        _pngEffectExpandedLayerId = null;
+      }
     });
   }
 
@@ -28977,6 +30880,9 @@ Hard requirements:
       }
       if (_expandToolConfig != null && _expandToolConfig!.layerId == layerId) {
         _expandToolConfig = null;
+      }
+      if (_pngEffectExpandedLayerId == layerId) {
+        _pngEffectExpandedLayerId = null;
       }
       if (target.isBackground) {
         // Removing workspace should leave no visual residue on canvas.
@@ -29318,9 +31224,9 @@ Hard requirements:
                 children: [
                   Expanded(
                     child: Container(
-                      height: scaled(34, min: 30),
+                      height: scaled(31, min: 27),
                       padding: EdgeInsets.symmetric(
-                        horizontal: scaled(10, min: 8),
+                        horizontal: scaled(9, min: 7),
                       ),
                       decoration: BoxDecoration(
                         color: _floatingPanelSurfaceSolid,
@@ -29338,6 +31244,10 @@ Hard requirements:
                           setState(() {
                             _textFontSearchQuery = value;
                           });
+                          _warmupCatalogFontsForCurrentTextBrowser(
+                            locale: _textFontLocale,
+                            query: value,
+                          );
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             if (_textFontsFloatingScrollController.hasClients) {
                               _textFontsFloatingScrollController.jumpTo(0);
@@ -29346,7 +31256,7 @@ Hard requirements:
                         },
                         style: TextStyle(
                           color: _floatingPanelTextPrimary,
-                          fontSize: scaled(12.5, min: 10.5),
+                          fontSize: scaled(12, min: 10),
                           fontWeight: FontWeight.w600,
                         ),
                         textAlignVertical: TextAlignVertical.center,
@@ -29356,12 +31266,37 @@ Hard requirements:
                           hintText: 'Search font',
                           hintStyle: TextStyle(
                             color: _floatingPanelHint,
-                            fontSize: scaled(12, min: 10),
+                            fontSize: scaled(11.5, min: 9.5),
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                       ),
                     ),
+                  ),
+                  SizedBox(width: scaled(8, min: 6)),
+                  _buildTextFontUploadButton(
+                    scale: uiScale,
+                    enabled: !_isUploadingTextFont,
+                    loading: _isUploadingTextFont,
+                    onTap: () {
+                      unawaited(
+                        _importExternalTextFont(
+                          locale: _textFontLocale,
+                          onUiUpdated: () {
+                            setState(() {
+                              _textFontSearchQuery = '';
+                              _textFontSearchController.clear();
+                            });
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (_textFontsFloatingScrollController
+                                  .hasClients) {
+                                _textFontsFloatingScrollController.jumpTo(0);
+                              }
+                            });
+                          },
+                        ),
+                      );
+                    },
                   ),
                   SizedBox(width: scaled(8, min: 6)),
                   _buildTextFontArrowButton(
@@ -29410,6 +31345,10 @@ Hard requirements:
                           _textFontSearchQuery = '';
                           _textFontSearchController.clear();
                         });
+                        _warmupCatalogFontsForCurrentTextBrowser(
+                          locale: _TextFontLocale.english,
+                          query: '',
+                        );
                       },
                     ),
                   ),
@@ -29429,6 +31368,10 @@ Hard requirements:
                           _textFontSearchQuery = '';
                           _textFontSearchController.clear();
                         });
+                        _warmupCatalogFontsForCurrentTextBrowser(
+                          locale: _TextFontLocale.arabic,
+                          query: '',
+                        );
                       },
                     ),
                   ),
@@ -29560,10 +31503,10 @@ Hard requirements:
     required double scale,
   }) {
     final double clampedScale = scale.clamp(0.7, 1.15).toDouble();
-    final double size = (34 * clampedScale).clamp(28, 36).toDouble();
-    final double radius = (10 * clampedScale).clamp(8, 12).toDouble();
+    final double size = (38 * clampedScale).clamp(32, 42).toDouble();
+    final BorderRadius borderRadius = BorderRadius.circular(size / 2);
     return _BouncyInkWell(
-      borderRadius: BorderRadius.circular(radius),
+      borderRadius: borderRadius,
       onTap: enabled ? onTap : null,
       pressedScale: 0.94,
       child: AnimatedContainer(
@@ -29572,13 +31515,57 @@ Hard requirements:
         height: size,
         decoration: BoxDecoration(
           color: enabled ? _floatingPanelSurfaceSolid : const Color(0xFF2C2D30),
-          borderRadius: BorderRadius.circular(radius),
+          shape: BoxShape.circle,
           border: Border.all(color: _floatingPanelStrokeSolid, width: 0.45),
         ),
         child: Icon(
           icon,
-          size: (20 * clampedScale).clamp(14, 20).toDouble(),
+          size: (22 * clampedScale).clamp(16, 23).toDouble(),
           color: enabled ? _floatingPanelTextSecondary : _floatingPanelHint,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextFontUploadButton({
+    required VoidCallback onTap,
+    required bool enabled,
+    required bool loading,
+    required double scale,
+  }) {
+    final double clampedScale = scale.clamp(0.7, 1.15).toDouble();
+    final double size = (38 * clampedScale).clamp(32, 42).toDouble();
+    final BorderRadius borderRadius = BorderRadius.circular(size / 2);
+    return _BouncyInkWell(
+      borderRadius: borderRadius,
+      onTap: enabled ? onTap : null,
+      pressedScale: 0.94,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: enabled ? _floatingPanelSurfaceSolid : const Color(0xFF2C2D30),
+          shape: BoxShape.circle,
+          border: Border.all(color: _floatingPanelStrokeSolid, width: 0.45),
+        ),
+        child: Center(
+          child: loading
+              ? SizedBox(
+                  width: (15 * clampedScale).clamp(12, 16).toDouble(),
+                  height: (15 * clampedScale).clamp(12, 16).toDouble(),
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 1.8,
+                    valueColor: AlwaysStoppedAnimation<Color>(kActiveAccent),
+                  ),
+                )
+              : Icon(
+                  Icons.upload_file_rounded,
+                  size: (20 * clampedScale).clamp(15, 21).toDouble(),
+                  color: enabled
+                      ? _floatingPanelTextSecondary
+                      : _floatingPanelHint,
+                ),
         ),
       ),
     );
@@ -29885,10 +31872,12 @@ Hard requirements:
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildHorizontalColorStrip(
+                        _buildHorizontalColorPickerWithNavigation(
                           palette: _kTextPalette,
                           selectedColor: selectedColor,
-                          scale: 0.92,
+                          controller: _textColorFloatingStripController,
+                          stripScale: 0.94,
+                          arrowScale: uiScale,
                           onColorSelected: (color) {
                             _updateTextLayer(
                               selectedTextLayer.id,
@@ -29942,7 +31931,7 @@ Hard requirements:
       right: _textToolsHorizontalInset,
       bottom: _textFloatingPanelBottomOffset(scaled(20, min: 14)),
       child: _buildBottomUpPanelAnimation(
-        keyId: 'text-effect-panel-${panel.name}',
+        keyId: 'text-effect-panel',
         child: _buildTextFloatingCard(
           uiScale: uiScale,
           borderRadius: panelRadius,
@@ -29952,193 +31941,255 @@ Hard requirements:
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ...switch (panel) {
-                  _TextEffectFloatingPanel.opacity => <Widget>[
-                      _SettingsSliderTile(
-                        label: 'Opacity',
-                        value: selectedTextOpacity,
-                        min: 0,
-                        max: 100,
-                        valueText: '${selectedTextOpacity.toStringAsFixed(0)}%',
-                        scale: uiScale,
-                        compact: true,
-                        showHeader: false,
-                        onChanged: (value) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textOpacity: value,
-                            recordHistory: false,
-                          );
-                        },
-                      ),
-                    ],
-                  _TextEffectFloatingPanel.bend => <Widget>[
-                      _SettingsSliderTile(
-                        label: 'Bend',
-                        value: selectedTextBend,
-                        min: -100,
-                        max: 100,
-                        valueText: _formatSignedValue(
-                          selectedTextBend,
-                          fractionDigits: 0,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 250),
+                  reverseDuration: const Duration(milliseconds: 180),
+                  switchInCurve: const Cubic(0.18, 0.9, 0.24, 1.08),
+                  switchOutCurve: Curves.easeInCubic,
+                  layoutBuilder: (currentChild, previousChildren) {
+                    return Stack(
+                      alignment: Alignment.topCenter,
+                      children: <Widget>[
+                        ...previousChildren,
+                        if (currentChild != null) currentChild,
+                      ],
+                    );
+                  },
+                  transitionBuilder: (child, animation) {
+                    final Animation<double> fade = CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.easeOutCubic,
+                      reverseCurve: Curves.easeInCubic,
+                    );
+                    final Animation<double> pop = CurvedAnimation(
+                      parent: animation,
+                      curve: const Cubic(0.18, 0.92, 0.3, 1.06),
+                      reverseCurve: Curves.easeInCubic,
+                    );
+                    return FadeTransition(
+                      opacity: fade,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.04),
+                          end: Offset.zero,
+                        ).animate(fade),
+                        child: ScaleTransition(
+                          alignment: Alignment.topCenter,
+                          scale: Tween<double>(
+                            begin: 0.985,
+                            end: 1,
+                          ).animate(pop),
+                          child: child,
                         ),
-                        scale: uiScale,
-                        compact: true,
-                        showHeader: false,
-                        onChanged: (value) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textBend: value,
-                            recordHistory: false,
-                          );
-                        },
                       ),
-                    ],
-                  _TextEffectFloatingPanel.stroke => <Widget>[
-                      _SettingsSliderTile(
-                        label: 'Width',
-                        value: selectedStrokeWidth,
-                        min: 0,
-                        max: 28,
-                        valueText: selectedStrokeWidth.toStringAsFixed(1),
-                        scale: uiScale,
-                        compact: true,
-                        showHeader: false,
-                        onChanged: (value) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textStrokeWidth: value,
-                            recordHistory: false,
-                          );
-                        },
-                      ),
-                      SizedBox(height: scaled(8, min: 6)),
-                      _buildHorizontalColorStrip(
-                        palette: _kTextPalette,
-                        selectedColor: selectedStrokeColor,
-                        scale: 0.72,
-                        onColorSelected: (color) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textStrokeColor: color,
-                            recordHistory: false,
-                          );
-                        },
-                      ),
-                    ],
-                  _TextEffectFloatingPanel.shadow => <Widget>[
-                      Container(
-                        width: double.infinity,
-                        padding: EdgeInsets.fromLTRB(
-                          scaled(7, min: 5.5),
-                          scaled(4.2, min: 3.5),
-                          scaled(7, min: 5.5),
-                          scaled(2.2, min: 1.6),
-                        ),
-                        decoration: BoxDecoration(
-                          color: _floatingPanelSurfaceSolid,
-                          borderRadius:
-                              BorderRadius.circular(scaled(10, min: 8)),
-                          border: Border.all(
-                            color: _floatingPanelStroke,
-                            width: 0.4,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildTextEffectMiniSlider(
-                              label: 'Opacity',
-                              value: selectedShadowOpacity,
-                              min: 0,
-                              max: 100,
-                              valueText:
-                                  '${selectedShadowOpacity.toStringAsFixed(0)}%',
-                              uiScale: shadowUiScale,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOpacity: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                              },
-                            ),
-                            SizedBox(height: scaled(0.9, min: 0.6)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Blur',
-                              value: selectedShadowBlur,
-                              min: 0,
-                              max: 60,
-                              valueText: selectedShadowBlur.toStringAsFixed(1),
-                              uiScale: shadowUiScale,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowBlur: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                              },
-                            ),
-                            SizedBox(height: scaled(0.9, min: 0.6)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Vertical',
-                              value: selectedShadowOffsetY,
-                              min: -120,
-                              max: 120,
-                              valueText: _formatSignedValue(
-                                selectedShadowOffsetY,
-                                fractionDigits: 0,
+                    );
+                  },
+                  child: KeyedSubtree(
+                    key: ValueKey<String>('text-effect-floating-${panel.name}'),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ...switch (panel) {
+                          _TextEffectFloatingPanel.opacity => <Widget>[
+                              _SettingsSliderTile(
+                                label: 'Opacity',
+                                value: selectedTextOpacity,
+                                min: 0,
+                                max: 100,
+                                valueText:
+                                    '${selectedTextOpacity.toStringAsFixed(0)}%',
+                                scale: uiScale,
+                                compact: true,
+                                showHeader: false,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textOpacity: value,
+                                    recordHistory: false,
+                                  );
+                                },
                               ),
-                              uiScale: shadowUiScale,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOffsetY: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                              },
-                            ),
-                            SizedBox(height: scaled(0.9, min: 0.6)),
-                            _buildTextEffectMiniSlider(
-                              label: 'Horizontal',
-                              value: selectedShadowOffsetX,
-                              min: -120,
-                              max: 120,
-                              valueText: _formatSignedValue(
-                                selectedShadowOffsetX,
-                                fractionDigits: 0,
+                            ],
+                          _TextEffectFloatingPanel.bend => <Widget>[
+                              _SettingsSliderTile(
+                                label: 'Bend',
+                                value: selectedTextBend,
+                                min: -100,
+                                max: 100,
+                                valueText: _formatSignedValue(
+                                  selectedTextBend,
+                                  fractionDigits: 0,
+                                ),
+                                scale: uiScale,
+                                compact: true,
+                                showHeader: false,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textBend: value,
+                                    recordHistory: false,
+                                  );
+                                },
                               ),
-                              uiScale: shadowUiScale,
-                              onChanged: (value) {
-                                _updateTextLayer(
-                                  selectedTextLayer.id,
-                                  textShadowOffsetX: value,
-                                  textShadowSpread: 0,
-                                  recordHistory: false,
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                      SizedBox(height: scaled(8, min: 6)),
-                      _buildHorizontalColorStrip(
-                        palette: _kTextPalette,
-                        selectedColor: selectedShadowColor,
-                        scale: 0.68,
-                        onColorSelected: (color) {
-                          _updateTextLayer(
-                            selectedTextLayer.id,
-                            textShadowColor: color,
-                            recordHistory: false,
-                          );
+                            ],
+                          _TextEffectFloatingPanel.stroke => <Widget>[
+                              _SettingsSliderTile(
+                                label: 'Width',
+                                value: selectedStrokeWidth,
+                                min: 0,
+                                max: 28,
+                                valueText: selectedStrokeWidth.toStringAsFixed(
+                                  1,
+                                ),
+                                scale: uiScale,
+                                compact: true,
+                                showHeader: false,
+                                onChanged: (value) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textStrokeWidth: value,
+                                    recordHistory: false,
+                                  );
+                                },
+                              ),
+                              SizedBox(height: scaled(8, min: 6)),
+                              _buildHorizontalColorPickerWithNavigation(
+                                palette: _kTextPalette,
+                                selectedColor: selectedStrokeColor,
+                                controller: _textStrokeFloatingStripController,
+                                stripScale: 0.94,
+                                arrowScale: uiScale,
+                                onColorSelected: (color) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textStrokeColor: color,
+                                    recordHistory: false,
+                                  );
+                                },
+                              ),
+                            ],
+                          _TextEffectFloatingPanel.shadow => <Widget>[
+                              Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.fromLTRB(
+                                  scaled(7, min: 5.5),
+                                  scaled(4.2, min: 3.5),
+                                  scaled(7, min: 5.5),
+                                  scaled(2.2, min: 1.6),
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _floatingPanelSurfaceSolid,
+                                  borderRadius: BorderRadius.circular(
+                                    scaled(10, min: 8),
+                                  ),
+                                  border: Border.all(
+                                    color: _floatingPanelStroke,
+                                    width: 0.4,
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _buildTextEffectMiniSlider(
+                                      label: 'Opacity',
+                                      value: selectedShadowOpacity,
+                                      min: 0,
+                                      max: 100,
+                                      valueText:
+                                          '${selectedShadowOpacity.toStringAsFixed(0)}%',
+                                      uiScale: shadowUiScale,
+                                      onChanged: (value) {
+                                        _updateTextLayer(
+                                          selectedTextLayer.id,
+                                          textShadowOpacity: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                    ),
+                                    SizedBox(height: scaled(0.9, min: 0.6)),
+                                    _buildTextEffectMiniSlider(
+                                      label: 'Blur',
+                                      value: selectedShadowBlur,
+                                      min: 0,
+                                      max: 60,
+                                      valueText:
+                                          selectedShadowBlur.toStringAsFixed(1),
+                                      uiScale: shadowUiScale,
+                                      onChanged: (value) {
+                                        _updateTextLayer(
+                                          selectedTextLayer.id,
+                                          textShadowBlur: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                    ),
+                                    SizedBox(height: scaled(0.9, min: 0.6)),
+                                    _buildTextEffectMiniSlider(
+                                      label: 'Vertical',
+                                      value: selectedShadowOffsetY,
+                                      min: -120,
+                                      max: 120,
+                                      valueText: _formatSignedValue(
+                                        selectedShadowOffsetY,
+                                        fractionDigits: 0,
+                                      ),
+                                      uiScale: shadowUiScale,
+                                      onChanged: (value) {
+                                        _updateTextLayer(
+                                          selectedTextLayer.id,
+                                          textShadowOffsetY: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                    ),
+                                    SizedBox(height: scaled(0.9, min: 0.6)),
+                                    _buildTextEffectMiniSlider(
+                                      label: 'Horizontal',
+                                      value: selectedShadowOffsetX,
+                                      min: -120,
+                                      max: 120,
+                                      valueText: _formatSignedValue(
+                                        selectedShadowOffsetX,
+                                        fractionDigits: 0,
+                                      ),
+                                      uiScale: shadowUiScale,
+                                      onChanged: (value) {
+                                        _updateTextLayer(
+                                          selectedTextLayer.id,
+                                          textShadowOffsetX: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(height: scaled(8, min: 6)),
+                              _buildHorizontalColorPickerWithNavigation(
+                                palette: _kTextPalette,
+                                selectedColor: selectedShadowColor,
+                                controller: _textShadowFloatingStripController,
+                                stripScale: 0.94,
+                                arrowScale: uiScale,
+                                onColorSelected: (color) {
+                                  _updateTextLayer(
+                                    selectedTextLayer.id,
+                                    textShadowColor: color,
+                                    recordHistory: false,
+                                  );
+                                },
+                              ),
+                            ],
                         },
-                      ),
-                    ],
-                },
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -31750,25 +33801,25 @@ class _SettingsSliderTile extends StatelessWidget {
     final bool compactNoHeader = compact && !showHeader;
     final double padH = compact
         ? (7 * clampedScale).clamp(5, 8).toDouble()
-        : (10 * clampedScale).clamp(8, 12).toDouble();
+        : (9.2 * clampedScale).clamp(8, 11).toDouble();
     final double padTop = compactNoHeader
         ? (2.2 * clampedScale).clamp(1.2, 3).toDouble()
         : compact
             ? (6 * clampedScale).clamp(4, 7).toDouble()
-            : (10 * clampedScale).clamp(8, 12).toDouble();
+            : (6.8 * clampedScale).clamp(5.8, 8.2).toDouble();
     final double padBottom = compactNoHeader
         ? (0.6 * clampedScale).clamp(0.2, 1).toDouble()
         : compact
             ? (1.2 * clampedScale).clamp(0.6, 2).toDouble()
-            : (6 * clampedScale).clamp(4, 8).toDouble();
+            : (7.8 * clampedScale).clamp(6.4, 9.6).toDouble();
     final double radius = compact
-        ? (10 * clampedScale).clamp(8, 10).toDouble()
-        : (12 * clampedScale).clamp(9, 12).toDouble();
+        ? (11 * clampedScale).clamp(9, 12).toDouble()
+        : (16 * clampedScale).clamp(13, 18).toDouble();
     final double labelFont = (12.5 * clampedScale).clamp(10, 13).toDouble();
     final double valueFont = (11.5 * clampedScale).clamp(9.5, 12).toDouble();
-    final double trackHeight = compact ? 2.2 : 3.2;
-    final double thumbRadius = compact ? 6.6 : 9;
-    final double overlayRadius = compact ? 10 : 15;
+    final double trackHeight = compact ? 2.0 : 2.2;
+    final double thumbRadius = compact ? 6.0 : 6.8;
+    final double overlayRadius = compact ? 9.2 : 13.0;
     return Theme(
       data: Theme.of(context).copyWith(
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -31783,6 +33834,8 @@ class _SettingsSliderTile extends StatelessWidget {
         ),
       ),
       child: Container(
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
         padding: EdgeInsets.fromLTRB(padH, padTop, padH, padBottom),
         decoration: BoxDecoration(
           color: WonderPicEditorScreen._panelBg,
@@ -31815,14 +33868,17 @@ class _SettingsSliderTile extends StatelessWidget {
                   ),
                 ],
               ),
-            if (showHeader) SizedBox(height: compact ? 1.5 : 4),
-            SizedBox(
-              height: compact ? 20 : 26,
-              child: Slider(
-                value: value,
-                min: min,
-                max: max,
-                onChanged: onChanged,
+            if (showHeader) SizedBox(height: compact ? 1.5 : 3.0),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 9.0),
+              child: SizedBox(
+                height: compact ? 20 : 21,
+                child: Slider(
+                  value: value,
+                  min: min,
+                  max: max,
+                  onChanged: onChanged,
+                ),
               ),
             ),
           ],
@@ -31885,6 +33941,7 @@ class _LayerRow extends StatelessWidget {
     this.mergeSelected = false,
     required this.reorderHandle,
     required this.onTap,
+    required this.onLongPress,
     required this.onToggleVisibility,
     required this.onDuplicate,
     required this.onDelete,
@@ -31895,28 +33952,54 @@ class _LayerRow extends StatelessWidget {
   final bool mergeSelected;
   final Widget reorderHandle;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final VoidCallback onToggleVisibility;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
+    final bool selectedGlow = selected && !mergeSelected;
     return Container(
       decoration: BoxDecoration(
         color: mergeSelected
             ? const Color(0x1EE6F24A)
-            : WonderPicEditorScreen._panelBg,
+            : (selectedGlow
+                ? const Color(0xFF252A31)
+                : WonderPicEditorScreen._panelBg),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: mergeSelected
-              ? const Color(0xB3E6F24A)
-              : (selected ? const Color(0x4DFFFFFF) : const Color(0x148A939E)),
-          width: mergeSelected ? 0.86 : (selected ? 0.46 : 0.24),
+              ? const Color(0xFFE6F24A)
+              : (selectedGlow
+                  ? const Color(0xEAF7FBFF)
+                  : const Color(0x148A939E)),
+          width: mergeSelected ? 1.15 : (selectedGlow ? 1.02 : 0.24),
         ),
+        boxShadow: mergeSelected
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x35E6F24A),
+                  blurRadius: 10,
+                  spreadRadius: 0.4,
+                  offset: Offset(0, 0),
+                ),
+              ]
+            : (selectedGlow
+                ? const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x30F8FAFF),
+                      blurRadius: 11,
+                      spreadRadius: 0.45,
+                      offset: Offset(0, 0),
+                    ),
+                  ]
+                : null),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(11),
         child: Row(
           children: [
@@ -32285,8 +34368,11 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.cloneJoystickDrawPressed,
     required this.showCloneJoystickCursor,
     required this.onCloneViewportScaleInteraction,
+    required this.hideMoveSelectionControls,
     required this.selectedLayerId,
     required this.onLayerSelected,
+    required this.onCanvasTap,
+    required this.isTextSettingsBottomSheetOpen,
     required this.onLayerTransformChanged,
     required this.onLayerImageChanged,
     required this.onMarqueeSelectionChanged,
@@ -32339,8 +34425,11 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final bool cloneJoystickDrawPressed;
   final bool showCloneJoystickCursor;
   final VoidCallback onCloneViewportScaleInteraction;
+  final bool hideMoveSelectionControls;
   final String? selectedLayerId;
   final ValueChanged<String?> onLayerSelected;
+  final VoidCallback onCanvasTap;
+  final bool isTextSettingsBottomSheetOpen;
   final LayerTransformChanged onLayerTransformChanged;
   final LayerImageChanged onLayerImageChanged;
   final ValueChanged<MarqueeSelection?> onMarqueeSelectionChanged;
@@ -32388,6 +34477,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   static const double _minLayerScale = 0.02;
   static const double _maxLayerScale = 20.0;
   static const int _maxMipmapLevels = 6;
+  static const int _maxCloneSegmentsPerFrame = 6;
 
   final ValueNotifier<int> _canvasRepaintTick = ValueNotifier<int>(0);
   final Map<String, _EditableImageBuffer> _editableImages =
@@ -32594,6 +34684,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
               cloneSourcePointerUvResolver: _activeClonePointerUv,
               showCloneTargetPointer: widget.showCloneJoystickCursor,
               cloneTargetPointerUvResolver: _activeCloneTargetPointerUv,
+              hideMoveSelectionControls: widget.hideMoveSelectionControls,
               adaptiveImageResolver: _resolveImageForPaint,
               rotateHandleDistance: _topRotateHandleDistance,
               moveHandleDistance: _bottomMoveHandleDistance,
@@ -33454,6 +35545,10 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   }
 
   void _onScaleStart(ScaleStartDetails details, Size canvasSize) {
+    if (widget.isTextSettingsBottomSheetOpen) {
+      widget.onCanvasTap();
+      return;
+    }
     _cancelPanSettleAnimation();
     if (_inlineEditLayerId != null) {
       _closeInlineTextEditing();
@@ -33849,7 +35944,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           _interaction == _CanvasInteraction.movingLayer ||
               _interaction == _CanvasInteraction.resizingLayer ||
               _interaction == _CanvasInteraction.rotatingLayer;
-      _flushPendingCloneSegments();
+      _flushPendingCloneSegments(drain: true);
       if (_interaction == _CanvasInteraction.marqueeSelecting) {
         _finalizeMarqueeSelection();
       }
@@ -34141,7 +36236,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         _interaction == _CanvasInteraction.movingLayer ||
             _interaction == _CanvasInteraction.resizingLayer ||
             _interaction == _CanvasInteraction.rotatingLayer;
-    _flushPendingCloneSegments();
+    _flushPendingCloneSegments(drain: true);
     if (_interaction == _CanvasInteraction.cloning && _cloneChangedLayer) {
       final String? layerId = _gestureLayerId;
       final _CloneStrokeSession? stroke = _activeCloneStroke;
@@ -34238,6 +36333,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       return;
     }
     if (_interaction != _CanvasInteraction.none) return;
+    widget.onCanvasTap();
     final EditorLayer? workspace = _backgroundLayer(widget.layers);
     if (workspace == null) return;
     final Size? workspaceSize = _workspaceSourceSize(workspace);
@@ -34282,32 +36378,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         workspaceSize: workspaceSize,
       );
       if (layerData == null) return;
-      if (!config.ratioPreset.isFreeformHandleMode) {
-        final Rect fixedFrame = _fixedCropViewportRect(
-          artboard: artboard,
-          config: config,
-        );
-        if (!fixedFrame.contains(details.localPosition)) return;
-        final Rect nextRectUv = _cropRectUvFromFixedViewportFrame(
-          fixedFrameViewport: fixedFrame,
-          layerData: layerData,
-          config: config,
-        );
-        final Rect currentRectUv = _clampCropRectUvCanvas(
-          config.cropRectUv,
-          aspectRatio: _cropUvAspectRatioCanvas(
-            config: config,
-            layerData: layerData,
-          ),
-        );
-        if (!_rectApproxEqual(nextRectUv, currentRectUv)) {
-          widget.onCropToolConfigChanged(
-            config.copyWith(cropRectUv: nextRectUv),
-          );
-        }
-        widget.onCropCommitRequested();
-        return;
-      }
       final double cropRotation =
           layerData.rotation + _cropPreviewRotation(config);
       final Rect cropRectLocal = _cropRectLocal(
@@ -34487,6 +36557,48 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     return true;
   }
 
+  bool beginRotateJoystickSession({required String layerId}) {
+    if (!widget.isToolEnabled || widget.activeTool != EditorTool.move) {
+      return false;
+    }
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return false;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return false;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return false;
+    }
+    final EditorLayer? layer = _layerById(layerId);
+    if (layer == null || !layer.isVisible || layer.isBackground) {
+      return false;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+      selectedLayer: layer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (data == null) return false;
+    _interaction = _CanvasInteraction.rotatingLayer;
+    _gestureLayerId = layer.id;
+    _layerStartRotation = data.rotation;
+    _beginSnapSession(
+      layerId: layer.id,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+      selectedData: data,
+    );
+    _setSmartGuides(const <_SmartGuideSegment>[], forceRepaint: true);
+    return true;
+  }
+
   Offset? moveLayerWithMoveJoystick({
     required String layerId,
     required Offset currentSourcePosition,
@@ -34566,8 +36678,73 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     );
   }
 
+  double? rotateLayerWithMoveJoystick({
+    required String layerId,
+    required double rawRotation,
+  }) {
+    if (!widget.isToolEnabled || widget.activeTool != EditorTool.move) {
+      return null;
+    }
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return null;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) return null;
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      return null;
+    }
+    final EditorLayer? layer = _layerById(layerId);
+    if (layer == null || !layer.isVisible || layer.isBackground) {
+      return null;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final _TransformLayerSceneData? data = _buildSelectedTransformLayerData(
+      selectedLayer: layer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (data == null) return null;
+    if (_interaction != _CanvasInteraction.rotatingLayer ||
+        _gestureLayerId != layerId ||
+        _snapSession == null) {
+      final bool started = beginRotateJoystickSession(layerId: layerId);
+      if (!started) return rawRotation;
+    }
+    final _RotationSnapResult snapped = _applyRotationSnapping(
+      rawRotation: rawRotation,
+      center: data.center,
+    );
+    _setSmartGuides(snapped.guides, forceRepaint: true);
+    if (snapped.guides.isEmpty) {
+      _smartGuideAutoHideTimer?.cancel();
+    } else {
+      _scheduleSmartGuideAutoHide();
+    }
+    return snapped.rotation;
+  }
+
   void endMoveJoystickSession() {
     if (_interaction == _CanvasInteraction.movingLayer) {
+      _interaction = _CanvasInteraction.none;
+      _gestureLayerId = null;
+    }
+    _smartGuideAutoHideTimer?.cancel();
+    _snapSession = null;
+    _moveSnapXActive = false;
+    _moveSnapYActive = false;
+    _resizeSnapActive = false;
+    _rotationSnapActive = false;
+    _setSmartGuides(const <_SmartGuideSegment>[], forceRepaint: true);
+  }
+
+  void endRotateJoystickSession() {
+    if (_interaction == _CanvasInteraction.rotatingLayer) {
       _interaction = _CanvasInteraction.none;
       _gestureLayerId = null;
     }
@@ -34695,7 +36872,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
 
   void _finalizeCloneStrokeFromJoystick() {
     if (!_cloneJoystickStrokeActive) return;
-    _flushPendingCloneSegments();
+    _flushPendingCloneSegments(drain: true);
     if (_interaction == _CanvasInteraction.cloning && _cloneChangedLayer) {
       final String? layerId = _gestureLayerId;
       final _CloneStrokeSession? stroke = _activeCloneStroke;
@@ -35531,8 +37708,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       toDestUv: nextDestUv,
       stroke: stroke,
     );
-    _flushPendingCloneSegments();
-
     stroke.destPointsUv.add(nextDestUv);
     _lastCloneDestUv = nextDestUv;
     _cloneChangedLayer = true;
@@ -35565,82 +37740,98 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     SchedulerBinding.instance.scheduleFrameCallback((_) {
       _cloneWorkFrameScheduled = false;
       _flushPendingCloneSegments();
-      if (_pendingCloneSegments.isNotEmpty) {
-        _scheduleCloneWorkFrame();
-      }
     });
     SchedulerBinding.instance.ensureVisualUpdate();
   }
 
-  void _flushPendingCloneSegments() {
+  void _flushPendingCloneSegments({bool drain = false}) {
     if (_pendingCloneSegments.isEmpty) return;
-    final List<_ClonePendingSegment> pending =
-        List<_ClonePendingSegment>.from(_pendingCloneSegments);
-    _pendingCloneSegments.clear();
-    final Uint8List? sharedSourceSnapshot = _clonePreviewSourceSnapshot;
-    final String? sharedSourceLayerId = _clonePreviewSourceLayerId;
-    final Set<String> touchedLayerIds = <String>{};
-    for (final _ClonePendingSegment segment in pending) {
-      final _EditableImageBuffer? buffer = _editableImages[segment.layerId];
-      if (buffer == null) continue;
-      if (segment.mode == _CloneStrokeMode.restore) {
-        if (buffer.cloneBasePreviewPixels.length !=
-            buffer.previewPixels.length) {
-          continue;
-        }
-        _paintRestoreSegmentOnPixels(
-          sourcePixels: buffer.cloneBasePreviewPixels,
-          targetPixels: buffer.previewPixels,
-          targetWidth: buffer.previewWidth,
-          targetHeight: buffer.previewHeight,
-          fromDestUv: segment.fromDestUv,
-          toDestUv: segment.toDestUv,
-          settings: segment.settings,
-          artboardWidth: segment.artboardWidth,
-          brushShape: segment.brushShape,
-        );
-      } else if (segment.mode == _CloneStrokeMode.clone) {
-        final Uint8List sourcePixels;
-        if (sharedSourceSnapshot != null &&
-            sharedSourceLayerId == segment.layerId &&
-            sharedSourceSnapshot.length == buffer.previewPixels.length) {
-          sourcePixels = sharedSourceSnapshot;
+    bool touchedAnyLayer = false;
+    do {
+      final int takeCount = drain
+          ? _pendingCloneSegments.length
+          : math.min(_maxCloneSegmentsPerFrame, _pendingCloneSegments.length);
+      if (takeCount <= 0) break;
+      final List<_ClonePendingSegment> pending =
+          List<_ClonePendingSegment>.from(
+        _pendingCloneSegments.sublist(0, takeCount),
+      );
+      _pendingCloneSegments.removeRange(0, takeCount);
+
+      final Uint8List? sharedSourceSnapshot = _clonePreviewSourceSnapshot;
+      final String? sharedSourceLayerId = _clonePreviewSourceLayerId;
+      final Set<String> touchedLayerIds = <String>{};
+      for (final _ClonePendingSegment segment in pending) {
+        final _EditableImageBuffer? buffer = _editableImages[segment.layerId];
+        if (buffer == null) continue;
+        if (segment.mode == _CloneStrokeMode.restore) {
+          if (buffer.cloneBasePreviewPixels.length !=
+              buffer.previewPixels.length) {
+            continue;
+          }
+          _paintRestoreSegmentOnPixels(
+            sourcePixels: buffer.cloneBasePreviewPixels,
+            targetPixels: buffer.previewPixels,
+            targetWidth: buffer.previewWidth,
+            targetHeight: buffer.previewHeight,
+            fromDestUv: segment.fromDestUv,
+            toDestUv: segment.toDestUv,
+            settings: segment.settings,
+            artboardWidth: segment.artboardWidth,
+            brushShape: segment.brushShape,
+          );
+        } else if (segment.mode == _CloneStrokeMode.clone) {
+          final Uint8List sourcePixels;
+          if (sharedSourceSnapshot != null &&
+              sharedSourceLayerId == segment.layerId &&
+              sharedSourceSnapshot.length == buffer.previewPixels.length) {
+            sourcePixels = sharedSourceSnapshot;
+          } else {
+            sourcePixels = buffer.previewPixels;
+          }
+          _paintCloneSegmentOnPixels(
+            sourcePixels: sourcePixels,
+            targetPixels: buffer.previewPixels,
+            targetWidth: buffer.previewWidth,
+            targetHeight: buffer.previewHeight,
+            fromDestUv: segment.fromDestUv,
+            toDestUv: segment.toDestUv,
+            sourceOffsetUv: segment.sourceOffsetUv,
+            settings: segment.settings,
+            brushShape: segment.brushShape,
+            artboardWidth: segment.artboardWidth,
+            onSourceAdvanced: (sourceUv) {
+              _clonePointerUvByLayer[segment.layerId] = sourceUv;
+            },
+          );
         } else {
-          sourcePixels = buffer.previewPixels;
+          _paintTransparentEraseSegmentOnPixels(
+            targetPixels: buffer.previewPixels,
+            targetWidth: buffer.previewWidth,
+            targetHeight: buffer.previewHeight,
+            fromDestUv: segment.fromDestUv,
+            toDestUv: segment.toDestUv,
+            settings: segment.settings,
+            artboardWidth: segment.artboardWidth,
+            brushShape: segment.brushShape,
+          );
         }
-        _paintCloneSegmentOnPixels(
-          sourcePixels: sourcePixels,
-          targetPixels: buffer.previewPixels,
-          targetWidth: buffer.previewWidth,
-          targetHeight: buffer.previewHeight,
-          fromDestUv: segment.fromDestUv,
-          toDestUv: segment.toDestUv,
-          sourceOffsetUv: segment.sourceOffsetUv,
-          settings: segment.settings,
-          brushShape: segment.brushShape,
-          artboardWidth: segment.artboardWidth,
-          onSourceAdvanced: (sourceUv) {
-            _clonePointerUvByLayer[segment.layerId] = sourceUv;
-          },
-        );
-      } else {
-        _paintTransparentEraseSegmentOnPixels(
-          targetPixels: buffer.previewPixels,
-          targetWidth: buffer.previewWidth,
-          targetHeight: buffer.previewHeight,
-          fromDestUv: segment.fromDestUv,
-          toDestUv: segment.toDestUv,
-          settings: segment.settings,
-          artboardWidth: segment.artboardWidth,
-          brushShape: segment.brushShape,
-        );
+        touchedLayerIds.add(segment.layerId);
       }
-      touchedLayerIds.add(segment.layerId);
+      if (touchedLayerIds.isNotEmpty) {
+        touchedAnyLayer = true;
+        for (final String layerId in touchedLayerIds) {
+          _requestPreviewFrameRefresh(layerId);
+        }
+      }
+      if (!drain && _pendingCloneSegments.isNotEmpty) {
+        _scheduleCloneWorkFrame();
+      }
+    } while (drain && _pendingCloneSegments.isNotEmpty);
+
+    if (touchedAnyLayer) {
+      _repaintCanvas();
     }
-    for (final String layerId in touchedLayerIds) {
-      _requestPreviewFrameRefresh(layerId);
-    }
-    _repaintCanvas();
   }
 
   void _requestPreviewFrameRefresh(String layerId) {
@@ -35831,6 +38022,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       stampSpacingPx: stampSpacingPx,
       stationary: stationary,
     );
+    if (flowOpacityFactor <= 0) return;
     if (stationary) {
       _applyTransparentEraseStamp(
         targetPixels: targetPixels,
@@ -35969,7 +38161,13 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     final int destY = (destUv.dy * (height - 1)).round();
     final int radius = brushMask.radius;
     final int maskWidth = brushMask.size;
-    final List<double> alphaGrid = brushMask.alphaGrid;
+    final Uint8List alphaByteGrid = brushMask.alphaByteGrid;
+    final int opacityByte =
+        (opacityFactor.clamp(0.0, 1.0).toDouble() * 255).round().clamp(
+              0,
+              255,
+            );
+    if (opacityByte <= 0) return;
 
     for (int y = -radius; y <= radius; y++) {
       final int dy = destY + y;
@@ -35978,21 +38176,27 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
         final int dx = destX + x;
         if (dx < 0 || dx >= width) continue;
         final int maskIndex = ((y + radius) * maskWidth) + (x + radius);
-        final double alpha = (alphaGrid[maskIndex] * opacityFactor).clamp(
-          0.0,
-          1.0,
-        );
-        if (alpha <= 0) continue;
-        final double keep = 1.0 - alpha;
+        final int baseMaskAlpha = alphaByteGrid[maskIndex];
+        if (baseMaskAlpha <= 0) continue;
+        final int alphaByte = ((baseMaskAlpha * opacityByte) + 127) ~/ 255;
+        if (alphaByte <= 0) continue;
         final int pixelIndex = ((dy * width) + dx) * 4;
+        if (alphaByte >= 255) {
+          targetPixels[pixelIndex] = 0;
+          targetPixels[pixelIndex + 1] = 0;
+          targetPixels[pixelIndex + 2] = 0;
+          targetPixels[pixelIndex + 3] = 0;
+          continue;
+        }
+        final int keepByte = 255 - alphaByte;
         targetPixels[pixelIndex] =
-            (targetPixels[pixelIndex] * keep).round().clamp(0, 255);
+            ((targetPixels[pixelIndex] * keepByte) + 127) ~/ 255;
         targetPixels[pixelIndex + 1] =
-            (targetPixels[pixelIndex + 1] * keep).round().clamp(0, 255);
+            ((targetPixels[pixelIndex + 1] * keepByte) + 127) ~/ 255;
         targetPixels[pixelIndex + 2] =
-            (targetPixels[pixelIndex + 2] * keep).round().clamp(0, 255);
+            ((targetPixels[pixelIndex + 2] * keepByte) + 127) ~/ 255;
         targetPixels[pixelIndex + 3] =
-            (targetPixels[pixelIndex + 3] * keep).round().clamp(0, 255);
+            ((targetPixels[pixelIndex + 3] * keepByte) + 127) ~/ 255;
       }
     }
   }
@@ -36173,6 +38377,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     final double hardStop =
         _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
     final List<double> alphaGrid = List<double>.filled(size * size, 0);
+    final Uint8List alphaByteGrid = Uint8List(size * size);
 
     for (int y = -radius; y <= radius; y++) {
       for (int x = -radius; x <= radius; x++) {
@@ -36192,7 +38397,9 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           alpha = _cloneSoftEdgeAlpha(featherT);
         }
         final int index = ((y + radius) * size) + (x + radius);
-        alphaGrid[index] = alpha.clamp(0.0, 1.0);
+        final double clampedAlpha = alpha.clamp(0.0, 1.0).toDouble();
+        alphaGrid[index] = clampedAlpha;
+        alphaByteGrid[index] = (clampedAlpha * 255).round().clamp(0, 255);
       }
     }
 
@@ -36200,6 +38407,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       radius: radius,
       size: size,
       alphaGrid: alphaGrid,
+      alphaByteGrid: alphaByteGrid,
     );
     if (_cloneBrushMaskCache.length >= 48) {
       _cloneBrushMaskCache.remove(_cloneBrushMaskCache.keys.first);
@@ -37932,58 +40140,6 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     );
   }
 
-  Rect _fixedCropViewportRect({
-    required Rect artboard,
-    required _CropToolConfig config,
-  }) {
-    return _fixedCropViewportRectFromArtboard(
-      artboard: artboard,
-      config: config,
-    );
-  }
-
-  Rect _cropRectUvFromFixedViewportFrame({
-    required Rect fixedFrameViewport,
-    required _ImageLayerSceneData layerData,
-    required _CropToolConfig config,
-  }) {
-    final double cropRotation =
-        layerData.rotation + _cropPreviewRotation(config);
-    final List<Offset> viewportCorners = <Offset>[
-      fixedFrameViewport.topLeft,
-      fixedFrameViewport.topRight,
-      fixedFrameViewport.bottomRight,
-      fixedFrameViewport.bottomLeft,
-    ];
-    final List<Offset> localCorners = viewportCorners.map((p) {
-      final Offset scene = _toScenePoint(p);
-      return _rotateVector(scene - layerData.center, -cropRotation);
-    }).toList(growable: false);
-    double minX = localCorners.first.dx;
-    double maxX = localCorners.first.dx;
-    double minY = localCorners.first.dy;
-    double maxY = localCorners.first.dy;
-    for (final Offset p in localCorners.skip(1)) {
-      if (p.dx < minX) minX = p.dx;
-      if (p.dx > maxX) maxX = p.dx;
-      if (p.dy < minY) minY = p.dy;
-      if (p.dy > maxY) maxY = p.dy;
-    }
-    final Rect rawUv = Rect.fromLTRB(
-      (minX / layerData.width) + 0.5,
-      (minY / layerData.height) + 0.5,
-      (maxX / layerData.width) + 0.5,
-      (maxY / layerData.height) + 0.5,
-    );
-    return _clampCropRectUvCanvas(
-      rawUv,
-      aspectRatio: _cropUvAspectRatioCanvas(
-        config: config,
-        layerData: layerData,
-      ),
-    );
-  }
-
   Rect _clampCropRectUvCanvas(
     Rect rect, {
     double? aspectRatio,
@@ -38125,10 +40281,14 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     _gestureLayerId = config.layerId;
 
     if (!freeformHandleMode) {
-      // Fixed-ratio modes keep the crop frame locked on screen.
-      // One-finger drag should not move/resize crop; user aligns image
-      // via pinch pan/zoom until double-tap commit.
-      _interaction = _CanvasInteraction.none;
+      final Offset localPoint =
+          _rotateVector(scenePoint - layerData.center, -cropRotation);
+      if (!cropRectLocal.contains(localPoint)) {
+        _interaction = _CanvasInteraction.none;
+        _gestureLayerId = null;
+        return false;
+      }
+      _interaction = _CanvasInteraction.cropMoving;
       return true;
     }
 
@@ -38471,11 +40631,13 @@ class _CloneBrushMask {
     required this.radius,
     required this.size,
     required this.alphaGrid,
+    required this.alphaByteGrid,
   });
 
   final int radius;
   final int size;
   final List<double> alphaGrid;
+  final Uint8List alphaByteGrid;
 }
 
 class _CloneStrokePayload {
@@ -38866,6 +41028,7 @@ void _paintTransparentEraseSegmentOnPixelsForIsolate({
     stampSpacingPx: stampSpacingPx,
     stationary: stationary,
   );
+  if (flowOpacityFactor <= 0) return;
   if (stationary) {
     _applyTransparentEraseStampOnPixelsForIsolate(
       targetPixels: targetPixels,
@@ -38905,7 +41068,10 @@ void _applyTransparentEraseStampOnPixelsForIsolate({
   final int destY = (destUv.dy * (height - 1)).round();
   final int radius = brushMask.radius;
   final int maskWidth = brushMask.size;
-  final List<double> alphaGrid = brushMask.alphaGrid;
+  final Uint8List alphaByteGrid = brushMask.alphaByteGrid;
+  final int opacityByte =
+      (opacityFactor.clamp(0.0, 1.0).toDouble() * 255).round().clamp(0, 255);
+  if (opacityByte <= 0) return;
 
   for (int y = -radius; y <= radius; y++) {
     final int dy = destY + y;
@@ -38914,21 +41080,27 @@ void _applyTransparentEraseStampOnPixelsForIsolate({
       final int dx = destX + x;
       if (dx < 0 || dx >= width) continue;
       final int maskIndex = ((y + radius) * maskWidth) + (x + radius);
-      final double alpha = (alphaGrid[maskIndex] * opacityFactor).clamp(
-        0.0,
-        1.0,
-      );
-      if (alpha <= 0) continue;
-      final double keep = 1.0 - alpha;
+      final int baseMaskAlpha = alphaByteGrid[maskIndex];
+      if (baseMaskAlpha <= 0) continue;
+      final int alphaByte = ((baseMaskAlpha * opacityByte) + 127) ~/ 255;
+      if (alphaByte <= 0) continue;
       final int pixelIndex = ((dy * width) + dx) * 4;
+      if (alphaByte >= 255) {
+        targetPixels[pixelIndex] = 0;
+        targetPixels[pixelIndex + 1] = 0;
+        targetPixels[pixelIndex + 2] = 0;
+        targetPixels[pixelIndex + 3] = 0;
+        continue;
+      }
+      final int keepByte = 255 - alphaByte;
       targetPixels[pixelIndex] =
-          (targetPixels[pixelIndex] * keep).round().clamp(0, 255);
+          ((targetPixels[pixelIndex] * keepByte) + 127) ~/ 255;
       targetPixels[pixelIndex + 1] =
-          (targetPixels[pixelIndex + 1] * keep).round().clamp(0, 255);
+          ((targetPixels[pixelIndex + 1] * keepByte) + 127) ~/ 255;
       targetPixels[pixelIndex + 2] =
-          (targetPixels[pixelIndex + 2] * keep).round().clamp(0, 255);
+          ((targetPixels[pixelIndex + 2] * keepByte) + 127) ~/ 255;
       targetPixels[pixelIndex + 3] =
-          (targetPixels[pixelIndex + 3] * keep).round().clamp(0, 255);
+          ((targetPixels[pixelIndex + 3] * keepByte) + 127) ~/ 255;
     }
   }
 }
@@ -38945,6 +41117,7 @@ _CloneBrushMask _buildCloneBrushMaskForIsolate({
   final double hardStop =
       _cloneHardnessToHardRadiusFactor(hardnessInt.toDouble());
   final List<double> alphaGrid = List<double>.filled(size * size, 0);
+  final Uint8List alphaByteGrid = Uint8List(size * size);
 
   for (int y = -radius; y <= radius; y++) {
     for (int x = -radius; x <= radius; x++) {
@@ -38962,7 +41135,9 @@ _CloneBrushMask _buildCloneBrushMaskForIsolate({
         alpha = _cloneSoftEdgeAlpha(featherT);
       }
       final int index = ((y + radius) * size) + (x + radius);
-      alphaGrid[index] = alpha.clamp(0.0, 1.0);
+      final double clampedAlpha = alpha.clamp(0.0, 1.0).toDouble();
+      alphaGrid[index] = clampedAlpha;
+      alphaByteGrid[index] = (clampedAlpha * 255).round().clamp(0, 255);
     }
   }
 
@@ -38970,6 +41145,7 @@ _CloneBrushMask _buildCloneBrushMaskForIsolate({
     radius: radius,
     size: size,
     alphaGrid: alphaGrid,
+    alphaByteGrid: alphaByteGrid,
   );
 }
 
@@ -39724,6 +41900,119 @@ List<double> _multiplyColorMatrices(List<double> a, List<double> b) {
   return out;
 }
 
+bool _isEditorLayerCatalogPngElement(EditorLayer layer) {
+  if (layer.type != EditorLayerType.image) return false;
+  if (layer.isBackground) return false;
+  final bool isElementLayer = layer.isCatalogElement ||
+      layer.name.trim().toLowerCase().startsWith('overlay element');
+  if (!isElementLayer) return false;
+  final String mimeType = (layer.elementMimeType ?? '').trim().toLowerCase();
+  if (mimeType == 'image/png' ||
+      mimeType.endsWith('/png') ||
+      mimeType == 'png') {
+    return true;
+  }
+  if (mimeType.isNotEmpty) return false;
+  final String lowerUrl = (layer.elementFileUrl ?? '').trim().toLowerCase();
+  if (lowerUrl.isNotEmpty) {
+    return lowerUrl.endsWith('.png') || lowerUrl.contains('.png?');
+  }
+  return !layer.isCatalogElement;
+}
+
+bool _isPngColorEffectActive(EditorLayer layer) {
+  if (!_isEditorLayerCatalogPngElement(layer)) return false;
+  if (!layer.imagePngEffectEnabled) return false;
+  return layer.imagePngEffectStrength > 0.001;
+}
+
+List<double>? _buildPngColorEffectMatrix(EditorLayer layer) {
+  if (!_isPngColorEffectActive(layer)) return null;
+
+  final Color tint = layer.imagePngEffectColor.withAlpha(255);
+  final double tintR = tint.red / 255.0;
+  final double tintG = tint.green / 255.0;
+  final double tintB = tint.blue / 255.0;
+  final double strength = (layer.imagePngEffectStrength / 100).clamp(0.0, 1.0);
+  final double details = (layer.imagePngEffectDetails / 100).clamp(0.0, 1.0);
+  final double threshold =
+      (layer.imagePngEffectThreshold / 100).clamp(-1.0, 1.0).toDouble();
+  final double contrast = (1 + (threshold * 2.2)).clamp(0.05, 3.2);
+  final double bias = (1 - contrast) * 128.0;
+  const double lumR = 0.2126;
+  const double lumG = 0.7152;
+  const double lumB = 0.0722;
+
+  List<double> tintMatrixForChannel(double tintChannel) {
+    final double lumScale = details * tintChannel * contrast;
+    final double alphaScale = (1 - details) * tintChannel;
+    final double channelBias = details * tintChannel * bias;
+    return <double>[
+      lumR * lumScale,
+      lumG * lumScale,
+      lumB * lumScale,
+      alphaScale,
+      channelBias,
+    ];
+  }
+
+  final List<double> rRow = tintMatrixForChannel(tintR);
+  final List<double> gRow = tintMatrixForChannel(tintG);
+  final List<double> bRow = tintMatrixForChannel(tintB);
+  final List<double> tintMatrix = <double>[
+    rRow[0],
+    rRow[1],
+    rRow[2],
+    rRow[3],
+    rRow[4],
+    gRow[0],
+    gRow[1],
+    gRow[2],
+    gRow[3],
+    gRow[4],
+    bRow[0],
+    bRow[1],
+    bRow[2],
+    bRow[3],
+    bRow[4],
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+  if (strength >= 0.999) {
+    return tintMatrix;
+  }
+  final List<double> identity = <double>[
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+  ];
+  final List<double> mixed = List<double>.filled(20, 0);
+  for (int i = 0; i < 20; i++) {
+    mixed[i] = (identity[i] * (1 - strength)) + (tintMatrix[i] * strength);
+  }
+  return mixed;
+}
+
 List<double>? _buildImageAdjustmentMatrix(EditorLayer layer) {
   if (layer.type != EditorLayerType.image) return null;
   final double brightness = layer.imageAdjustBrightness ?? 0;
@@ -39985,11 +42274,17 @@ Paint _buildImageLayerPaint(EditorLayer layer,
     mode: blurMode,
     amountFactor: blurAmountFactor,
   );
+  final List<double>? pngColorMatrix = _buildPngColorEffectMatrix(layer);
   List<double>? finalMatrix = adjustMatrix;
   if (blurToneMatrix != null) {
     finalMatrix = finalMatrix == null
         ? blurToneMatrix
         : _multiplyColorMatrices(blurToneMatrix, finalMatrix);
+  }
+  if (pngColorMatrix != null) {
+    finalMatrix = finalMatrix == null
+        ? pngColorMatrix
+        : _multiplyColorMatrices(pngColorMatrix, finalMatrix);
   }
   if (finalMatrix != null) {
     paint.colorFilter = ColorFilter.matrix(finalMatrix);
@@ -40078,29 +42373,6 @@ Rect _computeArtboardRect({
   return Rect.fromLTWH(left, topPadding, artboardWidth, artboardHeight);
 }
 
-Rect _fixedCropViewportRectFromArtboard({
-  required Rect artboard,
-  required _CropToolConfig config,
-}) {
-  final double aspect =
-      (config.ratioPreset.aspectRatio ?? 1.0).clamp(0.05, 20.0).toDouble();
-  final double maxWidth = (artboard.width * 0.9).clamp(40.0, artboard.width);
-  final double maxHeight = (artboard.height * 0.9).clamp(40.0, artboard.height);
-  double width = maxWidth;
-  double height = width / aspect;
-  if (height > maxHeight) {
-    height = maxHeight;
-    width = height * aspect;
-  }
-  width = width.clamp(24.0, artboard.width).toDouble();
-  height = height.clamp(24.0, artboard.height).toDouble();
-  return Rect.fromCenter(
-    center: artboard.center,
-    width: width,
-    height: height,
-  );
-}
-
 class _SkiaCanvasPainter extends CustomPainter {
   _SkiaCanvasPainter({
     required Listenable repaint,
@@ -40120,6 +42392,7 @@ class _SkiaCanvasPainter extends CustomPainter {
     required this.cloneSourcePointerUvResolver,
     required this.showCloneTargetPointer,
     required this.cloneTargetPointerUvResolver,
+    required this.hideMoveSelectionControls,
     required this.adaptiveImageResolver,
     required this.rotateHandleDistance,
     required this.moveHandleDistance,
@@ -40157,6 +42430,7 @@ class _SkiaCanvasPainter extends CustomPainter {
   final Offset? Function() cloneSourcePointerUvResolver;
   final bool showCloneTargetPointer;
   final Offset? Function() cloneTargetPointerUvResolver;
+  final bool hideMoveSelectionControls;
   final ui.Image Function(
     EditorLayer layer,
     ui.Image sourceImage,
@@ -40277,13 +42551,11 @@ class _SkiaCanvasPainter extends CustomPainter {
     if (cropToolConfig != null &&
         cropLayerData != null &&
         cropLayerData.layerId == cropToolConfig!.layerId) {
-      if (cropToolConfig!.ratioPreset.isFreeformHandleMode) {
-        _drawCropPreview(
-          canvas,
-          cropLayerData,
-          cropToolConfig!,
-        );
-      }
+      _drawCropPreview(
+        canvas,
+        cropLayerData,
+        cropToolConfig!,
+      );
     }
     if (isToolEnabled &&
         (activeTool == EditorTool.sketchReplace ||
@@ -40335,7 +42607,8 @@ class _SkiaCanvasPainter extends CustomPainter {
         overlayCutConfig == null &&
         cropToolConfig == null &&
         selectedTransformLayer != null &&
-        activeTool == EditorTool.move) {
+        activeTool == EditorTool.move &&
+        !hideMoveSelectionControls) {
       _drawSelectionControls(
         canvas,
         selectedTransformLayer,
@@ -40406,14 +42679,6 @@ class _SkiaCanvasPainter extends CustomPainter {
       _drawSmartGuides(canvas, smartGuides, viewScale: scale);
     }
     canvas.restore();
-    if (cropToolConfig != null &&
-        !cropToolConfig!.ratioPreset.isFreeformHandleMode) {
-      _drawFixedCropPreviewOverlay(
-        canvas,
-        artboard: artboard,
-        config: cropToolConfig!,
-      );
-    }
     canvas.restore();
   }
 
@@ -41110,54 +43375,6 @@ class _SkiaCanvasPainter extends CustomPainter {
       canvas.drawCircle(edge, edgeRadius, handleStrokePaint);
     }
     canvas.restore();
-  }
-
-  void _drawFixedCropPreviewOverlay(
-    Canvas canvas, {
-    required Rect artboard,
-    required _CropToolConfig config,
-  }) {
-    final Rect fixedFrame = _fixedCropViewportRectFromArtboard(
-      artboard: artboard,
-      config: config,
-    );
-    final Path outsidePath = Path.combine(
-      PathOperation.difference,
-      Path()..addRect(artboard),
-      Path()..addRect(fixedFrame),
-    );
-    canvas.drawPath(
-      outsidePath,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..color = const Color(0x5A0F172A),
-    );
-    final Paint framePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = const Color(0xFFEAF1FF);
-    canvas.drawRect(fixedFrame, framePaint);
-
-    final Paint gridPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.9
-      ..color = const Color(0x75EAF1FF);
-    final double thirdW = fixedFrame.width / 3;
-    final double thirdH = fixedFrame.height / 3;
-    for (int i = 1; i <= 2; i++) {
-      final double x = fixedFrame.left + (thirdW * i);
-      final double y = fixedFrame.top + (thirdH * i);
-      canvas.drawLine(
-        Offset(x, fixedFrame.top),
-        Offset(x, fixedFrame.bottom),
-        gridPaint,
-      );
-      canvas.drawLine(
-        Offset(fixedFrame.left, y),
-        Offset(fixedFrame.right, y),
-        gridPaint,
-      );
-    }
   }
 
   double _hash01(double seed) {
@@ -41964,6 +44181,7 @@ class _SkiaCanvasPainter extends CustomPainter {
         oldDelegate.showCloneBrushPreview != showCloneBrushPreview ||
         oldDelegate.showEraseBrushPreview != showEraseBrushPreview ||
         oldDelegate.showCloneTargetPointer != showCloneTargetPointer ||
+        oldDelegate.hideMoveSelectionControls != hideMoveSelectionControls ||
         oldDelegate.marqueeSelection != marqueeSelection ||
         oldDelegate.overlayCutConfig != overlayCutConfig ||
         oldDelegate.cropToolConfig != cropToolConfig ||
@@ -43665,15 +45883,21 @@ Uint8List _encodeJpgFromRgbaForExportIsolate({
 class _TopToolsSnapPhysics extends ScrollPhysics {
   const _TopToolsSnapPhysics({
     required this.itemExtent,
+    this.snapVelocityThreshold = 165.0,
+    this.snapDistanceFactor = 0.28,
     super.parent,
   });
 
   final double itemExtent;
+  final double snapVelocityThreshold;
+  final double snapDistanceFactor;
 
   @override
   _TopToolsSnapPhysics applyTo(ScrollPhysics? ancestor) {
     return _TopToolsSnapPhysics(
       itemExtent: itemExtent,
+      snapVelocityThreshold: snapVelocityThreshold,
+      snapDistanceFactor: snapDistanceFactor,
       parent: buildParent(ancestor),
     );
   }
@@ -43692,6 +45916,16 @@ class _TopToolsSnapPhysics extends ScrollPhysics {
     );
   }
 
+  bool _shouldSnap(ScrollMetrics position, double velocity) {
+    if (itemExtent <= 0) return false;
+    if (velocity.abs() > snapVelocityThreshold) return false;
+    final double target = _targetPixels(position, velocity);
+    final double distance = (target - position.pixels).abs();
+    final double maxSnapDistance =
+        (itemExtent * snapDistanceFactor).clamp(6.0, 30.0).toDouble();
+    return distance <= maxSnapDistance;
+  }
+
   @override
   Simulation? createBallisticSimulation(
     ScrollMetrics position,
@@ -43700,6 +45934,9 @@ class _TopToolsSnapPhysics extends ScrollPhysics {
     final Simulation? parentSimulation =
         super.createBallisticSimulation(position, velocity);
     if (parentSimulation == null) return null;
+    if (!_shouldSnap(position, velocity)) {
+      return parentSimulation;
+    }
     final double target = _targetPixels(position, velocity);
     if ((target - position.pixels).abs() < 0.5) {
       return parentSimulation;

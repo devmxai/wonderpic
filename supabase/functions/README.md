@@ -44,6 +44,14 @@ This folder contains the WonderPic backend foundation for:
     - `delete` by asset id
     - `upsert_category`
 
+- `fonts-catalog`
+  - `GET` public listing for editor Text fonts tabs.
+  - `POST` admin actions (requires `x-admin-token`):
+    - `upload` font file (TTF/OTF/TTC) into storage bucket `text-fonts`
+    - `delete` by font id
+    - `upsert_font`
+    - `list_admin`
+
 ## Required secrets
 
 Set these in Supabase project secrets:
@@ -73,6 +81,7 @@ supabase functions deploy credits-reserve
 supabase functions deploy credits-commit
 supabase functions deploy credits-refund
 supabase functions deploy elements-catalog
+supabase functions deploy fonts-catalog
 ```
 
 ## Invoke examples

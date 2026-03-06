@@ -299,6 +299,104 @@ Actions:
 }
 ```
 
+---
+
+### 3.10 `GET|POST /fonts-catalog`
+Catalog خاص بقسم `Text Fonts` في التطبيق.
+
+#### `GET` (public read)
+يجلب قائمة الخطوط الفعّالة التي ستظهر داخل التطبيق.
+
+Query params:
+- `locale` (اختياري): `english | arabic`
+- `limit` (اختياري): افتراضي 200
+- `offset` (اختياري): افتراضي 0
+- `includeInactive` (اختياري): `true` لكن يعمل فقط مع `x-admin-token` الصحيح
+
+Example (public):
+```bash
+curl 'https://pamlemagzhikexxmaxfz.supabase.co/functions/v1/fonts-catalog?locale=english&limit=200'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "fonts": [
+    {
+      "id": "uuid",
+      "family": "My_Font_Family",
+      "label": "My Font Family",
+      "locale": "english",
+      "preview": "Aa",
+      "file_url": "https://.../storage/v1/object/public/text-fonts/english/2026/03/....ttf",
+      "mime_type": "font/ttf",
+      "sort_order": 0,
+      "created_at": "2026-03-06T..."
+    }
+  ],
+  "paging": {
+    "limit": 200,
+    "offset": 0,
+    "locale": "english",
+    "include_inactive": false
+  }
+}
+```
+
+#### `POST` admin actions (requires `x-admin-token`)
+Headers:
+- `x-admin-token: APP_ADMIN_TOKEN`
+
+Actions:
+
+1) `upload`
+```json
+{
+  "action": "upload",
+  "family": "My Font Family",
+  "label": "My Font Family",
+  "locale": "english",
+  "preview": "Aa",
+  "fileName": "my-font-family.ttf",
+  "mimeType": "font/ttf",
+  "fileBase64": "data:font/ttf;base64,....",
+  "sortOrder": 0
+}
+```
+
+2) `upsert_font`
+```json
+{
+  "action": "upsert_font",
+  "fontId": "uuid",
+  "family": "My Font Family Updated",
+  "label": "My Font Family Updated",
+  "locale": "english",
+  "preview": "Aa",
+  "sortOrder": 10,
+  "isActive": true
+}
+```
+
+3) `delete`
+```json
+{
+  "action": "delete",
+  "fontId": "uuid"
+}
+```
+
+4) `list_admin`
+```json
+{
+  "action": "list_admin",
+  "locale": "arabic"
+}
+```
+
+> `list_admin` يرجّع نفس قائمة الخطوط مع حقول إضافية (`is_active`, `file_path`, `updated_at`) لتسهيل شاشة الإدارة في React.
+
 ## 4) Error Envelope (موحّد)
 
 غالبًا الأخطاء تكون بهذا الشكل:
@@ -373,6 +471,11 @@ src/
 ### Credits module
 - Grant credits (`admin_grant_credits`).
 - سجل عمليات grant/reserve/commit/refund (يفضل endpoint إضافي للـ ledger list لاحقًا).
+
+### Catalog module (Elements + Fonts)
+- إدارة أقسام العناصر (`upsert_category`) وإضافة/حذف العناصر (`upload`, `delete`) عبر `elements-catalog`.
+- إدارة خطوط النص العامة في التطبيق (`upload`, `upsert_font`, `delete`, `list_admin`) عبر `fonts-catalog`.
+- واجهة React للرفع: إرسال `fileBase64` + `mimeType` + بيانات التصنيف/اللغة.
 
 ### App health module
 - مراقبة أخطاء 4xx/5xx من الـ functions.

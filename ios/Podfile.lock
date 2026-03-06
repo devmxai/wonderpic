@@ -5,6 +5,42 @@ PODS:
   - AppAuth/Core (1.7.6)
   - AppAuth/ExternalUserAgent (1.7.6):
     - AppAuth/Core
+  - audioplayers_darwin (0.0.1):
+    - Flutter
+  - DKImagePickerController/Core (4.3.9):
+    - DKImagePickerController/ImageDataManager
+    - DKImagePickerController/Resource
+  - DKImagePickerController/ImageDataManager (4.3.9)
+  - DKImagePickerController/PhotoGallery (4.3.9):
+    - DKImagePickerController/Core
+    - DKPhotoGallery
+  - DKImagePickerController/Resource (4.3.9)
+  - DKPhotoGallery (0.0.19):
+    - DKPhotoGallery/Core (= 0.0.19)
+    - DKPhotoGallery/Model (= 0.0.19)
+    - DKPhotoGallery/Preview (= 0.0.19)
+    - DKPhotoGallery/Resource (= 0.0.19)
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Core (0.0.19):
+    - DKPhotoGallery/Model
+    - DKPhotoGallery/Preview
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Model (0.0.19):
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Preview (0.0.19):
+    - DKPhotoGallery/Model
+    - DKPhotoGallery/Resource
+    - SDWebImage
+    - SwiftyGif
+  - DKPhotoGallery/Resource (0.0.19):
+    - SDWebImage
+    - SwiftyGif
+  - file_picker (0.0.1):
+    - DKImagePickerController/PhotoGallery
+    - Flutter
   - Firebase/Auth (10.22.0):
     - Firebase/CoreOnly
     - FirebaseAuth (~> 10.22.0)
@@ -76,20 +112,49 @@ PODS:
     - Flutter
   - image_picker_ios (0.0.1):
     - Flutter
+  - path_provider_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
   - PromisesObjC (2.4.0)
   - RecaptchaInterop (100.0.0)
+  - record_darwin (1.0.0):
+    - Flutter
+    - FlutterMacOS
+  - SDWebImage (5.21.6):
+    - SDWebImage/Core (= 5.21.6)
+  - SDWebImage/Core (5.21.6)
+  - shared_preferences_foundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
+  - speech_to_text (0.0.1):
+    - Flutter
+    - Try
+  - SwiftyGif (5.4.5)
+  - Try (2.1.1)
+  - video_player_avfoundation (0.0.1):
+    - Flutter
+    - FlutterMacOS
 
 DEPENDENCIES:
+  - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/ios`)
+  - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - firebase_auth (from `.symlinks/plugins/firebase_auth/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - Flutter (from `Flutter`)
   - google_sign_in_ios (from `.symlinks/plugins/google_sign_in_ios/darwin`)
   - image_gallery_saver_plus (from `.symlinks/plugins/image_gallery_saver_plus/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
+  - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
+  - record_darwin (from `.symlinks/plugins/record_darwin/ios`)
+  - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
+  - speech_to_text (from `.symlinks/plugins/speech_to_text/ios`)
+  - video_player_avfoundation (from `.symlinks/plugins/video_player_avfoundation/darwin`)
 
 SPEC REPOS:
   trunk:
     - AppAuth
+    - DKImagePickerController
+    - DKPhotoGallery
     - Firebase
     - FirebaseAppCheckInterop
     - FirebaseAuth
@@ -101,8 +166,15 @@ SPEC REPOS:
     - GTMSessionFetcher
     - PromisesObjC
     - RecaptchaInterop
+    - SDWebImage
+    - SwiftyGif
+    - Try
 
 EXTERNAL SOURCES:
+  audioplayers_darwin:
+    :path: ".symlinks/plugins/audioplayers_darwin/ios"
+  file_picker:
+    :path: ".symlinks/plugins/file_picker/ios"
   firebase_auth:
     :path: ".symlinks/plugins/firebase_auth/ios"
   firebase_core:
@@ -115,9 +187,23 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/image_gallery_saver_plus/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
+  path_provider_foundation:
+    :path: ".symlinks/plugins/path_provider_foundation/darwin"
+  record_darwin:
+    :path: ".symlinks/plugins/record_darwin/ios"
+  shared_preferences_foundation:
+    :path: ".symlinks/plugins/shared_preferences_foundation/darwin"
+  speech_to_text:
+    :path: ".symlinks/plugins/speech_to_text/ios"
+  video_player_avfoundation:
+    :path: ".symlinks/plugins/video_player_avfoundation/darwin"
 
 SPEC CHECKSUMS:
   AppAuth: d4f13a8fe0baf391b2108511793e4b479691fb73
+  audioplayers_darwin: ccf9c770ee768abb07e26d90af093f7bab1c12ab
+  DKImagePickerController: 946cec48c7873164274ecc4624d19e3da4c1ef3c
+  DKPhotoGallery: b3834fecb755ee09a593d7c9e389d8b5d6deed60
+  file_picker: 9b3292d7c8bc68c8a7bf8eb78f730e49c8efc517
   Firebase: 797fd7297b7e1be954432743a0b3f90038e45a71
   firebase_auth: 2b15cc7d3ac9d920a443704b650349b850781cbb
   firebase_core: 2a80983e98480c7f02ff001358621c8d7f1ff8f0
@@ -133,9 +219,17 @@ SPEC CHECKSUMS:
   GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
   image_gallery_saver_plus: e597bf65a7846979417a3eae0763b71b6dfec6c3
   image_picker_ios: a768de0d44b0925de635738f5030f9f2727eb996
+  path_provider_foundation: 080d55be775b7414fd5a5ef3ac137b97b097e564
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
   RecaptchaInterop: 7d1a4a01a6b2cb1610a47ef3f85f0c411434cb21
+  record_darwin: 0c21d4367390053cf94be5527b36dd4556a72fd2
+  SDWebImage: 1bb6a1b84b6fe87b972a102bdc77dd589df33477
+  shared_preferences_foundation: 9e1978ff2562383bd5676f64ec4e9aa8fa06a6f7
+  speech_to_text: ae2abc312e619ff1c53e675a9fc4d785a15c03bb
+  SwiftyGif: 706c60cf65fa2bc5ee0313beece843c8eb8194d4
+  Try: 5ef669ae832617b3cee58cb2c6f99fb767a4ff96
+  video_player_avfoundation: 2cef49524dd1f16c5300b9cd6efd9611ce03639b
 
-PODFILE CHECKSUM: d08cca32070bb9586475e70404b677b6da038a7e
+PODFILE CHECKSUM: eacda742c27b8408a7f1c49cf0177508d0fa151a
 
 COCOAPODS: 1.16.2

@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.elements-catalog]
 verify_jwt = false
+
+[functions.fonts-catalog]
+verify_jwt = false
