@@ -5,9 +5,131 @@ WonderPic is a Flutter-based mobile photo editor prototype focused on a professi
 This README is a full handoff document for engineers and AI models.
 If a new model/session takes over, this file should be enough to continue development without losing context.
 
-## 0. Latest Continuation Notes (March 6, 2026)
+## 0. Latest Continuation Notes (March 28, 2026)
 
 This section is the **latest handoff checkpoint** and has higher priority than older notes when conflicts appear.
+
+### 0.56 Latest Handoff (March 28, 2026 - Fusion Studio + Fusion Cut Phase 1 + Templates Backend)
+
+This subsection is now the newest checkpoint for the next thread.
+
+#### What was completed in the latest work
+- `Fusion Studio` entry flow now exposes three workspace choices:
+  - `Fusion Photo`
+  - `Fusion Design`
+  - `Fusion Cut`
+- `Fusion Cut` is now wired to the current video editor screen and is no longer treated as the old onboarding-only video branch.
+- A first real `Fusion Cut` engine foundation was added in:
+  - `lib/fusion_cut/fusion_cut_engine.dart`
+- `WonderPicVideoEditingScreen` was refactored to use that session/controller layer instead of timeline-only mock UI state.
+
+#### Fusion Cut Phase 1 status
+- Project/session model exists for:
+  - tracks
+  - clips
+  - media sources
+  - selection
+  - zoom
+  - timeline center / playhead state
+  - export draft snapshot
+- Editing actions currently implemented:
+  - `Split`
+  - `Trim In`
+  - `Trim Out`
+  - `Delete`
+  - `Ripple Delete`
+  - `Undo`
+  - `Redo`
+- Snap behavior was added for:
+  - clip move
+  - split
+  - trim-in
+  - trim-out
+- `Fusion Cut` now starts with a clean empty timeline instead of seeded mock clips.
+- The visual playhead line is hidden until real timeline content exists.
+
+#### Fusion Cut interaction changes
+- Top action strip was changed from placeholder tool buttons to actual edit actions.
+- Current top actions are now:
+  - icon-only
+  - circular
+  - enabled/disabled based on selection state
+- Selection behavior was refined:
+  - single tap on a clip selects it directly
+  - tapping empty timeline space clears selection
+  - edit actions activate only when the required selection exists
+
+#### Video import behavior
+- Import path for video was changed back to `Files` picker to avoid iOS photo-library compression/transcoding behavior.
+- Goal of this change:
+  - keep original video file path
+  - avoid “Compressing...” flow when possible
+  - preserve source fidelity better for timeline testing
+
+#### Fusion Cut preview/performance notes
+- Timeline scrubbing was reduced from immediate seek-on-every-delta to a small debounce-based seek path.
+- Playhead refresh rate during playback was reduced to avoid excessive UI churn in debug/simulator.
+- This improved timeline smoothness, but final performance must still be judged on a real device and later on release builds.
+
+#### Export status
+- Current `Fusion Cut` export is still **Phase 1 draft only**:
+  - export preset selection
+  - project summary
+  - timeline/media manifest snapshot
+- This is **not** yet the native final encoder/export pipeline.
+- Native render/export bridge for iOS/Android is still pending.
+
+#### Templates backend status
+- Added a Supabase Edge Function backend for SVG templates catalog:
+  - `supabase/functions/templates-catalog/index.ts`
+- Added DB migration for templates catalog foundation:
+  - `supabase/migrations/202603060002_templates_catalog_foundation.sql`
+- Added admin-panel handoff/update doc for SVG templates:
+  - `admin-panel/ADMIN_PANEL_UPDATE_TEMPLATES_SVG.md`
+- Updated backend README to include the templates function.
+
+#### Latest commit pushed to GitHub
+- Branch: `main`
+- Commit:
+  - `9a2af79fb4e1c25227fda854ccfeb692c5a3eaad`
+- Commit message:
+  - `Add Fusion Cut editing foundation and templates backend`
+
+#### Files touched in the latest phase
+- `lib/main.dart`
+- `lib/video_editing_screen.dart`
+- `lib/fusion_cut/fusion_cut_engine.dart`
+- `ios/Runner/Info.plist`
+- `pubspec.yaml`
+- `pubspec.lock`
+- `android/app/build.gradle`
+- `supabase/functions/templates-catalog/index.ts`
+- `supabase/migrations/202603060002_templates_catalog_foundation.sql`
+- `supabase/functions/README.md`
+- `admin-panel/ADMIN_PANEL_UPDATE_TEMPLATES_SVG.md`
+- `tool/run_ios_open_sim.sh`
+- `README.md`
+
+#### Current known limitations / next priorities
+1. `Fusion Cut` still needs direct trim handles on clip edges.
+2. Export is still manifest-based and needs native encoder/render pipeline.
+3. Timeline smoothness needs real-device validation after more clips/layers are added.
+4. `Fusion Cut` still needs proper clip operations roadmap next:
+   - edge drag trim
+   - optional ripple trim
+   - better snap indicators
+   - transport/timeline polish
+
+#### Next-thread strict resume checklist
+1. Start from this subsection (`0.56`) first.
+2. Do not revert `Fusion Cut` back to placeholder tools.
+3. Keep `Files` import path for video unless a better no-compression import path is verified.
+4. If continuing Fusion Cut, prioritize:
+   - trim handles
+   - native export bridge
+   - timeline polish
+5. If continuing templates/admin work, keep `templates-catalog` API contract aligned with:
+   - `admin-panel/ADMIN_PANEL_UPDATE_TEMPLATES_SVG.md`
 
 ### 0.55 Latest Handoff (March 6, 2026 - PNG Element Color Effect + Release Build)
 
