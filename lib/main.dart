@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/painting.dart' as painting;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart' as vg;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
@@ -21,17 +24,59 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_drawing/path_drawing.dart' as path_drawing;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:vector_graphics_compiler/vector_graphics_compiler.dart'
+    as vgcompiler;
 import 'package:wonderpic/firebase_options.dart';
 import 'package:wonderpic/library/wonderpic_library_screen.dart';
 import 'package:wonderpic/services/wonderpic_backend_client.dart';
 import 'package:wonderpic/services/wonderpic_library_store.dart';
 import 'package:wonderpic/video_editing_screen.dart';
 import 'package:wonderpic/voice_generate_elevenlabs_screen.dart';
+import 'package:xml/xml.dart' as xml;
 
 const Color kActiveAccent = Color(0xFFE6F24A);
 const Color kActiveAccentForeground = Color(0xFF19191A);
 const bool _kPhotoEditingOnlyMode = true;
+
+enum FusionWorkspaceApp { fusionPhoto, fusionDesign, fusionCut }
+
+extension FusionWorkspaceAppUi on FusionWorkspaceApp {
+  String get title {
+    switch (this) {
+      case FusionWorkspaceApp.fusionPhoto:
+        return 'Fusion Photo';
+      case FusionWorkspaceApp.fusionDesign:
+        return 'Fusion Design';
+      case FusionWorkspaceApp.fusionCut:
+        return 'Fusion Cut';
+    }
+  }
+
+  String get subtitle {
+    switch (this) {
+      case FusionWorkspaceApp.fusionPhoto:
+        return 'Current editor with photo workflow and existing toolset.';
+      case FusionWorkspaceApp.fusionDesign:
+        return 'New design workspace with custom top tools (UI stage).';
+      case FusionWorkspaceApp.fusionCut:
+        return 'Dedicated timeline-based video editing workspace.';
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case FusionWorkspaceApp.fusionPhoto:
+        return Icons.photo_filter_outlined;
+      case FusionWorkspaceApp.fusionDesign:
+        return Icons.design_services_outlined;
+      case FusionWorkspaceApp.fusionCut:
+        return Icons.video_settings_outlined;
+    }
+  }
+}
+
 const String _kDefaultSupabaseUrl = 'https://pamlemagzhikexxmaxfz.supabase.co';
 const String _kSupabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -181,7 +226,7 @@ class _WonderPicAuthBootstrapState extends State<WonderPicAuthBootstrap> {
               );
             }
             if (_kPhotoEditingOnlyMode) {
-              return const WonderPicEditorScreen();
+              return const FusionWorkspaceHomeScreen();
             }
             return const WonderPicOnboardingScreen();
           },
@@ -602,6 +647,183 @@ class _WonderPicAuthScreenState extends State<WonderPicAuthScreen> {
   }
 }
 
+class FusionWorkspaceHomeScreen extends StatelessWidget {
+  const FusionWorkspaceHomeScreen({super.key});
+
+  static const Color _pageBg = Color(0xFF24272D);
+  static const Color _cardBg = Color(0xFF1E1F22);
+  static const Color _titleColor = Color(0xFFF3F3F2);
+  static const Color _subColor = Color(0xFFB8B7B5);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _pageBg,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          children: [
+            const SizedBox(height: 4),
+            const Text(
+              'Fusion Studio',
+              style: TextStyle(
+                fontSize: 34,
+                fontWeight: FontWeight.w800,
+                color: _titleColor,
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Choose your workspace.',
+              style: TextStyle(
+                fontSize: 14.5,
+                color: _subColor,
+                height: 1.35,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 22),
+            _FusionWorkspaceOptionCard(
+              app: FusionWorkspaceApp.fusionPhoto,
+              actionLabel: 'Open Fusion Photo',
+              onTap: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WonderPicEditorScreen(
+                      workspace: FusionWorkspaceApp.fusionPhoto,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _FusionWorkspaceOptionCard(
+              app: FusionWorkspaceApp.fusionDesign,
+              actionLabel: 'Open Fusion Design',
+              onTap: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WonderPicEditorScreen(
+                      workspace: FusionWorkspaceApp.fusionDesign,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 14),
+            _FusionWorkspaceOptionCard(
+              app: FusionWorkspaceApp.fusionCut,
+              actionLabel: 'Open Fusion Cut',
+              onTap: () {
+                Navigator.of(context).pushReplacement(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const WonderPicVideoEditingScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FusionWorkspaceOptionCard extends StatelessWidget {
+  const _FusionWorkspaceOptionCard({
+    required this.app,
+    required this.actionLabel,
+    required this.onTap,
+  });
+
+  final FusionWorkspaceApp app;
+  final String actionLabel;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: FusionWorkspaceHomeScreen._cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF605E5E)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x110F172A),
+            blurRadius: 16,
+            spreadRadius: 0,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1F22),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF605E5E)),
+            ),
+            child: Icon(
+              app.icon,
+              color: FusionWorkspaceHomeScreen._titleColor,
+              size: 21,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            app.title,
+            style: const TextStyle(
+              color: FusionWorkspaceHomeScreen._titleColor,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            app.subtitle,
+            style: const TextStyle(
+              color: FusionWorkspaceHomeScreen._subColor,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onTap,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE6F24A),
+                foregroundColor: const Color(0xFF19191A),
+                elevation: 0,
+                minimumSize: const Size.fromHeight(44),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text(
+                actionLabel,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class WonderPicOnboardingScreen extends StatelessWidget {
   const WonderPicOnboardingScreen({super.key});
 
@@ -649,7 +871,9 @@ class WonderPicOnboardingScreen extends StatelessWidget {
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const WonderPicEditorScreen(),
+                    builder: (_) => const WonderPicEditorScreen(
+                      workspace: FusionWorkspaceApp.fusionPhoto,
+                    ),
                   ),
                 );
               },
@@ -657,10 +881,10 @@ class WonderPicOnboardingScreen extends StatelessWidget {
             const SizedBox(height: 14),
             _OnboardingOptionCard(
               icon: Icons.video_settings_outlined,
-              title: 'Video Editing',
+              title: 'Fusion Cut',
               subtitle:
                   'Open a dedicated professional video editing workspace with timeline tracks.',
-              actionLabel: 'Open Video Editing',
+              actionLabel: 'Open Fusion Cut',
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute<void>(
@@ -5926,13 +6150,17 @@ class _OneSpaceStarfieldPainter extends CustomPainter {
 }
 
 class WonderPicEditorScreen extends StatefulWidget {
-  const WonderPicEditorScreen({super.key});
+  const WonderPicEditorScreen({
+    super.key,
+    this.workspace = FusionWorkspaceApp.fusionPhoto,
+  });
 
   static const Color _pageBg = Color(0xFF23262C);
   static const Color _panelBg = Color(0xFF1E1F22);
   static const Color _barsFill = _panelBg;
   static const Color _iconColor = Color(0xFFD4D4D3);
   static const Color _textColor = Color(0xFFB8B7B5);
+  final FusionWorkspaceApp workspace;
 
   @override
   State<WonderPicEditorScreen> createState() => _WonderPicEditorScreenState();
@@ -5986,6 +6214,113 @@ enum EditorTool {
   removeBg,
   sketchReplace,
   replaceObject
+}
+
+enum _FusionDesignTopTool {
+  pointer,
+  rectangle,
+  circle,
+  line,
+  pen,
+  node,
+  brush,
+  text,
+  gradient
+}
+
+extension _FusionDesignTopToolUi on _FusionDesignTopTool {
+  IconData get icon {
+    switch (this) {
+      case _FusionDesignTopTool.pointer:
+        return Icons.near_me_rounded;
+      case _FusionDesignTopTool.rectangle:
+        return Icons.crop_square_rounded;
+      case _FusionDesignTopTool.circle:
+        return Icons.circle_outlined;
+      case _FusionDesignTopTool.line:
+        return Icons.horizontal_rule_rounded;
+      case _FusionDesignTopTool.pen:
+        return Icons.edit_rounded;
+      case _FusionDesignTopTool.node:
+        return Icons.polyline_rounded;
+      case _FusionDesignTopTool.brush:
+        return Icons.brush_outlined;
+      case _FusionDesignTopTool.text:
+        return Icons.text_fields_rounded;
+      case _FusionDesignTopTool.gradient:
+        return Icons.gradient_outlined;
+    }
+  }
+}
+
+enum _DesignShapeKind { rectangle, circle, line, path }
+
+extension _DesignShapeKindUi on _DesignShapeKind {
+  String get key {
+    switch (this) {
+      case _DesignShapeKind.rectangle:
+        return 'rectangle';
+      case _DesignShapeKind.circle:
+        return 'circle';
+      case _DesignShapeKind.line:
+        return 'line';
+      case _DesignShapeKind.path:
+        return 'path';
+    }
+  }
+
+  String get label {
+    switch (this) {
+      case _DesignShapeKind.rectangle:
+        return 'Rectangle';
+      case _DesignShapeKind.circle:
+        return 'Circle';
+      case _DesignShapeKind.line:
+        return 'Line';
+      case _DesignShapeKind.path:
+        return 'Path';
+    }
+  }
+}
+
+enum _DesignPathfinderOperation {
+  unite,
+  minusFront,
+  intersect,
+  exclude,
+  divide,
+  trim,
+  merge,
+  crop,
+  outline,
+  minusBack,
+}
+
+extension _DesignPathfinderOperationUi on _DesignPathfinderOperation {
+  String get label {
+    switch (this) {
+      case _DesignPathfinderOperation.unite:
+        return 'Unite';
+      case _DesignPathfinderOperation.minusFront:
+        return 'Minus Front';
+      case _DesignPathfinderOperation.intersect:
+        return 'Intersect';
+      case _DesignPathfinderOperation.exclude:
+        return 'Exclude';
+      case _DesignPathfinderOperation.divide:
+        return 'Divide';
+      case _DesignPathfinderOperation.trim:
+        return 'Trim';
+      case _DesignPathfinderOperation.merge:
+        return 'Merge';
+      case _DesignPathfinderOperation.crop:
+        return 'Crop';
+      case _DesignPathfinderOperation.outline:
+        return 'Outline';
+      case _DesignPathfinderOperation.minusBack:
+        return 'Minus Back';
+    }
+  }
 }
 
 enum MarqueeSelectionMode { rectangular, elliptical, freehand, object }
@@ -6057,23 +6392,104 @@ extension _AiCanvasSizePresetUi on _AiCanvasSizePreset {
   }
 }
 
-enum _ProjectDpiPreset { dpi50, dpi100, dpi150, dpi300 }
+enum _ProjectCanvasPreset { post, portrait, reels, custom }
 
-extension _ProjectDpiPresetUi on _ProjectDpiPreset {
-  int get dpi {
+extension _ProjectCanvasPresetUi on _ProjectCanvasPreset {
+  String get label {
     switch (this) {
-      case _ProjectDpiPreset.dpi50:
-        return 50;
-      case _ProjectDpiPreset.dpi100:
-        return 100;
-      case _ProjectDpiPreset.dpi150:
-        return 150;
-      case _ProjectDpiPreset.dpi300:
-        return 300;
+      case _ProjectCanvasPreset.post:
+        return 'Post';
+      case _ProjectCanvasPreset.portrait:
+        return 'Portrait';
+      case _ProjectCanvasPreset.reels:
+        return 'Reels';
+      case _ProjectCanvasPreset.custom:
+        return 'Custom';
     }
   }
 
-  String get label => '$dpi DPI';
+  Size? sizeForUnit(_ProjectCanvasUnit unit) {
+    switch (this) {
+      case _ProjectCanvasPreset.post:
+        return unit == _ProjectCanvasUnit.mm
+            ? const Size(108, 108)
+            : const Size(1080, 1080);
+      case _ProjectCanvasPreset.portrait:
+        return unit == _ProjectCanvasUnit.mm
+            ? const Size(108, 135)
+            : const Size(1080, 1350);
+      case _ProjectCanvasPreset.reels:
+        return unit == _ProjectCanvasUnit.mm
+            ? const Size(108, 192)
+            : const Size(1080, 1920);
+      case _ProjectCanvasPreset.custom:
+        return null;
+    }
+  }
+
+  String summaryForUnit(_ProjectCanvasUnit unit) {
+    final Size? size = sizeForUnit(unit);
+    if (size == null) return label;
+    final String width = size.width.toStringAsFixed(0);
+    final String height = size.height.toStringAsFixed(0);
+    return '$label ($width×$height ${unit.label})';
+  }
+}
+
+enum _ProjectCanvasUnit { mm, px }
+
+extension _ProjectCanvasUnitUi on _ProjectCanvasUnit {
+  String get label {
+    switch (this) {
+      case _ProjectCanvasUnit.mm:
+        return 'mm';
+      case _ProjectCanvasUnit.px:
+        return 'px';
+    }
+  }
+}
+
+enum _ProjectDpiChoice { dpi100, dpi150, dpi300, custom }
+
+extension _ProjectDpiChoiceUi on _ProjectDpiChoice {
+  String get label {
+    switch (this) {
+      case _ProjectDpiChoice.dpi100:
+        return '100';
+      case _ProjectDpiChoice.dpi150:
+        return '150';
+      case _ProjectDpiChoice.dpi300:
+        return '300';
+      case _ProjectDpiChoice.custom:
+        return 'Custom';
+    }
+  }
+
+  int? get fixedDpi {
+    switch (this) {
+      case _ProjectDpiChoice.dpi100:
+        return 100;
+      case _ProjectDpiChoice.dpi150:
+        return 150;
+      case _ProjectDpiChoice.dpi300:
+        return 300;
+      case _ProjectDpiChoice.custom:
+        return null;
+    }
+  }
+}
+
+enum _ProjectWorkspaceMode { transparent, solid }
+
+extension _ProjectWorkspaceModeUi on _ProjectWorkspaceMode {
+  String get label {
+    switch (this) {
+      case _ProjectWorkspaceMode.transparent:
+        return 'Blank';
+      case _ProjectWorkspaceMode.solid:
+        return 'Solid';
+    }
+  }
 }
 
 enum _KieNanoBananaVersion { nanoBanana, nanoBananaPro, nanoBanana2 }
@@ -6558,7 +6974,7 @@ extension _KieAiImageModelUi on _KieAiImageModel {
       case _KieAiImageModel.seedream5Lite:
         return 'Seedream 5 Lite';
       case _KieAiImageModel.zImage:
-        return 'Z-Image';
+        return 'Fusion Pro';
     }
   }
 
@@ -6633,7 +7049,7 @@ extension _KieAiImageModelUi on _KieAiImageModel {
       case _KieAiImageModel.seedream5Lite:
         return 'Seed 5';
       case _KieAiImageModel.zImage:
-        return 'Z';
+        return 'Fusion';
     }
   }
 }
@@ -6858,6 +7274,172 @@ class _ElementsCatalogResponse {
   }
 }
 
+class _TemplatesCatalogItem {
+  const _TemplatesCatalogItem({
+    required this.id,
+    required this.fileUrl,
+    required this.sortOrder,
+    this.title,
+    this.mimeType,
+    this.width,
+    this.height,
+  });
+
+  final String id;
+  final String fileUrl;
+  final int sortOrder;
+  final String? title;
+  final String? mimeType;
+  final int? width;
+  final int? height;
+
+  factory _TemplatesCatalogItem.fromJson(Map<String, dynamic> json) {
+    return _TemplatesCatalogItem(
+      id: (json['id'] as String? ?? '').trim(),
+      fileUrl: (json['file_url'] as String? ?? '').trim(),
+      sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+      title: (json['title'] as String?)?.trim(),
+      mimeType: (json['mime_type'] as String?)?.trim(),
+      width: (json['width'] as num?)?.toInt(),
+      height: (json['height'] as num?)?.toInt(),
+    );
+  }
+}
+
+class _TemplatesCatalogResponse {
+  const _TemplatesCatalogResponse({
+    required this.templates,
+  });
+
+  final List<_TemplatesCatalogItem> templates;
+
+  factory _TemplatesCatalogResponse.fromJson(Map<String, dynamic> json) {
+    final List<dynamic> raw =
+        (json['templates'] as List<dynamic>?) ?? const <dynamic>[];
+    return _TemplatesCatalogResponse(
+      templates: raw
+          .whereType<Map>()
+          .map(
+            (entry) => _TemplatesCatalogItem.fromJson(
+              Map<String, dynamic>.from(
+                entry.map(
+                  (key, value) => MapEntry(key.toString(), value),
+                ),
+              ),
+            ),
+          )
+          .where((item) => item.id.isNotEmpty && item.fileUrl.isNotEmpty)
+          .toList(growable: false),
+    );
+  }
+}
+
+class _SvgLayerImportEntry {
+  const _SvgLayerImportEntry({
+    required this.name,
+    required this.image,
+    required this.centerInRenderSpace,
+  });
+
+  final String name;
+  final ui.Image image;
+  final Offset centerInRenderSpace;
+}
+
+class _SvgLayerRenderCandidate {
+  const _SvgLayerRenderCandidate({
+    required this.element,
+    required this.displayName,
+    required this.svgFragment,
+    required this.workspaceBounds,
+  });
+
+  final xml.XmlElement element;
+  final String displayName;
+  final String svgFragment;
+  final Rect? workspaceBounds;
+}
+
+class _SvgLayerRenderConfig {
+  const _SvgLayerRenderConfig({
+    required this.svgMarkup,
+    required this.widthPx,
+    required this.heightPx,
+    required this.originInRenderSpace,
+  });
+
+  final String svgMarkup;
+  final int widthPx;
+  final int heightPx;
+  final Offset originInRenderSpace;
+}
+
+class _SvgTemplateImportResult {
+  const _SvgTemplateImportResult({
+    required this.title,
+    required this.workspaceSize,
+    required this.renderWidth,
+    required this.renderHeight,
+    required this.layers,
+    required this.mergedFallback,
+    required this.downscaledForStability,
+    required this.groupedForPerformance,
+  });
+
+  final String title;
+  final Size workspaceSize;
+  final int renderWidth;
+  final int renderHeight;
+  final List<_SvgLayerImportEntry> layers;
+  final bool mergedFallback;
+  final bool downscaledForStability;
+  final bool groupedForPerformance;
+}
+
+class _TrimmedRgbaImage {
+  const _TrimmedRgbaImage({
+    required this.image,
+    required this.centerInSource,
+    required this.sourceWidth,
+    required this.sourceHeight,
+    required this.minX,
+    required this.minY,
+    required this.maxX,
+    required this.maxY,
+  });
+
+  final ui.Image image;
+  final Offset centerInSource;
+  final int sourceWidth;
+  final int sourceHeight;
+  final int minX;
+  final int minY;
+  final int maxX;
+  final int maxY;
+
+  double get sourceCoverageRatio {
+    if (sourceWidth <= 0 || sourceHeight <= 0) return 0;
+    final int coveredWidth = (maxX - minX + 1).clamp(0, sourceWidth);
+    final int coveredHeight = (maxY - minY + 1).clamp(0, sourceHeight);
+    final int coveredPixels = coveredWidth * coveredHeight;
+    final int totalPixels = sourceWidth * sourceHeight;
+    if (totalPixels <= 0) return 0;
+    return coveredPixels / totalPixels;
+  }
+}
+
+class _SvgImportSanitizeResult {
+  const _SvgImportSanitizeResult({
+    required this.svgText,
+    required this.changed,
+    required this.removedTextNodes,
+  });
+
+  final String svgText;
+  final bool changed;
+  final bool removedTextNodes;
+}
+
 class _ElementsAssetSelection {
   const _ElementsAssetSelection({
     required this.asset,
@@ -6870,6 +7452,40 @@ class _ElementsAssetSelection {
   final int? pointerId;
   final Offset? globalPosition;
   final bool isDragPickup;
+}
+
+class _UploadedSvgElementItem {
+  const _UploadedSvgElementItem({
+    required this.id,
+    required this.title,
+    required this.svgMarkup,
+    required this.renderWidth,
+    required this.renderHeight,
+    required this.sourceLabel,
+  });
+
+  final String id;
+  final String title;
+  final String svgMarkup;
+  final int renderWidth;
+  final int renderHeight;
+  final String sourceLabel;
+}
+
+class _UploadedSvgDocument {
+  const _UploadedSvgDocument({
+    required this.id,
+    required this.title,
+    required this.sourceLabel,
+    required this.previewSvgMarkup,
+    required this.elements,
+  });
+
+  final String id;
+  final String title;
+  final String sourceLabel;
+  final String previewSvgMarkup;
+  final List<_UploadedSvgElementItem> elements;
 }
 
 class _PendingElementPlacement {
@@ -6932,6 +7548,13 @@ const List<_ElementsCategory> _kDefaultElementsCategories = <_ElementsCategory>[
   _ElementsCategory(slug: 'decorative', name: 'Decorative', sortOrder: 50),
   _ElementsCategory(slug: 'symbols-icons', name: 'Symbols', sortOrder: 60),
 ];
+
+const String _kUploadedElementsCategorySlug = '__uploaded_local_svg__';
+const _ElementsCategory _kUploadedElementsCategory = _ElementsCategory(
+  slug: _kUploadedElementsCategorySlug,
+  name: 'Elements',
+  sortOrder: 9999,
+);
 
 class _UpscaleSheetResult {
   const _UpscaleSheetResult({
@@ -7012,18 +7635,24 @@ class _ElementsShimmerTileState extends State<_ElementsShimmerTile>
 
 class _ProjectCreateRequest {
   const _ProjectCreateRequest({
-    required this.sizePreset,
+    required this.workspaceSize,
+    required this.canvasSizeInUnit,
+    required this.canvasUnit,
     required this.dpi,
+    required this.workspaceMode,
+    required this.solidColor,
+    required this.sizeLabel,
+    required this.dpiLabel,
   });
 
-  final _AiCanvasSizePreset sizePreset;
-  final _ProjectDpiPreset dpi;
-
-  Size get projectSize {
-    final Size base = sizePreset.baseSize;
-    final double scale = dpi.dpi / 72.0;
-    return Size(base.width * scale, base.height * scale);
-  }
+  final Size workspaceSize;
+  final Size canvasSizeInUnit;
+  final _ProjectCanvasUnit canvasUnit;
+  final int dpi;
+  final _ProjectWorkspaceMode workspaceMode;
+  final Color solidColor;
+  final String sizeLabel;
+  final String dpiLabel;
 }
 
 class _AiImageGenerateRequest {
@@ -7771,6 +8400,10 @@ class _ExportSettings {
 }
 
 typedef _ExportProgressReporter = void Function(String label, double progress);
+typedef _SvgImportProgressReporter = void Function(
+  String label,
+  double progress,
+);
 
 extension PencilBrushTypeUi on PencilBrushType {
   String get label {
@@ -8054,6 +8687,9 @@ class EditorLayer {
     this.isVisible = true,
     this.isBackground = false,
     this.image,
+    this.vectorPicture,
+    this.vectorSvgMarkup,
+    this.vectorSourceSize,
     this.thumbnailBytes,
     this.solidColor,
     this.solidSize,
@@ -8097,6 +8733,11 @@ class EditorLayer {
     this.imagePngEffectStrength = 100.0,
     this.imagePngEffectDetails = 0.0,
     this.imagePngEffectThreshold = 0.0,
+    this.imageVectorFillEnabled = false,
+    this.imageVectorFillColor = const Color(0xFFFFFFFF),
+    this.imageVectorStrokeEnabled = false,
+    this.imageVectorStrokeColor = const Color(0xFF111827),
+    this.imageVectorStrokeWidth = 0.0,
     this.overlayShapeTypeKey,
     this.position,
     this.layerScale = 1.0,
@@ -8109,6 +8750,9 @@ class EditorLayer {
   final bool isVisible;
   final bool isBackground;
   final ui.Image? image;
+  final ui.Picture? vectorPicture;
+  final String? vectorSvgMarkup;
+  final Size? vectorSourceSize;
   final Uint8List? thumbnailBytes;
   final Color? solidColor;
   final Size? solidSize;
@@ -8152,6 +8796,11 @@ class EditorLayer {
   final double imagePngEffectStrength;
   final double imagePngEffectDetails;
   final double imagePngEffectThreshold;
+  final bool imageVectorFillEnabled;
+  final Color imageVectorFillColor;
+  final bool imageVectorStrokeEnabled;
+  final Color imageVectorStrokeColor;
+  final double imageVectorStrokeWidth;
   final String? overlayShapeTypeKey;
   final Offset? position;
   final double layerScale;
@@ -8164,6 +8813,9 @@ class EditorLayer {
     bool? isVisible,
     bool? isBackground,
     ui.Image? image,
+    ui.Picture? vectorPicture,
+    String? vectorSvgMarkup,
+    Size? vectorSourceSize,
     Uint8List? thumbnailBytes,
     Color? solidColor,
     Size? solidSize,
@@ -8207,6 +8859,11 @@ class EditorLayer {
     double? imagePngEffectStrength,
     double? imagePngEffectDetails,
     double? imagePngEffectThreshold,
+    bool? imageVectorFillEnabled,
+    Color? imageVectorFillColor,
+    bool? imageVectorStrokeEnabled,
+    Color? imageVectorStrokeColor,
+    double? imageVectorStrokeWidth,
     String? overlayShapeTypeKey,
     Offset? position,
     double? layerScale,
@@ -8219,6 +8876,9 @@ class EditorLayer {
       isVisible: isVisible ?? this.isVisible,
       isBackground: isBackground ?? this.isBackground,
       image: image ?? this.image,
+      vectorPicture: vectorPicture ?? this.vectorPicture,
+      vectorSvgMarkup: vectorSvgMarkup ?? this.vectorSvgMarkup,
+      vectorSourceSize: vectorSourceSize ?? this.vectorSourceSize,
       thumbnailBytes: thumbnailBytes ?? this.thumbnailBytes,
       solidColor: solidColor ?? this.solidColor,
       solidSize: solidSize ?? this.solidSize,
@@ -8268,6 +8928,15 @@ class EditorLayer {
           imagePngEffectDetails ?? this.imagePngEffectDetails,
       imagePngEffectThreshold:
           imagePngEffectThreshold ?? this.imagePngEffectThreshold,
+      imageVectorFillEnabled:
+          imageVectorFillEnabled ?? this.imageVectorFillEnabled,
+      imageVectorFillColor: imageVectorFillColor ?? this.imageVectorFillColor,
+      imageVectorStrokeEnabled:
+          imageVectorStrokeEnabled ?? this.imageVectorStrokeEnabled,
+      imageVectorStrokeColor:
+          imageVectorStrokeColor ?? this.imageVectorStrokeColor,
+      imageVectorStrokeWidth:
+          imageVectorStrokeWidth ?? this.imageVectorStrokeWidth,
       overlayShapeTypeKey: overlayShapeTypeKey ?? this.overlayShapeTypeKey,
       position: position ?? this.position,
       layerScale: layerScale ?? this.layerScale,
@@ -8474,6 +9143,56 @@ class _EditorSnapshot {
   final _TextFontLocale textFontLocale;
   final MarqueeSelectionMode marqueeMode;
   final MarqueeSelection? marqueeSelection;
+}
+
+class _EditorProjectSession {
+  const _EditorProjectSession({
+    required this.id,
+    required this.name,
+    required this.snapshot,
+    required this.undoStack,
+    required this.redoStack,
+    required this.updatedAtMs,
+  });
+
+  final String id;
+  final String name;
+  final _EditorSnapshot snapshot;
+  final List<_EditorSnapshot> undoStack;
+  final List<_EditorSnapshot> redoStack;
+  final int updatedAtMs;
+
+  _EditorProjectSession copyWith({
+    String? id,
+    String? name,
+    _EditorSnapshot? snapshot,
+    List<_EditorSnapshot>? undoStack,
+    List<_EditorSnapshot>? redoStack,
+    int? updatedAtMs,
+  }) {
+    return _EditorProjectSession(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      snapshot: snapshot ?? this.snapshot,
+      undoStack: undoStack ?? this.undoStack,
+      redoStack: redoStack ?? this.redoStack,
+      updatedAtMs: updatedAtMs ?? this.updatedAtMs,
+    );
+  }
+}
+
+class _ProjectLayerClipboard {
+  const _ProjectLayerClipboard({
+    required this.sourceProjectId,
+    required this.layer,
+    required this.copiedAtMs,
+    this.sourceWorkspaceSize,
+  });
+
+  final String sourceProjectId;
+  final EditorLayer layer;
+  final int copiedAtMs;
+  final Size? sourceWorkspaceSize;
 }
 
 const List<Color> _kPencilPalette = <Color>[
@@ -8832,6 +9551,10 @@ String _normalizeFontFamilyKey(String family) {
   return buffer.toString();
 }
 
+// Tracks Google Fonts families that finished runtime warmup so we can
+// avoid visual fallback flicker while switching fonts.
+final Set<String> _googleFontRuntimeReadyFamilies = <String>{};
+
 TextStyle _fontAwareTextStyle({
   String? family,
   Color? color,
@@ -8844,6 +9567,16 @@ TextStyle _fontAwareTextStyle({
   final Color? resolvedColor = foreground == null ? color : null;
   if (normalizedFamily.isNotEmpty &&
       _kGoogleFontFamilies.contains(normalizedFamily)) {
+    if (!_googleFontRuntimeReadyFamilies.contains(normalizedFamily)) {
+      return TextStyle(
+        color: resolvedColor,
+        foreground: foreground,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        height: height,
+        fontFamily: normalizedFamily,
+      );
+    }
     try {
       return GoogleFonts.getFont(
         normalizedFamily,
@@ -9002,7 +9735,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   static const double _topToolSpacing = 8;
   static const double _moveJoystickSize = 62;
   static const double _moveJoystickKnobSize = 24;
-  static const double _moveJoystickDockBottomGap = 12;
+  static const double _moveJoystickDockBottomGap = 18;
   static const double _moveJoystickGap = 26;
   static const double _moveJoystickKnobTravel = 14;
   static const double _cloneJoystickSize = 72;
@@ -9010,9 +9743,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   static const double _cloneJoystickKnobTravel = 17;
   static const double _cloneSetSourceDockButtonSize = 58;
   static const double _cloneJoystickHorizontalInset = 34;
-  static const double _moveJoystickMoveSensitivity = 2.0;
-  static const double _moveJoystickRotationSensitivity = 0.0046;
-  static const double _moveJoystickScaleSensitivity = 0.0036;
+  static const double _moveJoystickMoveSensitivity = 1.35;
+  static const double _moveJoystickRotationSensitivity = 0.0136;
+  static const double _moveJoystickScaleSensitivity = 0.0130;
+  static const double _moveJoystickRotationDeadZonePx = 0.00025;
+  static const double _moveJoystickScaleDeadZonePx = 0.0002;
+  static const double _moveJoystickRotationFlipGuard = 0.0018;
+  static const double _moveJoystickScaleFlipGuard = 0.0016;
+  static const double _moveJoystickRotationSmoothing = 0.52;
+  static const double _moveJoystickScaleSmoothing = 0.56;
   static const double _joystickMinLayerScale = 0.02;
   static const double _joystickMaxLayerScale = 20.0;
   static const Duration _cloneJoystickCursorIdleTimeout = Duration(seconds: 5);
@@ -9029,10 +9768,29 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _CropRatioPreset.ratio191x100,
   ];
   static const double _elementStandardLongestEdgeRatio = 0.14;
+  static const int _catalogPngUpscaleTriggerLongEdge = 1400;
+  static const int _catalogPngUpscaleTargetLongEdge = 2200;
+  static const int _catalogPngUpscaleMaxLongEdge = 3072;
+  static const int _uploadedSvgRasterTargetLongEdge = 2200;
+  static const int _uploadedSvgRasterMaxLongEdge = 4096;
+  static const int _uploadedSvgRasterMaxTotalPixels = 16000000;
+  static const int _templateSvgRenderMaxLongEdge = 8192;
+  static const int _templateSvgRenderMaxTotalPixels = 32000000;
+  static const int _templateSvgImportMaxTopLevelLayers = 1800;
+  static const int _templateSvgSplitMaxSourceChars = 8000000;
+  static const int _templateSvgSplitMaxDrawableNodes = 1800;
+  static const int _templateSvgSplitTargetRenderLayers = 260;
+  static const int _designGuideSampleMaxLongEdge = 900;
+  static const int _designGuideSampleMaxPixels = 950000;
+  static const int _designGuideMaxSegments = 2200;
+  static const int _designGuideMaxAnchors = 2600;
   static const double _pendingElementPreviewFallbackSize = 86;
   static const double _pendingElementPreviewMinSize = 62;
   static const double _pendingElementPreviewMaxSize = 122;
   static const double _pendingElementTapPlaceThresholdPx = 10;
+  static const String _designShapeLayerUrlPrefix = 'local://fusion-shape/';
+  static const Color _designShapeDefaultFillColor = Color(0xFFFFFFFF);
+  static const Color _designShapeDefaultStrokeColor = Color(0xFF111827);
   static const Color _bottomSheetSurface = Color(0xFF26292F);
   static const Color _floatingPanelSurface = Color(0xFF1E1F22);
   static const Color _floatingPanelSurfaceSolid = Color(0xFF1E1F22);
@@ -9067,6 +9825,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   final GlobalKey<_SkiaEditorCanvasState> _editorCanvasStateKey =
       GlobalKey<_SkiaEditorCanvasState>();
   final ScrollController _topToolsScrollController = ScrollController();
+  final ScrollController _projectTabsScrollController = ScrollController();
   final TextEditingController _textInputController = TextEditingController();
   final TextEditingController _textFontSearchController =
       TextEditingController();
@@ -9084,19 +9843,46 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   final ScrollController _overlayShadowColorStripController =
       ScrollController();
   final ScrollController _pngEffectColorStripController = ScrollController();
+  final ScrollController _vectorEffectColorStripController = ScrollController();
+  final ScrollController _designShapeFillColorStripController =
+      ScrollController();
+  final ScrollController _designShapeStrokeColorStripController =
+      ScrollController();
   final FocusNode _textInputFocusNode = FocusNode();
   List<EditorLayer> _layers = <EditorLayer>[];
   int _nextLayerId = 1;
+  final List<_EditorProjectSession> _projectSessions =
+      <_EditorProjectSession>[];
+  String? _activeProjectSessionId;
+  int _projectSessionSeed = 0;
+  _ProjectLayerClipboard? _projectLayerClipboard;
+  final Map<String, _DesignGuideLayerCache> _designGuideCacheByLayer =
+      <String, _DesignGuideLayerCache>{};
+  final Set<String> _designGuideBuildInFlight = <String>{};
+  int _designGuideBuildToken = 0;
+  String? _designGuideBuildingLayerId;
   bool _isPickingImage = false;
   bool _isExporting = false;
+  bool _isTemplateImporting = false;
+  double _templateImportProgress = 0.0;
+  String _templateImportStatus = 'Opening template...';
+  int _templateImportProgressUpdatedAtMs = 0;
   bool _isUpscaleLayerProcessing = false;
   bool _isUpscaleBottomSheetOpen = false;
   String? _upscaleEffectLayerId;
   EditorTool _activeTool = EditorTool.move;
+  _FusionDesignTopTool _designTopTool = _FusionDesignTopTool.pointer;
   bool _isToolEnabled = false;
   String? _selectedLayerId;
+  final Set<String> _designPathfinderSelectionIds = <String>{};
+  bool _isDesignPathfinderSelectionMode = false;
+  bool _isDesignPathfinderProcessing = false;
   List<_BrushStroke> _pencilStrokes = <_BrushStroke>[];
   _PendingElementPlacement? _pendingElementPlacement;
+  final List<_UploadedSvgDocument> _uploadedSvgDocuments =
+      <_UploadedSvgDocument>[];
+  int _uploadedSvgDocumentsSeed = 0;
+  int _uploadedSvgElementsSeed = 0;
   int? _pendingElementPlacementPointerId;
   Offset? _pendingElementPlacementGlobalPosition;
   Offset? _pendingElementPlacementPointerDownGlobalPosition;
@@ -9155,6 +9941,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       <String, _CatalogTextFont>{};
   final Map<String, Future<void>> _catalogTextFontLoadTasks =
       <String, Future<void>>{};
+  final Map<String, Future<void>> _googleTextFontLoadTasks =
+      <String, Future<void>>{};
   int _fontWarmupRequestToken = 0;
   int _textFontApplyRequestToken = 0;
   String? _pendingTextFontFamily;
@@ -9200,7 +9988,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   _EditorSnapshot? _imageAdjustFloatingBaseline;
   String? _imageAdjustFloatingLayerId;
   _ImageAdjustSection _activeImageAdjustSection = _ImageAdjustSection.light;
-  String? _pngEffectExpandedLayerId;
+  String? _pngEffectColorStripLayerId;
+  String? _vectorEffectColorStripLayerId;
+  String? _designShapeStrokeWidthDraftLayerId;
+  double? _designShapeStrokeWidthDraftValue;
+  final Map<String, int> _designShapeStyleUpdateTokens = <String, int>{};
   String? _inlineTextEditRequestLayerId;
   int _inlineTextEditRequestToken = 0;
   bool _isPhotoRoomRemoveBgFloatingOpen = false;
@@ -9228,7 +10020,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       <String, List<_SketchMaskStroke>>{};
   String _lastVectorPrompt = '';
   String _lastKiePrompt = '';
-  _KieAiImageModel _defaultKieAiImageModel = _KieAiImageModel.nanoBanana;
+  _KieAiImageModel _defaultKieAiImageModel = _KieAiImageModel.zImage;
   _KieNanoBananaVersion _defaultKieNanoVersion =
       _KieNanoBananaVersion.nanoBanana2;
   _KieNanoAspectRatio _defaultKieNanoAspectRatio = _KieNanoAspectRatio.square;
@@ -9270,6 +10062,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   Offset? _moveJoystickCurrentPosition;
   double? _rotateJoystickCurrentRotation;
   double? _scaleJoystickCurrentScale;
+  double _rotateJoystickFilteredDelta = 0;
+  double _scaleJoystickFilteredDelta = 0;
   int _creditNonce = 0;
   String _accountLifecycleStatus = 'unknown';
   double? _accountAvailableCredits;
@@ -9283,18 +10077,24 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   DateTime? _aiCanvasGeneratingStartedAt;
   Duration _aiCanvasGeneratingExpectedDuration = const Duration(seconds: 58);
   StreamSubscription<User?>? _authStateSubscription;
+  Timer? _textLayerUpdateThrottleTimer;
+  final Map<String, Map<String, dynamic>> _pendingThrottledTextLayerUpdates =
+      <String, Map<String, dynamic>>{};
+  static const Duration _textLayerUpdateThrottleInterval =
+      Duration(milliseconds: 34);
 
   @override
   void initState() {
     super.initState();
+    _bootstrapInitialProjectSession();
     _backendClient = WonderPicBackendClient();
     unawaited(_syncEditorAccountStateBestEffort());
     unawaited(_refreshLibraryItems(fromSetState: true));
     unawaited(_syncUploadedTextFontsForCurrentOwner(force: true));
-    unawaited(_syncCatalogTextFonts(force: true));
+    unawaited(_syncCatalogTextFonts(force: false));
     if (_kEnglishFontOptions.isNotEmpty) {
       unawaited(
-        _ensureFontReady(
+        _warmupFontReady(
           family: _kEnglishFontOptions.first.family,
           weight: 400,
         ),
@@ -9321,6 +10121,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _textInputFocusNode.addListener(_onTextFocusChanged);
     GestureBinding.instance.pointerRouter
         .addGlobalRoute(_onGlobalElementPlacementPointerEvent);
+    if (_isFusionDesignWorkspace) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scheduleDesignGuidePreparationForSelection();
+      });
+    }
   }
 
   @override
@@ -9332,12 +10138,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _textInputController.removeListener(_onTextInputChanged);
     _textInputFocusNode.removeListener(_onTextFocusChanged);
     _topToolsScrollController.dispose();
+    _projectTabsScrollController.dispose();
     _textFontsFloatingScrollController.dispose();
     _textColorFloatingStripController.dispose();
     _textStrokeFloatingStripController.dispose();
     _textShadowFloatingStripController.dispose();
     _overlayShadowColorStripController.dispose();
     _pngEffectColorStripController.dispose();
+    _vectorEffectColorStripController.dispose();
+    _designShapeFillColorStripController.dispose();
+    _designShapeStrokeColorStripController.dispose();
     _textFontSearchController.dispose();
     _sketchReplacePromptController.dispose();
     _replaceObjectPromptController.dispose();
@@ -9346,13 +10156,21 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _cloneJoystickCursorHideTimer?.cancel();
     _sketchReplaceBrushPreviewTimer?.cancel();
     _aiCanvasGeneratingProgressTimer?.cancel();
+    _textLayerUpdateThrottleTimer?.cancel();
+    _pendingThrottledTextLayerUpdates.clear();
     _textInputController.dispose();
     _textInputFocusNode.dispose();
     GestureBinding.instance.pointerRouter
         .removeGlobalRoute(_onGlobalElementPlacementPointerEvent);
     _pendingElementPlacementPositionNotifier.dispose();
+    _designGuideCacheByLayer.clear();
+    _designGuideBuildInFlight.clear();
+    _designShapeStyleUpdateTokens.clear();
     super.dispose();
   }
+
+  bool get _isFusionDesignWorkspace =>
+      widget.workspace == FusionWorkspaceApp.fusionDesign;
 
   String get _openAiApiKey {
     final String override = const String.fromEnvironment(
@@ -9700,7 +10518,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     }
 
     if (FirebaseAuth.instance.currentUser == null) {
-      throw StateError('Sign in is required to run this action.');
+      // Allow guest users to run generation directly; credit reservation
+      // remains enabled only for authenticated accounts.
+      debugPrint(
+        'Guest mode: skipping credit reservation for $operationType.',
+      );
+      return run();
     }
 
     final String operationId = _nextCreditOperationId(operationType);
@@ -9811,11 +10634,24 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     child: _buildTopTools(),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 5),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: _buildProjectTabsStrip(),
+                  ),
+                  const SizedBox(height: 7),
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(22),
-                      child: _buildEditorCanvasPanel(),
+                      // Keep exactly one canvas subtree mounted at a time.
+                      // AnimatedSwitcher keeps outgoing/incoming children
+                      // concurrently, which clashes with our GlobalKeys.
+                      child: KeyedSubtree(
+                        key: ValueKey<String>(
+                          _activeProjectSessionId ?? 'project_default',
+                        ),
+                        child: _buildEditorCanvasPanel(),
+                      ),
                     ),
                   ),
                   if (_isCropQuickPresetsVisible) ...[
@@ -9841,17 +10677,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               if (_isMoveJoystickDockVisible) _buildMoveJoystickDock(),
               if (_isCloneJoystickDockVisible) _buildCloneJoystickDock(),
               if (_isEraseJoystickDockVisible) _buildEraseJoystickDock(),
-              if (_isTextQuickDockVisible && !_isTextSettingsBottomSheetOpen)
-                _buildTextQuickActionsDock(),
-              if (_isTextFontsFloatingOpen && !_isTextSettingsBottomSheetOpen)
-                _buildTextFontsFloatingOverlay(),
-              if (_isTextWeightFloatingOpen && !_isTextSettingsBottomSheetOpen)
-                _buildTextWeightFloatingOverlay(),
-              if (_isTextColorFloatingOpen && !_isTextSettingsBottomSheetOpen)
-                _buildTextColorFloatingOverlay(),
-              if (_activeTextEffectFloatingPanel != null &&
-                  !_isTextSettingsBottomSheetOpen)
-                _buildTextEffectFloatingOverlay(),
               if (_isPencilSettingsFloatingOpen)
                 _buildPencilSettingsFloatingOverlay(),
               if (_isOverlayCutFloatingOpen) _buildOverlayCutFloatingOverlay(),
@@ -9859,6 +10684,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                 _buildOverlayImageShadowFloatingOverlay(),
               if (_isImageAdjustFloatingOpen)
                 _buildImageAdjustFloatingOverlay(),
+              if (_isElementPngColorStripVisible)
+                _buildElementPngColorStripOverlay(),
+              if (_isElementVectorColorStripVisible)
+                _buildElementVectorColorStripOverlay(),
               if (_isPhotoRoomRemoveBgFloatingOpen)
                 _buildPhotoRoomRemoveBgFloatingOverlay(),
               if (_isSketchReplaceFloatingOpen)
@@ -9867,6 +10696,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                 _buildReplaceObjectFloatingOverlay(),
               if (_pendingElementPlacement != null)
                 _buildPendingElementPlacementOverlay(),
+              if (_isTemplateImporting) _buildTemplateImportOverlay(),
               if (_isExporting) _buildExportingOverlay(),
             ],
           ),
@@ -9875,7 +10705,274 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     );
   }
 
+  Widget _buildProjectTabsStrip() {
+    final List<_EditorProjectSession> sessions =
+        List<_EditorProjectSession>.from(
+      _projectSessions,
+    );
+    final String? activeId = _activeProjectSessionId;
+    final bool canPasteClipboard = _canPasteProjectClipboardNow();
+    return SizedBox(
+      height: 31,
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              controller: _projectTabsScrollController,
+              scrollDirection: Axis.horizontal,
+              dragStartBehavior: DragStartBehavior.down,
+              physics: const BouncingScrollPhysics(
+                decelerationRate: ScrollDecelerationRate.fast,
+              ),
+              child: Row(
+                children: [
+                  for (int index = 0; index < sessions.length; index++) ...[
+                    _buildProjectTabChip(
+                      session: sessions[index],
+                      active: sessions[index].id == activeId,
+                    ),
+                    const SizedBox(width: 5),
+                  ],
+                  _buildProjectActionChip(
+                    icon: Icons.add_rounded,
+                    tooltip: 'New project',
+                    onTap: () => _createProjectSessionAndSwitch(),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (canPasteClipboard) ...[
+            const SizedBox(width: 6),
+            _buildProjectActionChip(
+              icon: Icons.content_paste_rounded,
+              tooltip: 'Paste copied layer',
+              onTap: _pasteProjectClipboardIntoActiveProject,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProjectTabChip({
+    required _EditorProjectSession session,
+    required bool active,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: active
+              ? const <Color>[
+                  Color(0x4DF8FAFF),
+                  Color(0x24FFFFFF),
+                ]
+              : const <Color>[
+                  Color(0x1FFFFFFF),
+                  Color(0x11000000),
+                ],
+        ),
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(
+          color: active ? const Color(0xC8F6FAFF) : const Color(0x2E8A939E),
+          width: active ? 0.95 : 0.52,
+        ),
+        boxShadow: active
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x31F7FBFF),
+                  blurRadius: 8,
+                  spreadRadius: 0.1,
+                  offset: Offset(0, 0),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _switchToProjectSession(session.id),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.layers_outlined,
+                size: 11.5,
+                color:
+                    active ? const Color(0xFFF9FCFF) : const Color(0xFFE2E5E9),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                session.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: active
+                      ? const Color(0xFFF9FCFF)
+                      : const Color(0xFFE2E5E9),
+                  fontSize: 11.2,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.04,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProjectActionChip({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: const Color(0x1AFFFFFF),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0x358A939E),
+                width: 0.58,
+              ),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              icon,
+              size: 16,
+              color: const Color(0xFFF3F3F2),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopTools() {
+    if (widget.workspace == FusionWorkspaceApp.fusionDesign) {
+      return _buildFusionDesignTopTools();
+    }
+    return _buildFusionPhotoTopTools();
+  }
+
+  Widget _buildFusionDesignTopTools() {
+    final List<_FusionDesignTopTool> tools = <_FusionDesignTopTool>[
+      _FusionDesignTopTool.pointer,
+      _FusionDesignTopTool.rectangle,
+      _FusionDesignTopTool.circle,
+      _FusionDesignTopTool.line,
+      _FusionDesignTopTool.pen,
+      _FusionDesignTopTool.node,
+      _FusionDesignTopTool.brush,
+      _FusionDesignTopTool.text,
+      _FusionDesignTopTool.gradient,
+    ];
+    return SizedBox(
+      height: 56,
+      child: SingleChildScrollView(
+        controller: _topToolsScrollController,
+        dragStartBehavior: DragStartBehavior.down,
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        physics: const _TopToolsSnapPhysics(
+          itemExtent: _topToolButtonSize + _topToolSpacing,
+          parent: BouncingScrollPhysics(
+            decelerationRate: ScrollDecelerationRate.fast,
+          ),
+        ),
+        child: Row(
+          children: [
+            for (int index = 0; index < tools.length; index++) ...[
+              _toolButton(
+                filled: _designTopTool == tools[index],
+                onTap: () => _selectFusionDesignTopTool(tools[index]),
+                customChild: tools[index] == _FusionDesignTopTool.pointer
+                    ? Transform.rotate(
+                        angle: -math.pi / 4,
+                        child: Icon(
+                          tools[index].icon,
+                          size: 18,
+                          color: _designTopTool == tools[index]
+                              ? kActiveAccentForeground
+                              : WonderPicEditorScreen._iconColor,
+                        ),
+                      )
+                    : Icon(
+                        tools[index].icon,
+                        size: 18,
+                        color: _designTopTool == tools[index]
+                            ? kActiveAccentForeground
+                            : WonderPicEditorScreen._iconColor,
+                      ),
+              ),
+              if (index < tools.length - 1)
+                const SizedBox(width: _topToolSpacing),
+            ],
+            const SizedBox(width: _topToolSpacing),
+            _toolButton(
+              filled: false,
+              onTap: _openToolSettingsSidebar,
+              customChild: const Icon(
+                Icons.tune_rounded,
+                size: 17,
+                color: WonderPicEditorScreen._iconColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _selectFusionDesignTopTool(_FusionDesignTopTool tool) {
+    if (!mounted) return;
+    final _DesignShapeKind? shapeKind = switch (tool) {
+      _FusionDesignTopTool.rectangle => _DesignShapeKind.rectangle,
+      _FusionDesignTopTool.circle => _DesignShapeKind.circle,
+      _FusionDesignTopTool.line => _DesignShapeKind.line,
+      _ => null,
+    };
+    setState(() {
+      _designTopTool = tool;
+      _designShapeStrokeWidthDraftLayerId = null;
+      _designShapeStrokeWidthDraftValue = null;
+      if (tool == _FusionDesignTopTool.pointer) {
+        _isToolEnabled = false;
+      }
+    });
+    _closeElementPngColorStripIfOpen();
+    _closeElementVectorColorStripIfOpen();
+    _closeToolSettingsSidebarIfOpen();
+    if (_isTextSettingsBottomSheetOpen && !_isTextSettingsBottomSheetClosing) {
+      _dismissTextSettingsBottomSheet(source: 'fusion_design_top_tool');
+    }
+    if (shapeKind != null) {
+      unawaited(_insertFusionDesignShapeLayer(shapeKind));
+      return;
+    }
+    if (tool != _FusionDesignTopTool.pointer) {
+      setState(() {
+        _isToolEnabled = false;
+      });
+    }
+  }
+
+  Widget _buildFusionPhotoTopTools() {
     final bool pointerModeActive = !_isToolEnabled;
     final bool canOpenTextSettings = _selectedTextLayer() != null;
     final bool textSettingsActive = _isToolEnabled &&
@@ -10034,6 +11131,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     if (_isToolEnabled) {
       _setActiveTool(_activeTool, toggleWhenSame: true);
     } else {
+      _closeElementPngColorStripIfOpen();
       _closeToolSettingsSidebarIfOpen();
       if (_isTextSettingsBottomSheetOpen &&
           !_isTextSettingsBottomSheetClosing) {
@@ -10095,8 +11193,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final EditorLayer? layer = _selectedLayer();
     if (layer == null || !layer.isVisible || layer.isBackground) return null;
     if (layer.type == EditorLayerType.image && layer.image == null) return null;
+    if (layer.type == EditorLayerType.vector &&
+        layer.vectorPicture == null &&
+        (layer.vectorSvgMarkup ?? '').trim().isEmpty) {
+      return null;
+    }
     if (layer.type == EditorLayerType.text ||
         layer.type == EditorLayerType.image ||
+        layer.type == EditorLayerType.vector ||
         layer.type == EditorLayerType.solid) {
       return layer;
     }
@@ -10270,13 +11374,32 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _markCloneJoystickActivity();
   }
 
+  Widget _buildJoystickDockShell({
+    required Widget child,
+    bool expanded = false,
+  }) {
+    final Widget shell = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      child: child,
+    );
+    return IgnorePointer(
+      ignoring: false,
+      child: expanded
+          ? SizedBox(
+              width: double.infinity,
+              child: shell,
+            )
+          : shell,
+    );
+  }
+
   Widget _buildCloneJoystickDock() {
     return Positioned(
       left: _cloneJoystickHorizontalInset,
       right: _cloneJoystickHorizontalInset,
       bottom: _bottomNavHeight + _moveJoystickDockBottomGap,
-      child: IgnorePointer(
-        ignoring: false,
+      child: _buildJoystickDockShell(
+        expanded: true,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -10365,8 +11488,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       left: _cloneJoystickHorizontalInset,
       right: _cloneJoystickHorizontalInset,
       bottom: _bottomNavHeight + _moveJoystickDockBottomGap,
-      child: IgnorePointer(
-        ignoring: false,
+      child: _buildJoystickDockShell(
+        expanded: true,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -10454,6 +11577,25 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       centered.dx / distance * knobTravel,
       centered.dy / distance * knobTravel,
     );
+  }
+
+  double _filteredJoystickDelta({
+    required double rawDelta,
+    required double previousFiltered,
+    required double deadZone,
+    required double flipGuard,
+    required double smoothing,
+  }) {
+    if (rawDelta.abs() <= deadZone) {
+      return 0;
+    }
+    double adjusted = rawDelta;
+    if (previousFiltered.abs() > deadZone &&
+        adjusted.sign != previousFiltered.sign &&
+        adjusted.abs() < flipGuard) {
+      return previousFiltered * 0.45;
+    }
+    return (previousFiltered * smoothing) + (adjusted * (1 - smoothing));
   }
 
   void _onMoveJoystickPanStart(DragStartDetails details) {
@@ -10549,6 +11691,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _rotateJoystickLayerId = layer.id;
       _rotateJoystickCurrentRotation = layer.layerRotation;
       _rotateJoystickOffset = offset;
+      _rotateJoystickFilteredDelta = 0;
     });
   }
 
@@ -10562,10 +11705,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       controlSize: _moveJoystickSize,
       knobTravel: _moveJoystickKnobTravel,
     );
-    final double delta = details.delta.dx * _moveJoystickRotationSensitivity;
+    final double rawDelta = details.delta.dx * _moveJoystickRotationSensitivity;
+    final double delta = _filteredJoystickDelta(
+      rawDelta: rawDelta,
+      previousFiltered: _rotateJoystickFilteredDelta,
+      deadZone: _moveJoystickRotationDeadZonePx,
+      flipGuard: _moveJoystickRotationFlipGuard,
+      smoothing: _moveJoystickRotationSmoothing,
+    );
     if (delta.abs() <= 0.0000001) {
       setState(() {
         _rotateJoystickOffset = offset;
+        _rotateJoystickFilteredDelta = 0;
       });
       return;
     }
@@ -10580,6 +11731,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _onLayerTransformChanged(layerId, layerRotation: nextRotation);
     setState(() {
       _rotateJoystickOffset = offset;
+      _rotateJoystickFilteredDelta = delta;
       // Keep the joystick baseline unsnapped so tiny deltas can accumulate
       // and escape the magnetic snap zone naturally.
       _rotateJoystickCurrentRotation = rawRotation;
@@ -10593,6 +11745,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _rotateJoystickOffset = Offset.zero;
       _rotateJoystickLayerId = null;
       _rotateJoystickCurrentRotation = null;
+      _rotateJoystickFilteredDelta = 0;
     });
     _maybeEndMoveJoystickTransformInteraction();
   }
@@ -10610,6 +11763,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _scaleJoystickLayerId = layer.id;
       _scaleJoystickCurrentScale = layer.layerScale;
       _scaleJoystickOffset = offset;
+      _scaleJoystickFilteredDelta = 0;
     });
   }
 
@@ -10623,10 +11777,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       controlSize: _moveJoystickSize,
       knobTravel: _moveJoystickKnobTravel,
     );
-    final double delta = details.delta.dx * _moveJoystickScaleSensitivity;
+    final double rawDelta = details.delta.dx * _moveJoystickScaleSensitivity;
+    final double delta = _filteredJoystickDelta(
+      rawDelta: rawDelta,
+      previousFiltered: _scaleJoystickFilteredDelta,
+      deadZone: _moveJoystickScaleDeadZonePx,
+      flipGuard: _moveJoystickScaleFlipGuard,
+      smoothing: _moveJoystickScaleSmoothing,
+    );
     if (delta.abs() <= 0.0000001) {
       setState(() {
         _scaleJoystickOffset = offset;
+        _scaleJoystickFilteredDelta = 0;
       });
       return;
     }
@@ -10639,6 +11801,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     setState(() {
       _scaleJoystickOffset = offset;
       _scaleJoystickCurrentScale = nextScale;
+      _scaleJoystickFilteredDelta = delta;
     });
   }
 
@@ -10648,6 +11811,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _scaleJoystickOffset = Offset.zero;
       _scaleJoystickLayerId = null;
       _scaleJoystickCurrentScale = null;
+      _scaleJoystickFilteredDelta = 0;
     });
     _maybeEndMoveJoystickTransformInteraction();
   }
@@ -10673,6 +11837,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _moveJoystickCurrentPosition = null;
     _rotateJoystickCurrentRotation = null;
     _scaleJoystickCurrentScale = null;
+    _rotateJoystickFilteredDelta = 0;
+    _scaleJoystickFilteredDelta = 0;
     _onTransformInteractionEnd();
   }
 
@@ -10681,45 +11847,49 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       left: 12,
       right: 12,
       bottom: _bottomNavHeight + _moveJoystickDockBottomGap,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildMoveJoystickControl(
-            icon: Icons.refresh_rounded,
-            offset: _rotateJoystickOffset,
-            active: _rotateJoystickLayerId != null,
-            controlSize: _moveJoystickSize,
-            knobSize: _moveJoystickKnobSize,
-            onPanStart: _onRotateJoystickPanStart,
-            onPanUpdate: _onRotateJoystickPanUpdate,
-            onPanEnd: (_) => _endRotateJoystickGesture(),
-            onPanCancel: _endRotateJoystickGesture,
+      child: Center(
+        child: _buildJoystickDockShell(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildMoveJoystickControl(
+                icon: Icons.refresh_rounded,
+                offset: _rotateJoystickOffset,
+                active: _rotateJoystickLayerId != null,
+                controlSize: _moveJoystickSize,
+                knobSize: _moveJoystickKnobSize,
+                onPanStart: _onRotateJoystickPanStart,
+                onPanUpdate: _onRotateJoystickPanUpdate,
+                onPanEnd: (_) => _endRotateJoystickGesture(),
+                onPanCancel: _endRotateJoystickGesture,
+              ),
+              const SizedBox(width: _moveJoystickGap),
+              _buildMoveJoystickControl(
+                icon: Icons.open_in_full_rounded,
+                offset: _scaleJoystickOffset,
+                active: _scaleJoystickLayerId != null,
+                controlSize: _moveJoystickSize,
+                knobSize: _moveJoystickKnobSize,
+                onPanStart: _onScaleJoystickPanStart,
+                onPanUpdate: _onScaleJoystickPanUpdate,
+                onPanEnd: (_) => _endScaleJoystickGesture(),
+                onPanCancel: _endScaleJoystickGesture,
+              ),
+              const SizedBox(width: _moveJoystickGap),
+              _buildMoveJoystickControl(
+                icon: Icons.open_with_rounded,
+                offset: _moveJoystickOffset,
+                active: _moveJoystickLayerId != null,
+                controlSize: _moveJoystickSize,
+                knobSize: _moveJoystickKnobSize,
+                onPanStart: _onMoveJoystickPanStart,
+                onPanUpdate: _onMoveJoystickPanUpdate,
+                onPanEnd: (_) => _endMoveJoystickGesture(),
+                onPanCancel: _endMoveJoystickGesture,
+              ),
+            ],
           ),
-          const SizedBox(width: _moveJoystickGap),
-          _buildMoveJoystickControl(
-            icon: Icons.open_in_full_rounded,
-            offset: _scaleJoystickOffset,
-            active: _scaleJoystickLayerId != null,
-            controlSize: _moveJoystickSize,
-            knobSize: _moveJoystickKnobSize,
-            onPanStart: _onScaleJoystickPanStart,
-            onPanUpdate: _onScaleJoystickPanUpdate,
-            onPanEnd: (_) => _endScaleJoystickGesture(),
-            onPanCancel: _endScaleJoystickGesture,
-          ),
-          const SizedBox(width: _moveJoystickGap),
-          _buildMoveJoystickControl(
-            icon: Icons.open_with_rounded,
-            offset: _moveJoystickOffset,
-            active: _moveJoystickLayerId != null,
-            controlSize: _moveJoystickSize,
-            knobSize: _moveJoystickKnobSize,
-            onPanStart: _onMoveJoystickPanStart,
-            onPanUpdate: _onMoveJoystickPanUpdate,
-            onPanEnd: (_) => _endMoveJoystickGesture(),
-            onPanCancel: _endMoveJoystickGesture,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -10737,7 +11907,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     required VoidCallback onPanCancel,
   }) {
     final Color ringColor =
-        active ? const Color(0x80FFFFFF) : const Color(0x4DFFFFFF);
+        active ? const Color(0x86FFFFFF) : const Color(0x4DFFFFFF);
+    final Color shellColor =
+        active ? const Color(0x4A111827) : const Color(0x34111827);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onPanStart: onPanStart,
@@ -10753,14 +11925,16 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: const Color(0x26FFFFFF),
+                  color: shellColor,
                   shape: BoxShape.circle,
-                  border: Border.all(color: ringColor, width: 1.2),
+                  border: Border.all(color: ringColor, width: 0.95),
                 ),
                 child: Icon(
                   icon,
                   size: iconSize,
-                  color: const Color(0x8AFFFFFF),
+                  color: active
+                      ? const Color(0xB0FFFFFF)
+                      : const Color(0x82FFFFFF),
                 ),
               ),
             ),
@@ -10772,14 +11946,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                 height: knobSize,
                 decoration: BoxDecoration(
                   color: active
-                      ? const Color(0x7AFFFFFF)
-                      : const Color(0x5AFFFFFF),
+                      ? const Color(0x74FFFFFF)
+                      : const Color(0x5BFFFFFF),
                   shape: BoxShape.circle,
                   border: Border.all(
                     color: active
-                        ? const Color(0xAAFFFFFF)
-                        : const Color(0x77FFFFFF),
-                    width: 1,
+                        ? const Color(0x98FFFFFF)
+                        : const Color(0x78FFFFFF),
+                    width: 0.9,
                   ),
                 ),
               ),
@@ -11077,6 +12251,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               onTextInlineEditStarted: _onTextInlineEditStarted,
               onTextInlineChanged: _onTextInlineChanged,
               onTextInlineEditFinished: _onTextInlineEditFinished,
+              enableDesignGuideEngine: _isFusionDesignWorkspace,
+              designGuideLayerCache: _activeDesignGuideLayerCache(),
               showUpscaleMagicEffect: _isUpscaleLayerProcessing,
               upscaleMagicLayerId: _upscaleEffectLayerId,
             ),
@@ -11429,6 +12605,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         _activeTool = tool;
         _isToolEnabled = true;
       }
+      _pngEffectColorStripLayerId = null;
+      _vectorEffectColorStripLayerId = null;
       if (!_isToolEnabled || tool != EditorTool.clone) {
         _isCloneSourceArmed = false;
         _isCloneBrushSelected = false;
@@ -13501,14 +14679,30 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         _activeTool == EditorTool.text &&
         _isTextSettingsDockEnabled;
     if (textToolIsActive) {
-      _setActiveTool(EditorTool.text);
+      _openTextSettingsBottomSheet(
+        initialTab: _TextSettingsBottomSheetTab.fonts,
+      );
       return;
     }
     _setActiveTool(EditorTool.text, toggleWhenSame: false);
     setState(() {
       _isTextSettingsDockEnabled = true;
     });
-    _openTextSettingsBottomSheet();
+    _openTextSettingsBottomSheet(
+      initialTab: _TextSettingsBottomSheetTab.fonts,
+    );
+  }
+
+  void _openTextSettingsBottomSheetForTab(_TextSettingsBottomSheetTab tab) {
+    if (_isTextSettingsBottomSheetClosing) return;
+    if (_selectedTextLayer() == null) return;
+    _setActiveTool(EditorTool.text, toggleWhenSame: false);
+    setState(() {
+      _isTextSettingsDockEnabled = true;
+      _resetTextQuickFloatingPanels(clearSearch: false);
+      _activeTextEffectFloatingPanel = null;
+    });
+    _openTextSettingsBottomSheet(initialTab: tab);
   }
 
   void _logTextSettingsSheetEvent(String event) {
@@ -13557,7 +14751,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     return true;
   }
 
-  Future<void> _openTextSettingsBottomSheet() async {
+  Future<void> _openTextSettingsBottomSheet({
+    _TextSettingsBottomSheetTab initialTab = _TextSettingsBottomSheetTab.fonts,
+  }) async {
     final EditorLayer? selectedLayer = _selectedTextLayer();
     if (selectedLayer == null) return;
     if (_isTextSettingsBottomSheetOpen ||
@@ -13569,10 +14765,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final ScaffoldState? scaffoldState = _scaffoldKey.currentState;
     if (scaffoldState == null) return;
     _logTextSettingsSheetEvent('open requested');
-    unawaited(_syncCatalogTextFonts(force: true));
+    unawaited(_syncCatalogTextFonts(force: false));
     _syncTextLocaleFromFamily(selectedLayer.textFontFamily);
 
-    _TextSettingsBottomSheetTab activeTab = _TextSettingsBottomSheetTab.fonts;
+    _TextSettingsBottomSheetTab activeTab = initialTab;
     _TextFontLocale locale = _textFontLocale;
     String query = '';
     final TextEditingController searchController = TextEditingController();
@@ -13625,17 +14821,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                   const double uiScale = 0.82;
                   double scaled(double value, {required double min}) =>
                       math.max(min, value * uiScale);
-
-                  final List<_TextFontOption> localeOptions =
-                      _fontOptionsForLocale(locale);
-                  final List<_TextFontOption> options =
-                      _filteredTextFontOptions(
-                    locale: locale,
-                    query: query,
-                  );
+                  final bool showFontBrowser =
+                      activeTab == _TextSettingsBottomSheetTab.fonts;
+                  final List<_TextFontOption> options = showFontBrowser
+                      ? _filteredTextFontOptions(
+                          locale: locale,
+                          query: query,
+                        )
+                      : const <_TextFontOption>[];
                   final String selectedFamily =
                       selectedTextLayer.textFontFamily ??
-                          localeOptions.first.family;
+                          (locale == _TextFontLocale.arabic
+                              ? _kArabicFontOptions.first.family
+                              : _kEnglishFontOptions.first.family);
                   final int selectedIndexRaw =
                       _effectiveSelectedFontOptionIndex(
                     options: options,
@@ -13681,8 +14879,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                   final double cardHeight = scaled(47, min: 38);
                   final double cardSpacing = scaled(6, min: 4);
                   final double itemExtent = cardHeight + cardSpacing;
-                  final bool showFontBrowser =
-                      activeTab == _TextSettingsBottomSheetTab.fonts;
                   const double colorPickerScale = 0.94;
                   const double effectSliderScale = 0.86;
                   final double bottomSafeInset =
@@ -13864,7 +15060,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                   textColor: color,
                                   recordHistory: false,
                                 );
-                                modalSetState(() {});
                               },
                             ),
                           ),
@@ -13880,6 +15075,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                 '${selectedTextOpacity.toStringAsFixed(0)}%',
                             scale: effectSliderScale,
                             onChanged: (value) {
+                              _queueThrottledTextLayerUpdate(
+                                selectedTextLayer.id,
+                                textOpacity: value,
+                                recordHistory: false,
+                              );
+                              modalSetState(() {});
+                            },
+                            onChangeEnd: (value) {
+                              _drainThrottledTextLayerUpdates(
+                                layerId: selectedTextLayer.id,
+                              );
                               _updateTextLayer(
                                 selectedTextLayer.id,
                                 textOpacity: value,
@@ -13904,6 +15110,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                     selectedStrokeWidth.toStringAsFixed(1),
                                 scale: effectSliderScale,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textStrokeWidth: value,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textStrokeWidth: value,
@@ -13930,7 +15147,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                       textStrokeColor: color,
                                       recordHistory: false,
                                     );
-                                    modalSetState(() {});
                                   },
                                 ),
                               ),
@@ -13952,6 +15168,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                     '${selectedShadowOpacity.toStringAsFixed(0)}%',
                                 scale: effectSliderScale,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textShadowOpacity: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textShadowOpacity: value,
@@ -13971,6 +15199,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                     selectedShadowBlur.toStringAsFixed(1),
                                 scale: effectSliderScale,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textShadowBlur: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textShadowBlur: value,
@@ -13992,6 +15232,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                 ),
                                 scale: effectSliderScale,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textShadowOffsetY: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textShadowOffsetY: value,
@@ -14013,6 +15265,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                 ),
                                 scale: effectSliderScale,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textShadowOffsetX: value,
+                                    textShadowSpread: 0,
+                                    recordHistory: false,
+                                  );
+                                  modalSetState(() {});
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textShadowOffsetX: value,
@@ -14040,7 +15304,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                       textShadowColor: color,
                                       recordHistory: false,
                                     );
-                                    modalSetState(() {});
                                   },
                                 ),
                               ),
@@ -14060,6 +15323,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                             ),
                             scale: effectSliderScale,
                             onChanged: (value) {
+                              _queueThrottledTextLayerUpdate(
+                                selectedTextLayer.id,
+                                textBend: value,
+                                recordHistory: false,
+                              );
+                              modalSetState(() {});
+                            },
+                            onChangeEnd: (value) {
+                              _drainThrottledTextLayerUpdates(
+                                layerId: selectedTextLayer.id,
+                              );
                               _updateTextLayer(
                                 selectedTextLayer.id,
                                 textBend: value,
@@ -14485,8 +15759,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                                 duration: const Duration(milliseconds: 260),
                                 reverseDuration:
                                     const Duration(milliseconds: 200),
-                                switchInCurve:
-                                    const Cubic(0.18, 0.9, 0.24, 1.08),
+                                switchInCurve: Curves.easeOutCubic,
                                 switchOutCurve: Curves.easeInCubic,
                                 transitionBuilder: (child, animation) {
                                   final Animation<double> fade =
@@ -14604,6 +15877,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _onCanvasTapped() {
+    if (_pngEffectColorStripLayerId != null ||
+        _vectorEffectColorStripLayerId != null) {
+      setState(() {
+        _pngEffectColorStripLayerId = null;
+        _vectorEffectColorStripLayerId = null;
+      });
+    }
     if (!_isTextSettingsBottomSheetOpen) return;
     _logTextSettingsSheetEvent('canvas tap outside sheet');
     _dismissTextSettingsBottomSheet(source: 'outside_tap');
@@ -14764,7 +16044,23 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _openSketchReplaceFloatingPanel();
   }
 
+  void _closeElementPngColorStripIfOpen() {
+    if (_pngEffectColorStripLayerId == null) return;
+    setState(() {
+      _pngEffectColorStripLayerId = null;
+    });
+  }
+
+  void _closeElementVectorColorStripIfOpen() {
+    if (_vectorEffectColorStripLayerId == null) return;
+    setState(() {
+      _vectorEffectColorStripLayerId = null;
+    });
+  }
+
   void _openMainSidebar() {
+    _closeElementPngColorStripIfOpen();
+    _closeElementVectorColorStripIfOpen();
     if ((_isAccountHubSidebarMode != true || _isAccountHubSettingsPage) &&
         mounted) {
       setState(() {
@@ -14779,6 +16075,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _openToolSettingsSidebar() {
+    _closeElementPngColorStripIfOpen();
+    _closeElementVectorColorStripIfOpen();
     if (_isToolEnabled &&
         _activeTool == EditorTool.clone &&
         _selectedImageLayer() != null) {
@@ -14987,8 +16285,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   int _sidebarProjectCount() {
-    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
-    return workspace == null ? 0 : 1;
+    return _projectSessions.isEmpty ? 1 : _projectSessions.length;
   }
 
   int _sidebarLibraryImageCount() {
@@ -15020,7 +16317,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   String _sidebarProjectActivityLabel() {
     final int projects = _sidebarProjectCount();
     if (projects == 0) return 'No project activity yet.';
-    if (projects == 1) return '1 active project now.';
+    if (projects == 1) return '${_activeProjectSessionName()} is active now.';
     return '$projects active projects now.';
   }
 
@@ -15546,6 +16843,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   EditorLayer? _selectedSidebarLayerContext() {
+    if (_isFusionDesignWorkspace && _hasDesignPathfinderSelection) {
+      final EditorLayer? anchor = _designPathfinderAnchorLayer();
+      if (anchor != null) return anchor;
+    }
     final EditorLayer? selectedLayer = _selectedLayer();
     if (selectedLayer == null || !selectedLayer.isVisible) {
       return null;
@@ -15554,6 +16855,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   String _toolSettingsTitle() {
+    if (_isFusionDesignWorkspace && _hasDesignPathfinderSelection) {
+      return 'Pathfinder Shape Settings';
+    }
     final EditorLayer? selectedLayer = _selectedSidebarLayerContext();
     final EditorTool? resolved = _resolvedSettingsTool();
     switch (resolved) {
@@ -15589,6 +16893,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             selectedLayer.isBackground) {
           return 'Background Layer Settings';
         }
+        if (_isFusionDesignShapeLayer(selectedLayer)) {
+          return 'Shape Layer Settings';
+        }
         if (selectedLayer.type == EditorLayerType.image &&
             !selectedLayer.isBackground) {
           return 'Overlay Layer Settings';
@@ -15600,6 +16907,19 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   Widget _buildToolSettingsContent() {
+    if (_isFusionDesignWorkspace && _hasDesignPathfinderSelection) {
+      final EditorLayer? anchor = _designPathfinderAnchorLayer();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildDesignPathfinderSettingsPanel(),
+          if (anchor != null) ...[
+            const SizedBox(height: 10),
+            _buildFusionDesignShapeSettingsPanel(anchor),
+          ],
+        ],
+      );
+    }
     final EditorLayer? selectedLayer = _selectedSidebarLayerContext();
     final EditorTool? resolved = _resolvedSettingsTool();
     switch (resolved) {
@@ -15643,6 +16963,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         }
         if (selectedLayer.type == EditorLayerType.image) {
           return _buildImageLayerSettingsPanel(selectedLayer);
+        }
+        if (selectedLayer.type == EditorLayerType.vector) {
+          return _buildVectorLayerSettingsPanel(selectedLayer);
         }
         if (selectedLayer.type == EditorLayerType.text) {
           return _buildTextSettingsPanel();
@@ -15691,6 +17014,395 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
 
   void _onCropCommitRequestedFromCanvas() {
     unawaited(_applyCropFloatingPanel());
+  }
+
+  void _bootstrapInitialProjectSession() {
+    if (_projectSessions.isNotEmpty) return;
+    final String id = _nextProjectSessionId();
+    final String name = _nextProjectDisplayName();
+    _projectSessions.add(
+      _captureCurrentProjectSession(
+        id: id,
+        name: name,
+      ),
+    );
+    _activeProjectSessionId = id;
+  }
+
+  String _nextProjectSessionId() {
+    _projectSessionSeed += 1;
+    return 'project_$_projectSessionSeed';
+  }
+
+  String _nextProjectDisplayName() {
+    final Set<String> used = _projectSessions
+        .map((session) => session.name.trim().toLowerCase())
+        .toSet();
+    int index = 1;
+    while (used.contains('project $index')) {
+      index++;
+    }
+    return 'Project $index';
+  }
+
+  _EditorProjectSession _captureCurrentProjectSession({
+    required String id,
+    required String name,
+  }) {
+    return _EditorProjectSession(
+      id: id,
+      name: name,
+      snapshot: _captureSnapshot(),
+      undoStack: List<_EditorSnapshot>.from(_undoStack),
+      redoStack: List<_EditorSnapshot>.from(_redoStack),
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  void _persistActiveProjectSessionState() {
+    final String? activeId = _activeProjectSessionId;
+    if (activeId == null) return;
+    final int index =
+        _projectSessions.indexWhere((session) => session.id == activeId);
+    if (index < 0) return;
+    final _EditorProjectSession current = _projectSessions[index];
+    _projectSessions[index] = _captureCurrentProjectSession(
+      id: current.id,
+      name: current.name,
+    );
+  }
+
+  bool _isProjectSwitchOrCreateBlocked({bool showMessage = true}) {
+    if (_isAiCanvasGenerating ||
+        _isExpandGenerating ||
+        _isUpscaleLayerProcessing ||
+        _isExporting ||
+        _isPhotoRoomRemoveBgProcessing ||
+        _isSketchReplaceProcessing ||
+        _isReplaceObjectProcessing) {
+      if (showMessage) {
+        _showExportMessage(
+          'Wait for the current operation to finish before changing project.',
+          isError: true,
+        );
+      }
+      return true;
+    }
+    if (_isTextSettingsBottomSheetOpen ||
+        _isTextSettingsBottomSheetClosing ||
+        _isMarqueeSettingsBottomSheetOpen ||
+        _isCloneSettingsBottomSheetOpen ||
+        _isBlurSettingsBottomSheetOpen ||
+        _isUpscaleBottomSheetOpen) {
+      if (showMessage) {
+        _showExportMessage(
+          'Close the active bottom sheet first, then switch project.',
+          isError: true,
+        );
+      }
+      return true;
+    }
+    return false;
+  }
+
+  _EditorSnapshot _buildNewProjectSnapshot({
+    Size? workspaceSize,
+  }) {
+    final bool hasWorkspace = workspaceSize != null;
+    const String backgroundLayerId = 'layer_1';
+    final List<EditorLayer> layers = hasWorkspace
+        ? <EditorLayer>[
+            EditorLayer(
+              id: backgroundLayerId,
+              name: 'Background',
+              type: EditorLayerType.solid,
+              isVisible: true,
+              isBackground: true,
+              solidColor: const Color(0xFFFFFFFF),
+              solidSize: workspaceSize,
+            ),
+          ]
+        : <EditorLayer>[];
+    return _EditorSnapshot(
+      layers: layers,
+      pencilStrokes: <_BrushStroke>[],
+      selectedLayerId: hasWorkspace ? backgroundLayerId : null,
+      activeTool: EditorTool.move,
+      isToolEnabled: false,
+      nextLayerId: hasWorkspace ? 2 : 1,
+      isCloneSourceArmed: false,
+      isCloneBrushSelected: false,
+      isCloneEraseSelected: false,
+      textFontLocale: _textFontLocale,
+      marqueeMode: _marqueeMode,
+      marqueeSelection: null,
+    );
+  }
+
+  void _createProjectSessionAndSwitch({
+    Size? workspaceSize,
+  }) {
+    if (_isProjectSwitchOrCreateBlocked()) return;
+    _persistActiveProjectSessionState();
+
+    final String id = _nextProjectSessionId();
+    final String name = _nextProjectDisplayName();
+    final _EditorProjectSession session = _EditorProjectSession(
+      id: id,
+      name: name,
+      snapshot: _buildNewProjectSnapshot(workspaceSize: workspaceSize),
+      undoStack: <_EditorSnapshot>[],
+      redoStack: <_EditorSnapshot>[],
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    setState(() {
+      _projectSessions.add(session);
+      _undoStack.clear();
+      _redoStack.clear();
+      _activeProjectSessionId = id;
+    });
+    _applySnapshot(session.snapshot);
+    _resetMoveJoystickControls();
+    _closeToolSettingsSidebarIfOpen();
+    _showExportMessage('Opened $name.');
+  }
+
+  void _switchToProjectSession(String sessionId) {
+    if (sessionId == _activeProjectSessionId) return;
+    if (_isProjectSwitchOrCreateBlocked()) return;
+    final int index =
+        _projectSessions.indexWhere((session) => session.id == sessionId);
+    if (index < 0) return;
+    _persistActiveProjectSessionState();
+    final _EditorProjectSession target = _projectSessions[index];
+    _cloneBrushPreviewTimer?.cancel();
+    _eraseBrushPreviewTimer?.cancel();
+    _cloneJoystickCursorHideTimer?.cancel();
+    _sketchReplaceBrushPreviewTimer?.cancel();
+    _applySnapshot(target.snapshot);
+    _resetMoveJoystickControls();
+    _closeToolSettingsSidebarIfOpen();
+    setState(() {
+      _activeProjectSessionId = target.id;
+      _undoStack
+        ..clear()
+        ..addAll(target.undoStack);
+      _redoStack
+        ..clear()
+        ..addAll(target.redoStack);
+      _isMarqueeSettingsBottomSheetOpen = false;
+      _isCloneSettingsBottomSheetOpen = false;
+      _isBlurSettingsBottomSheetOpen = false;
+      _isUpscaleBottomSheetOpen = false;
+      _isTextSettingsBottomSheetOpen = false;
+      _isTextSettingsBottomSheetClosing = false;
+      _isTextSettingsBottomSheetDismissPending = false;
+      _textSettingsSheetContext = null;
+      _textSettingsBottomSheetGlobalRect = null;
+      _textSettingsBottomSheetController = null;
+      _pngEffectColorStripLayerId = null;
+      _vectorEffectColorStripLayerId = null;
+    });
+  }
+
+  String _activeProjectSessionName() {
+    final String? activeId = _activeProjectSessionId;
+    if (activeId == null) return 'Project';
+    final int index =
+        _projectSessions.indexWhere((session) => session.id == activeId);
+    if (index < 0) return 'Project';
+    return _projectSessions[index].name;
+  }
+
+  String _buildDisplayLayerName(
+    String raw, {
+    required String fallback,
+    int maxLength = 42,
+  }) {
+    final String compact = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (compact.isEmpty) return fallback;
+    if (compact.length <= maxLength) return compact;
+    return '${compact.substring(0, maxLength)}...';
+  }
+
+  String _buildTextLayerName(String textValue) {
+    return _buildDisplayLayerName(
+      textValue,
+      fallback: 'Text',
+    );
+  }
+
+  String _buildVectorLayerName(String title) {
+    return _buildDisplayLayerName(
+      title,
+      fallback: 'Vector Element',
+    );
+  }
+
+  String _buildUniqueLayerNameForList(
+    String preferred,
+    List<EditorLayer> layers, {
+    String? excludeLayerId,
+  }) {
+    bool hasConflict(String candidate) {
+      return layers.any(
+        (entry) => entry.id != excludeLayerId && entry.name == candidate,
+      );
+    }
+
+    final String base = preferred.trim().isEmpty ? 'Layer' : preferred.trim();
+    if (!hasConflict(base)) {
+      return base;
+    }
+    int suffix = 2;
+    while (hasConflict('$base $suffix')) {
+      suffix++;
+    }
+    return '$base $suffix';
+  }
+
+  void _copyLayerToProjectClipboard(String layerId) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final EditorLayer source = _layers[index];
+    if (source.isBackground) {
+      _showExportMessage(
+        'Background layer copy across projects is disabled.',
+        isError: true,
+      );
+      return;
+    }
+    if (source.type == EditorLayerType.image && source.image == null) {
+      _showExportMessage(
+        'This image layer has no source image to copy.',
+        isError: true,
+      );
+      return;
+    }
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspace == null ? null : _workspaceSourceSize(workspace);
+    final Uint8List? thumbnail = source.thumbnailBytes == null
+        ? null
+        : Uint8List.fromList(source.thumbnailBytes!);
+    final EditorLayer clipboardLayer = source.copyWith(
+      thumbnailBytes: thumbnail,
+    );
+    setState(() {
+      _projectLayerClipboard = _ProjectLayerClipboard(
+        sourceProjectId: _activeProjectSessionId ?? '',
+        layer: clipboardLayer,
+        copiedAtMs: DateTime.now().millisecondsSinceEpoch,
+        sourceWorkspaceSize: workspaceSize,
+      );
+    });
+    _showExportMessage('Layer copied. Switch project then press Paste.');
+  }
+
+  bool _canPasteProjectClipboardNow() {
+    final _ProjectLayerClipboard? clipboard = _projectLayerClipboard;
+    if (clipboard == null) return false;
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspace == null ? null : _workspaceSourceSize(workspace);
+    return workspaceSize != null &&
+        workspaceSize.width > 0 &&
+        workspaceSize.height > 0;
+  }
+
+  void _pasteProjectClipboardIntoActiveProject() {
+    final _ProjectLayerClipboard? clipboard = _projectLayerClipboard;
+    if (clipboard == null) {
+      _showExportMessage('Copy a layer first.', isError: true);
+      return;
+    }
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspace == null ? null : _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      _showExportMessage(
+        'Create a project workspace first before pasting.',
+        isError: true,
+      );
+      return;
+    }
+    final EditorLayer source = clipboard.layer;
+    if (source.type == EditorLayerType.image && source.image == null) {
+      _showExportMessage('Clipboard layer image is not available.',
+          isError: true);
+      return;
+    }
+    final Size? sourceWorkspaceSize = clipboard.sourceWorkspaceSize;
+    final Offset defaultCenter =
+        Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+    Offset pastedPosition = defaultCenter;
+    if (source.position != null &&
+        sourceWorkspaceSize != null &&
+        sourceWorkspaceSize.width > 0 &&
+        sourceWorkspaceSize.height > 0) {
+      pastedPosition = Offset(
+        (source.position!.dx / sourceWorkspaceSize.width) * workspaceSize.width,
+        (source.position!.dy / sourceWorkspaceSize.height) *
+            workspaceSize.height,
+      );
+    }
+    pastedPosition =
+        _clampSourcePositionToWorkspace(pastedPosition, workspaceSize);
+
+    double pastedScale = source.layerScale;
+    double? pastedFontSize = source.textFontSize;
+    if (sourceWorkspaceSize != null &&
+        sourceWorkspaceSize.width > 0 &&
+        sourceWorkspaceSize.height > 0) {
+      final double sourceLongest =
+          math.max(sourceWorkspaceSize.width, sourceWorkspaceSize.height);
+      final double targetLongest =
+          math.max(workspaceSize.width, workspaceSize.height);
+      if (sourceLongest > 0 && targetLongest > 0) {
+        final double ratio = targetLongest / sourceLongest;
+        pastedScale = (source.layerScale * ratio)
+            .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
+            .toDouble();
+        if (pastedFontSize != null) {
+          pastedFontSize =
+              (pastedFontSize * ratio).clamp(4.0, 420.0).toDouble();
+        }
+      }
+    }
+
+    final Uint8List? pastedThumbnail = source.thumbnailBytes == null
+        ? null
+        : Uint8List.fromList(source.thumbnailBytes!);
+    final String newId = 'layer_${_nextLayerId++}';
+    final String pastedName = _buildUniqueLayerNameForList(
+      source.name.trim().isEmpty ? '${source.type.label} Layer' : source.name,
+      _layers,
+    );
+    final EditorLayer pasted = source.copyWith(
+      id: newId,
+      name: pastedName,
+      isVisible: true,
+      isBackground: false,
+      position: pastedPosition,
+      layerScale: pastedScale,
+      textFontSize: pastedFontSize,
+      thumbnailBytes: pastedThumbnail,
+    );
+
+    _pushUndoSnapshot();
+    setState(() {
+      _layers = <EditorLayer>[..._layers, pasted];
+      _selectedLayerId = newId;
+      _marqueeSelection = null;
+    });
+    _showExportMessage(
+      clipboard.sourceProjectId == (_activeProjectSessionId ?? '')
+          ? 'Layer pasted.'
+          : 'Layer pasted from another project.',
+    );
   }
 
   bool get _canUndo => _undoStack.isNotEmpty;
@@ -15762,6 +17474,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _applySnapshot(_EditorSnapshot snapshot) {
+    if (_isFusionDesignWorkspace) {
+      _clearDesignGuideCachesForSnapshot();
+    }
     setState(() {
       _layers = List<EditorLayer>.from(snapshot.layers);
       _pencilStrokes = _cloneBrushStrokes(snapshot.pencilStrokes);
@@ -15775,6 +17490,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _textFontLocale = snapshot.textFontLocale;
       _marqueeMode = snapshot.marqueeMode;
       _marqueeSelection = snapshot.marqueeSelection;
+      _designPathfinderSelectionIds.clear();
+      _isDesignPathfinderSelectionMode = false;
+      _isDesignPathfinderProcessing = false;
       _activeTextEffectFloatingPanel = null;
       _isPencilSettingsFloatingOpen = false;
       _pencilSettingsFloatingBaseline = null;
@@ -15803,6 +17521,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _isTextEditHistoryCaptured = false;
     });
     _syncTextInputFromSelectedLayer();
+    if (_isFusionDesignWorkspace) {
+      _scheduleDesignGuidePreparationForSelection(force: true);
+    }
   }
 
   void _onPencilStrokeCommitted(_BrushStroke stroke) {
@@ -16114,6 +17835,335 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     return layer;
   }
 
+  double _designGuidePackedDouble(double value) {
+    if (!value.isFinite) return 0;
+    return (value * 1000).roundToDouble();
+  }
+
+  int _designGuideLayerFingerprint(EditorLayer layer) {
+    int hash = 17;
+    hash = (hash * 31) ^ layer.id.hashCode;
+    hash = (hash * 31) ^ layer.type.index;
+    hash = (hash * 31) ^ (_designGuidePackedDouble(layer.layerScale).toInt());
+    hash =
+        (hash * 31) ^ (_designGuidePackedDouble(layer.layerRotation).toInt());
+    final Offset? position = layer.position;
+    if (position != null) {
+      hash = (hash * 31) ^ (_designGuidePackedDouble(position.dx).toInt());
+      hash = (hash * 31) ^ (_designGuidePackedDouble(position.dy).toInt());
+    }
+    if (layer.type == EditorLayerType.image && layer.image != null) {
+      final ui.Image image = layer.image!;
+      hash = (hash * 31) ^ image.width;
+      hash = (hash * 31) ^ image.height;
+      hash = (hash * 31) ^ identityHashCode(image);
+      hash = (hash * 31) ^ (layer.imagePngEffectEnabled ? 1 : 0);
+      hash = (hash * 31) ^ (layer.imageVectorFillEnabled ? 1 : 0);
+    } else if (layer.type == EditorLayerType.vector &&
+        layer.vectorPicture != null) {
+      hash = (hash * 31) ^ identityHashCode(layer.vectorPicture!);
+      final Size sourceSize = _sanitizeVectorSourceSize(
+        preferred: layer.vectorSourceSize,
+        fallbackSize: layer.solidSize,
+      );
+      hash = (hash * 31) ^ sourceSize.width.round();
+      hash = (hash * 31) ^ sourceSize.height.round();
+      hash = (hash * 31) ^ (layer.imageVectorFillEnabled ? 1 : 0);
+      hash = (hash * 31) ^ (layer.imageVectorStrokeEnabled ? 1 : 0);
+    }
+    return hash;
+  }
+
+  bool _layerSupportsDesignGuides(EditorLayer layer) {
+    if (!_isFusionDesignWorkspace) return false;
+    if (!layer.isVisible) return false;
+    switch (layer.type) {
+      case EditorLayerType.image:
+        return layer.image != null;
+      case EditorLayerType.vector:
+        return layer.vectorPicture != null;
+      case EditorLayerType.text:
+      case EditorLayerType.mask:
+      case EditorLayerType.solid:
+        return false;
+    }
+  }
+
+  _DesignGuideLayerCache? _activeDesignGuideLayerCache() {
+    if (!_isFusionDesignWorkspace) return null;
+    final EditorLayer? selected = _selectedLayer();
+    if (selected == null || !_layerSupportsDesignGuides(selected)) {
+      return null;
+    }
+    final _DesignGuideLayerCache? cache = _designGuideCacheByLayer[selected.id];
+    if (cache == null) return null;
+    if (cache.fingerprint != _designGuideLayerFingerprint(selected)) {
+      return null;
+    }
+    return cache;
+  }
+
+  void _invalidateDesignGuideCacheForLayer(String layerId) {
+    _designGuideCacheByLayer.remove(layerId);
+  }
+
+  void _clearDesignGuideCachesForSnapshot() {
+    _designGuideBuildToken += 1;
+    _designGuideCacheByLayer.clear();
+    _designGuideBuildInFlight.clear();
+    _designGuideBuildingLayerId = null;
+  }
+
+  void _pruneDesignGuideCachesToLiveLayers() {
+    final Set<String> liveIds =
+        _layers.map((EditorLayer layer) => layer.id).toSet();
+    _designGuideCacheByLayer.removeWhere(
+      (String layerId, _DesignGuideLayerCache _) => !liveIds.contains(layerId),
+    );
+    _designGuideBuildInFlight.removeWhere((id) => !liveIds.contains(id));
+    final String? buildingLayerId = _designGuideBuildingLayerId;
+    if (buildingLayerId != null && !liveIds.contains(buildingLayerId)) {
+      _designGuideBuildingLayerId = null;
+    }
+  }
+
+  void _scheduleDesignGuidePreparationForSelection({bool force = false}) {
+    if (!_isFusionDesignWorkspace) return;
+    _pruneDesignGuideCachesToLiveLayers();
+    final EditorLayer? selected = _selectedLayer();
+    if (selected == null || !_layerSupportsDesignGuides(selected)) {
+      if (_designGuideBuildingLayerId != null && mounted) {
+        setState(() {
+          _designGuideBuildingLayerId = null;
+        });
+      }
+      return;
+    }
+    unawaited(_prepareDesignGuideForLayer(selected, force: force));
+  }
+
+  Future<_DesignGuideSampleImage?> _renderLayerSampleForDesignGuides(
+    EditorLayer layer,
+  ) async {
+    if (layer.type == EditorLayerType.image) {
+      final ui.Image? image = layer.image;
+      if (image == null) return null;
+      final int sourceLong = math.max(image.width, image.height);
+      final int sourcePixels = image.width * image.height;
+      if (sourceLong <= _designGuideSampleMaxLongEdge &&
+          sourcePixels <= _designGuideSampleMaxPixels) {
+        return _DesignGuideSampleImage(
+          image: image,
+          ownsImage: false,
+        );
+      }
+      final double maxEdgeRatio = _designGuideSampleMaxLongEdge / sourceLong;
+      final double maxPixelRatio = math.sqrt(
+        _designGuideSampleMaxPixels / sourcePixels,
+      );
+      final double ratio = math.min(1.0, math.min(maxEdgeRatio, maxPixelRatio));
+      final int targetWidth = math.max(1, (image.width * ratio).round());
+      final int targetHeight = math.max(1, (image.height * ratio).round());
+      final ui.Image resized = await _resampleUiImageHighQuality(
+        source: image,
+        targetWidth: targetWidth,
+        targetHeight: targetHeight,
+      );
+      return _DesignGuideSampleImage(
+        image: resized,
+        ownsImage: !identical(resized, image),
+      );
+    }
+    if (layer.type == EditorLayerType.vector) {
+      final ui.Picture? picture = layer.vectorPicture;
+      if (picture == null) return null;
+      final Size sourceSize = _sanitizeVectorSourceSize(
+        preferred: layer.vectorSourceSize,
+        fallbackSize: layer.solidSize,
+      );
+      final int baseWidth = math.max(1, sourceSize.width.round());
+      final int baseHeight = math.max(1, sourceSize.height.round());
+      final int baseLong = math.max(baseWidth, baseHeight);
+      final int basePixels = baseWidth * baseHeight;
+      final double maxEdgeRatio = _designGuideSampleMaxLongEdge / baseLong;
+      final double maxPixelRatio = math.sqrt(
+        _designGuideSampleMaxPixels / basePixels,
+      );
+      final double ratio = math.min(1.0, math.min(maxEdgeRatio, maxPixelRatio));
+      final int outputWidth = math.max(1, (baseWidth * ratio).round());
+      final int outputHeight = math.max(1, (baseHeight * ratio).round());
+      final ui.PictureRecorder recorder = ui.PictureRecorder();
+      final Canvas canvas = Canvas(
+        recorder,
+        Rect.fromLTWH(
+          0,
+          0,
+          outputWidth.toDouble(),
+          outputHeight.toDouble(),
+        ),
+      );
+      canvas.scale(
+        outputWidth / sourceSize.width,
+        outputHeight / sourceSize.height,
+      );
+      canvas.drawPicture(picture);
+      final ui.Picture rendered = recorder.endRecording();
+      final ui.Image image = await rendered.toImage(outputWidth, outputHeight);
+      return _DesignGuideSampleImage(
+        image: image,
+        ownsImage: true,
+      );
+    }
+    return null;
+  }
+
+  double _designGuideReadDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim()) ?? 0.0;
+    return 0.0;
+  }
+
+  Future<_DesignGuideLayerCache> _extractDesignGuideCacheFromSample({
+    required String layerId,
+    required int fingerprint,
+    required ui.Image sampleImage,
+  }) async {
+    final ByteData? rawData = await sampleImage.toByteData(
+      format: ui.ImageByteFormat.rawRgba,
+    );
+    if (rawData == null) {
+      return _DesignGuideLayerCache(
+        layerId: layerId,
+        fingerprint: fingerprint,
+        sampleSize: const Size(1, 1),
+        segments: const <_DesignGuideSegmentUv>[],
+        anchorPointsUv: const <Offset>[],
+        generatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+    }
+    final Uint8List rgba = Uint8List.fromList(
+      rawData.buffer.asUint8List(0, rawData.lengthInBytes),
+    );
+    final int width = sampleImage.width;
+    final int height = sampleImage.height;
+    final Map<String, Object> result = await Isolate.run<Map<String, Object>>(
+      () => _extractDesignGuideGraphFromRgba(
+        rgba: rgba,
+        width: width,
+        height: height,
+        maxSegments: _designGuideMaxSegments,
+        maxAnchors: _designGuideMaxAnchors,
+      ),
+    );
+
+    final List<_DesignGuideSegmentUv> segments = <_DesignGuideSegmentUv>[];
+    final List<dynamic> rawSegments =
+        result['segments'] as List<dynamic>? ?? const <dynamic>[];
+    for (final dynamic entry in rawSegments) {
+      if (entry is! Map<String, dynamic>) continue;
+      final double sx =
+          _designGuideReadDouble(entry['sx']).clamp(0.0, 1.0).toDouble();
+      final double sy =
+          _designGuideReadDouble(entry['sy']).clamp(0.0, 1.0).toDouble();
+      final double ex =
+          _designGuideReadDouble(entry['ex']).clamp(0.0, 1.0).toDouble();
+      final double ey =
+          _designGuideReadDouble(entry['ey']).clamp(0.0, 1.0).toDouble();
+      final double weight =
+          _designGuideReadDouble(entry['weight']).clamp(0.0, 1.0).toDouble();
+      final Offset start = Offset(sx, sy);
+      final Offset end = Offset(ex, ey);
+      if ((start - end).distance <= 0.0002) continue;
+      segments.add(
+        _DesignGuideSegmentUv(
+          startUv: start,
+          endUv: end,
+          weight: weight,
+        ),
+      );
+    }
+
+    final List<Offset> anchors = <Offset>[];
+    final List<dynamic> rawAnchors =
+        result['anchors'] as List<dynamic>? ?? const <dynamic>[];
+    for (final dynamic entry in rawAnchors) {
+      if (entry is! Map<String, dynamic>) continue;
+      final double x =
+          _designGuideReadDouble(entry['x']).clamp(0.0, 1.0).toDouble();
+      final double y =
+          _designGuideReadDouble(entry['y']).clamp(0.0, 1.0).toDouble();
+      anchors.add(Offset(x, y));
+    }
+
+    return _DesignGuideLayerCache(
+      layerId: layerId,
+      fingerprint: fingerprint,
+      sampleSize: Size(width.toDouble(), height.toDouble()),
+      segments: List<_DesignGuideSegmentUv>.unmodifiable(segments),
+      anchorPointsUv: List<Offset>.unmodifiable(anchors),
+      generatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> _prepareDesignGuideForLayer(
+    EditorLayer layer, {
+    bool force = false,
+  }) async {
+    if (!_isFusionDesignWorkspace) return;
+    if (!_layerSupportsDesignGuides(layer)) return;
+    final String layerId = layer.id;
+    final int fingerprint = _designGuideLayerFingerprint(layer);
+    final _DesignGuideLayerCache? cached = _designGuideCacheByLayer[layerId];
+    if (!force && cached != null && cached.fingerprint == fingerprint) {
+      return;
+    }
+    if (_designGuideBuildInFlight.contains(layerId)) return;
+    final int token = ++_designGuideBuildToken;
+    _designGuideBuildInFlight.add(layerId);
+    if (mounted) {
+      setState(() {
+        _designGuideBuildingLayerId = layerId;
+      });
+    }
+
+    _DesignGuideSampleImage? sample;
+    try {
+      sample = await _renderLayerSampleForDesignGuides(layer);
+      if (sample == null) return;
+      final _DesignGuideLayerCache nextCache =
+          await _extractDesignGuideCacheFromSample(
+        layerId: layerId,
+        fingerprint: fingerprint,
+        sampleImage: sample.image,
+      );
+      if (!mounted) return;
+      final int liveLayerIndex =
+          _layers.indexWhere((entry) => entry.id == layerId);
+      if (liveLayerIndex < 0) return;
+      final EditorLayer liveLayer = _layers[liveLayerIndex];
+      if (_designGuideLayerFingerprint(liveLayer) != fingerprint) {
+        return;
+      }
+      _designGuideCacheByLayer[layerId] = nextCache;
+      if (_selectedLayerId == layerId) {
+        setState(() {});
+      }
+    } catch (_) {
+    } finally {
+      if (sample != null && sample.ownsImage) {
+        sample.image.dispose();
+      }
+      _designGuideBuildInFlight.remove(layerId);
+      if (mounted &&
+          _designGuideBuildingLayerId == layerId &&
+          token == _designGuideBuildToken) {
+        setState(() {
+          _designGuideBuildingLayerId = null;
+        });
+      }
+    }
+  }
+
   List<_SketchMaskStroke> _activeSketchMaskStrokes() {
     final String? layerId = _selectedImageLayer()?.id;
     if (layerId == null) return const <_SketchMaskStroke>[];
@@ -16184,7 +18234,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       _isImageAdjustFloatingOpen = false;
       _imageAdjustFloatingBaseline = null;
       _imageAdjustFloatingLayerId = null;
-      _pngEffectExpandedLayerId = null;
+      _pngEffectColorStripLayerId = null;
+      _vectorEffectColorStripLayerId = null;
       _isPhotoRoomRemoveBgFloatingOpen = false;
       _isPhotoRoomRemoveBgProcessing = false;
     });
@@ -17340,6 +19391,91 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     return false;
   }
 
+  bool _isPngFileUrl(String fileUrl) {
+    final String lowerUrl = fileUrl.trim().toLowerCase();
+    if (lowerUrl.isEmpty) return false;
+    return lowerUrl.endsWith('.png') || lowerUrl.contains('.png?');
+  }
+
+  bool _isSvgMimeType(String? mimeType) {
+    final String normalized = (mimeType ?? '').trim().toLowerCase();
+    if (normalized == 'image/svg+xml') return true;
+    if (normalized.endsWith('/svg+xml')) return true;
+    if (normalized == 'svg' || normalized == 'svg+xml') return true;
+    return false;
+  }
+
+  bool _isSvgFileUrl(String fileUrl) {
+    final String lowerUrl = fileUrl.trim().toLowerCase();
+    if (lowerUrl.isEmpty) return false;
+    return lowerUrl.endsWith('.svg') || lowerUrl.contains('.svg?');
+  }
+
+  Future<ui.Image> _resampleUiImageHighQuality({
+    required ui.Image source,
+    required int targetWidth,
+    required int targetHeight,
+  }) async {
+    final int safeWidth = math.max(1, targetWidth);
+    final int safeHeight = math.max(1, targetHeight);
+    if (source.width == safeWidth && source.height == safeHeight) {
+      return source;
+    }
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final Rect targetRect = Rect.fromLTWH(
+      0,
+      0,
+      safeWidth.toDouble(),
+      safeHeight.toDouble(),
+    );
+    final Canvas canvas = Canvas(recorder, targetRect);
+    canvas.drawImageRect(
+      source,
+      Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble()),
+      targetRect,
+      Paint()
+        ..isAntiAlias = true
+        ..filterQuality = FilterQuality.high,
+    );
+    final ui.Picture picture = recorder.endRecording();
+    return picture.toImage(safeWidth, safeHeight);
+  }
+
+  Future<ui.Image> _maybeUpscaleCatalogPngImageForCanvas({
+    required ui.Image image,
+    required String fileUrl,
+    String? mimeType,
+    int? widthHint,
+    int? heightHint,
+  }) async {
+    final bool likelyPng = _isPngMimeType(mimeType) || _isPngFileUrl(fileUrl);
+    if (!likelyPng) return image;
+
+    final int sourceLong = math.max(image.width, image.height);
+    if (sourceLong <= 0) return image;
+    if (sourceLong >= _catalogPngUpscaleTriggerLongEdge) {
+      return image;
+    }
+
+    final int hintedLong = math.max(widthHint ?? 0, heightHint ?? 0);
+    if (hintedLong >= _catalogPngUpscaleTriggerLongEdge) {
+      return image;
+    }
+
+    final double targetScale = (_catalogPngUpscaleTargetLongEdge / sourceLong)
+        .clamp(1.0, _catalogPngUpscaleMaxLongEdge / sourceLong)
+        .toDouble();
+    if (targetScale <= 1.01) return image;
+
+    final int targetWidth = math.max(1, (image.width * targetScale).round());
+    final int targetHeight = math.max(1, (image.height * targetScale).round());
+    return _resampleUiImageHighQuality(
+      source: image,
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
+  }
+
   bool _isCatalogElementPngLayer(EditorLayer layer) {
     if (layer.type != EditorLayerType.image) return false;
     if (layer.isBackground) return false;
@@ -17354,6 +19490,259 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       return lowerUrl.endsWith('.png') || lowerUrl.contains('.png?');
     }
     return !layer.isCatalogElement;
+  }
+
+  bool _isCatalogElementVectorLayer(EditorLayer layer) {
+    if (layer.type != EditorLayerType.image &&
+        layer.type != EditorLayerType.vector) {
+      return false;
+    }
+    if (layer.isBackground) return false;
+    if (!layer.isCatalogElement) return false;
+    if (layer.type == EditorLayerType.image && layer.image == null) {
+      return false;
+    }
+    if (layer.type == EditorLayerType.vector &&
+        layer.vectorPicture == null &&
+        (layer.vectorSvgMarkup ?? '').trim().isEmpty) {
+      return false;
+    }
+    if (_isPngMimeType(layer.elementMimeType)) return false;
+    if (_isSvgMimeType(layer.elementMimeType)) return true;
+    final String mimeType = (layer.elementMimeType ?? '').trim();
+    if (mimeType.isNotEmpty) return false;
+    final String fileUrl = layer.elementFileUrl ?? '';
+    if (_isSvgFileUrl(fileUrl)) return true;
+    return fileUrl.trim().toLowerCase().startsWith('local://uploaded-svg/');
+  }
+
+  _DesignShapeKind? _fusionDesignShapeKindForLayer(EditorLayer layer) {
+    if (layer.type != EditorLayerType.vector || layer.isBackground) return null;
+    final String url = (layer.elementFileUrl ?? '').trim().toLowerCase();
+    if (!url.startsWith(_designShapeLayerUrlPrefix)) return null;
+    final String key = url.substring(_designShapeLayerUrlPrefix.length);
+    for (final _DesignShapeKind kind in _DesignShapeKind.values) {
+      if (kind.key == key) return kind;
+    }
+    return null;
+  }
+
+  bool _isFusionDesignShapeLayer(EditorLayer layer) {
+    return _fusionDesignShapeKindForLayer(layer) != null;
+  }
+
+  bool _isDesignPathfinderLayer(EditorLayer layer) {
+    if (!_isFusionDesignWorkspace) return false;
+    if (!layer.isVisible || layer.isBackground) return false;
+    if (layer.type != EditorLayerType.vector) return false;
+    return _isFusionDesignShapeLayer(layer);
+  }
+
+  bool _isSupportedDesignPathfinderOperation(_DesignPathfinderOperation op) {
+    switch (op) {
+      case _DesignPathfinderOperation.unite:
+      case _DesignPathfinderOperation.minusFront:
+      case _DesignPathfinderOperation.intersect:
+      case _DesignPathfinderOperation.exclude:
+      case _DesignPathfinderOperation.minusBack:
+        return true;
+      case _DesignPathfinderOperation.divide:
+      case _DesignPathfinderOperation.trim:
+      case _DesignPathfinderOperation.merge:
+      case _DesignPathfinderOperation.crop:
+      case _DesignPathfinderOperation.outline:
+        return false;
+    }
+  }
+
+  Set<String> _filteredDesignPathfinderSelection(Set<String> sourceIds) {
+    if (!_isFusionDesignWorkspace || sourceIds.isEmpty) {
+      return <String>{};
+    }
+    final Set<String> valid = <String>{};
+    for (final EditorLayer layer in _layers) {
+      if (!sourceIds.contains(layer.id)) continue;
+      if (_isDesignPathfinderLayer(layer)) {
+        valid.add(layer.id);
+      }
+    }
+    return valid;
+  }
+
+  Set<String> _effectiveDesignPathfinderSelectionIds() {
+    return _filteredDesignPathfinderSelection(_designPathfinderSelectionIds);
+  }
+
+  bool get _hasDesignPathfinderSelection =>
+      _effectiveDesignPathfinderSelectionIds().length >= 2;
+
+  List<EditorLayer> _designPathfinderLayersForSelection(
+      Set<String> selectedIds) {
+    final Set<String> filtered =
+        _filteredDesignPathfinderSelection(selectedIds);
+    if (filtered.isEmpty) return <EditorLayer>[];
+    final List<EditorLayer> ordered = _layers
+        .where((layer) => filtered.contains(layer.id))
+        .toList(growable: false);
+    ordered.sort(
+      (a, b) => _layers.indexOf(a).compareTo(_layers.indexOf(b)),
+    );
+    return ordered;
+  }
+
+  String? _designPathfinderTopLayerId(Set<String> selectedIds) {
+    final List<EditorLayer> ordered =
+        _designPathfinderLayersForSelection(selectedIds);
+    if (ordered.isEmpty) return null;
+    return ordered.last.id;
+  }
+
+  EditorLayer? _designPathfinderAnchorLayer() {
+    final List<EditorLayer> ordered =
+        _designPathfinderLayersForSelection(_designPathfinderSelectionIds);
+    if (ordered.isEmpty) return null;
+    return ordered.last;
+  }
+
+  void _syncDesignPathfinderSelectionAfterLayersMutation() {
+    if (!_isFusionDesignWorkspace) return;
+    final Set<String> filtered =
+        _filteredDesignPathfinderSelection(_designPathfinderSelectionIds);
+    _designPathfinderSelectionIds
+      ..clear()
+      ..addAll(filtered);
+    _isDesignPathfinderSelectionMode =
+        _isDesignPathfinderSelectionMode && filtered.isNotEmpty;
+    if (_designPathfinderSelectionIds.length >= 2) {
+      _isDesignPathfinderSelectionMode = true;
+    }
+    if (_selectedLayerId != null &&
+        _designPathfinderSelectionIds.isNotEmpty &&
+        !_designPathfinderSelectionIds.contains(_selectedLayerId)) {
+      _selectedLayerId = _designPathfinderTopLayerId(filtered);
+    }
+  }
+
+  void _clearDesignPathfinderSelection({
+    bool clearSelectionMode = true,
+    bool clearProcessing = true,
+  }) {
+    if (!_isFusionDesignWorkspace) return;
+    if (_designPathfinderSelectionIds.isEmpty &&
+        !clearSelectionMode &&
+        !clearProcessing) {
+      return;
+    }
+    setState(() {
+      _designPathfinderSelectionIds.clear();
+      if (clearSelectionMode) {
+        _isDesignPathfinderSelectionMode = false;
+      }
+      if (clearProcessing) {
+        _isDesignPathfinderProcessing = false;
+      }
+    });
+  }
+
+  void _openDesignPathfinderFromSelection(Set<String> selectedIds) {
+    if (!_isFusionDesignWorkspace) return;
+    final Set<String> filtered =
+        _filteredDesignPathfinderSelection(selectedIds);
+    if (filtered.length < 2) {
+      _showExportMessage('Select at least 2 shape layers first.',
+          isError: true);
+      return;
+    }
+    final String? topLayerId = _designPathfinderTopLayerId(filtered);
+    if (topLayerId == null) {
+      _showExportMessage('Could not resolve selected shape layers.',
+          isError: true);
+      return;
+    }
+    setState(() {
+      _designPathfinderSelectionIds
+        ..clear()
+        ..addAll(filtered);
+      _isDesignPathfinderSelectionMode = true;
+      _selectedLayerId = topLayerId;
+      _activeTool = EditorTool.move;
+      _isToolEnabled = true;
+      _isTextSettingsDockEnabled = false;
+      _isDesignPathfinderProcessing = false;
+    });
+    _openToolSettingsSidebar();
+  }
+
+  EditorLayer? _activeElementPngColorStripLayer() {
+    final String? layerId = _pngEffectColorStripLayerId;
+    if (layerId == null) return null;
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return null;
+    final EditorLayer layer = _layers[index];
+    if (!layer.isVisible) return null;
+    if (!_isCatalogElementPngLayer(layer)) return null;
+    return layer;
+  }
+
+  bool get _isElementPngColorStripVisible =>
+      _activeElementPngColorStripLayer() != null;
+
+  EditorLayer? _activeElementVectorColorStripLayer() {
+    final String? layerId = _vectorEffectColorStripLayerId;
+    if (layerId == null) return null;
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return null;
+    final EditorLayer layer = _layers[index];
+    if (!layer.isVisible) return null;
+    if (!_isCatalogElementVectorLayer(layer)) return null;
+    return layer;
+  }
+
+  bool get _isElementVectorColorStripVisible =>
+      _activeElementVectorColorStripLayer() != null;
+
+  void _openElementPngColorStrip(String layerId) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final EditorLayer layer = _layers[index];
+    if (!layer.isVisible) return;
+    if (!_isCatalogElementPngLayer(layer)) return;
+    if (_isToolEnabled) {
+      _setActiveTool(_activeTool, toggleWhenSame: true);
+    }
+    if (layer.imagePngEffectEnabled &&
+        ((layer.imagePngEffectStrength - 100).abs() > 0.001 ||
+            layer.imagePngEffectDetails.abs() > 0.001 ||
+            layer.imagePngEffectThreshold.abs() > 0.001)) {
+      _updateImagePngEffectLayer(
+        layer.id,
+        imagePngEffectStrength: 100,
+        imagePngEffectDetails: 0,
+        imagePngEffectThreshold: 0,
+        recordHistory: false,
+      );
+    }
+    setState(() {
+      _pngEffectColorStripLayerId = layer.id;
+      _vectorEffectColorStripLayerId = null;
+    });
+    _closeToolSettingsSidebarIfOpen();
+  }
+
+  void _openElementVectorColorStrip(String layerId) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final EditorLayer layer = _layers[index];
+    if (!layer.isVisible) return;
+    if (!_isCatalogElementVectorLayer(layer)) return;
+    if (_isToolEnabled) {
+      _setActiveTool(_activeTool, toggleWhenSame: true);
+    }
+    setState(() {
+      _pngEffectColorStripLayerId = null;
+      _vectorEffectColorStripLayerId = layer.id;
+    });
+    _closeToolSettingsSidebarIfOpen();
   }
 
   void _updateImagePngEffectLayer(
@@ -17409,6 +19798,518 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     setState(() {
       _layers = nextLayers;
     });
+  }
+
+  void _updateImageVectorEffectLayer(
+    String layerId, {
+    bool? imageVectorFillEnabled,
+    Color? imageVectorFillColor,
+    bool recordHistory = true,
+  }) {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+    final EditorLayer current = nextLayers[index];
+    if (!_isCatalogElementVectorLayer(current)) return;
+
+    final bool nextFillEnabled =
+        imageVectorFillEnabled ?? current.imageVectorFillEnabled;
+    final Color nextFillColor =
+        (imageVectorFillColor ?? current.imageVectorFillColor).withAlpha(255);
+
+    if (nextFillEnabled == current.imageVectorFillEnabled &&
+        nextFillColor == current.imageVectorFillColor) {
+      return;
+    }
+
+    nextLayers[index] = current.copyWith(
+      imageVectorFillEnabled: nextFillEnabled,
+      imageVectorFillColor: nextFillColor,
+    );
+    if (recordHistory) {
+      _pushUndoSnapshot();
+    }
+    setState(() {
+      _layers = nextLayers;
+    });
+  }
+
+  Future<void> _updateFusionDesignShapeLayerStyle(
+    String layerId, {
+    bool? fillEnabled,
+    Color? fillColor,
+    bool? strokeEnabled,
+    Color? strokeColor,
+    double? strokeWidth,
+    bool recordHistory = true,
+  }) async {
+    final int index = _layers.indexWhere((layer) => layer.id == layerId);
+    if (index < 0) return;
+    final EditorLayer current = _layers[index];
+    final _DesignShapeKind? kind = _fusionDesignShapeKindForLayer(current);
+    if (kind == null) return;
+
+    final Size sourceSize = _sanitizeVectorSourceSize(
+      preferred: current.vectorSourceSize,
+      fallbackSize: current.solidSize,
+    );
+    final bool nextFillEnabled = kind == _DesignShapeKind.line
+        ? false
+        : (fillEnabled ?? current.imageVectorFillEnabled);
+    final Color nextFillColor =
+        (fillColor ?? current.imageVectorFillColor).withAlpha(255);
+    final bool nextStrokeEnabled = kind == _DesignShapeKind.line
+        ? true
+        : (strokeEnabled ?? current.imageVectorStrokeEnabled);
+    final Color nextStrokeColor =
+        (strokeColor ?? current.imageVectorStrokeColor).withAlpha(255);
+    final double nextStrokeWidth =
+        (strokeWidth ?? current.imageVectorStrokeWidth)
+            .clamp(kind == _DesignShapeKind.line ? 1.0 : 0.0, 220.0)
+            .toDouble();
+
+    if (nextFillEnabled == current.imageVectorFillEnabled &&
+        nextFillColor == current.imageVectorFillColor &&
+        nextStrokeEnabled == current.imageVectorStrokeEnabled &&
+        nextStrokeColor == current.imageVectorStrokeColor &&
+        (nextStrokeWidth - current.imageVectorStrokeWidth).abs() < 0.0001) {
+      return;
+    }
+
+    final String pathData = kind == _DesignShapeKind.path
+        ? _extractFirstSvgPathData(current.vectorSvgMarkup ?? '')
+        : '';
+    if (kind == _DesignShapeKind.path && pathData.isEmpty) {
+      _showExportMessage('Path shape data is missing.', isError: true);
+      return;
+    }
+    final String svgMarkup = _fusionDesignShapeSvgMarkup(
+      kind: kind,
+      sourceSize: sourceSize,
+      fillEnabled: nextFillEnabled,
+      fillColor: nextFillColor,
+      strokeEnabled: nextStrokeEnabled,
+      strokeColor: nextStrokeColor,
+      strokeWidth: nextStrokeWidth,
+      pathData: kind == _DesignShapeKind.path ? pathData : null,
+    );
+    final int token = (_designShapeStyleUpdateTokens[layerId] ?? 0) + 1;
+    _designShapeStyleUpdateTokens[layerId] = token;
+
+    try {
+      final vg.PictureInfo pictureInfo = await vg.vg.loadPicture(
+        vg.SvgStringLoader(svgMarkup),
+        null,
+      );
+      if (!mounted) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+      if (_designShapeStyleUpdateTokens[layerId] != token) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+      final int liveIndex = _layers.indexWhere((layer) => layer.id == layerId);
+      if (liveIndex < 0) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+      final EditorLayer liveLayer = _layers[liveIndex];
+      if (_fusionDesignShapeKindForLayer(liveLayer) == null) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+      if (recordHistory) {
+        _pushUndoSnapshot();
+      }
+      final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+      nextLayers[liveIndex] = liveLayer.copyWith(
+        vectorPicture: pictureInfo.picture,
+        vectorSvgMarkup: svgMarkup,
+        vectorSourceSize: sourceSize,
+        solidSize: sourceSize,
+        imageVectorFillEnabled: nextFillEnabled,
+        imageVectorFillColor: nextFillColor,
+        imageVectorStrokeEnabled: nextStrokeEnabled,
+        imageVectorStrokeColor: nextStrokeColor,
+        imageVectorStrokeWidth: nextStrokeWidth,
+      );
+      setState(() {
+        _layers = nextLayers;
+      });
+    } catch (error) {
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
+    }
+  }
+
+  String _extractFirstSvgPathData(String svgMarkup) {
+    final String markup = svgMarkup.trim();
+    if (markup.isEmpty) return '';
+    try {
+      final xml.XmlDocument document = xml.XmlDocument.parse(markup);
+      for (final xml.XmlElement element
+          in document.descendants.whereType<xml.XmlElement>()) {
+        if (element.name.local.toLowerCase() != 'path') {
+          continue;
+        }
+        return (element.getAttribute('d') ?? '').trim();
+      }
+      return '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  Path _fusionDesignLineLocalPath({
+    required Size sourceSize,
+    required double strokeWidth,
+  }) {
+    final double width = math.max(2.0, sourceSize.width);
+    final double height = math.max(2.0, sourceSize.height);
+    final double safeStroke =
+        strokeWidth.clamp(1.0, math.max(width, height)).toDouble();
+    final double halfStroke = safeStroke / 2;
+    final double y = height / 2;
+    final double x1 = math.max(halfStroke + 8, width * 0.08);
+    final double x2 =
+        math.max(x1 + 1, math.min(width - halfStroke - 8, width * 0.92));
+    final Rect coreRect = Rect.fromLTRB(
+      x1,
+      y - halfStroke,
+      x2,
+      y + halfStroke,
+    );
+    final Path linePath = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          coreRect,
+          Radius.circular(halfStroke),
+        ),
+      )
+      ..addOval(
+        Rect.fromCircle(center: Offset(x1, y), radius: halfStroke),
+      )
+      ..addOval(
+        Rect.fromCircle(center: Offset(x2, y), radius: halfStroke),
+      );
+    return linePath;
+  }
+
+  Path? _fusionDesignLayerLocalPath(EditorLayer layer) {
+    final _DesignShapeKind? kind = _fusionDesignShapeKindForLayer(layer);
+    if (kind == null) return null;
+    final Size sourceSize = _sanitizeVectorSourceSize(
+      preferred: layer.vectorSourceSize,
+      fallbackSize: layer.solidSize,
+    );
+    switch (kind) {
+      case _DesignShapeKind.rectangle:
+        return Path()
+          ..addRect(Rect.fromLTWH(0, 0, sourceSize.width, sourceSize.height));
+      case _DesignShapeKind.circle:
+        return Path()
+          ..addOval(Rect.fromLTWH(0, 0, sourceSize.width, sourceSize.height));
+      case _DesignShapeKind.line:
+        return _fusionDesignLineLocalPath(
+          sourceSize: sourceSize,
+          strokeWidth: layer.imageVectorStrokeWidth,
+        );
+      case _DesignShapeKind.path:
+        final String pathData =
+            _extractFirstSvgPathData(layer.vectorSvgMarkup ?? '');
+        if (pathData.isEmpty) return null;
+        try {
+          return path_drawing.parseSvgPathData(pathData);
+        } catch (_) {
+          return null;
+        }
+    }
+  }
+
+  Path _transformDesignPathToWorkspace({
+    required Path localPath,
+    required EditorLayer layer,
+    required Size sourceSize,
+    required Size workspaceSize,
+  }) {
+    final Offset center = layer.position ??
+        Offset(workspaceSize.width / 2, workspaceSize.height / 2);
+    final Matrix4 transform = Matrix4.identity()
+      ..translate(center.dx, center.dy)
+      ..rotateZ(layer.layerRotation)
+      ..scale(layer.layerScale, layer.layerScale)
+      ..translate(-sourceSize.width / 2, -sourceSize.height / 2);
+    return localPath.transform(transform.storage);
+  }
+
+  Path _combineDesignPaths(
+    _DesignPathfinderOperation operation,
+    List<Path> orderedPaths,
+  ) {
+    Path fold(PathOperation op, List<Path> items) {
+      Path current = items.first;
+      for (int i = 1; i < items.length; i++) {
+        current = Path.combine(op, current, items[i]);
+      }
+      return current;
+    }
+
+    switch (operation) {
+      case _DesignPathfinderOperation.unite:
+        return fold(PathOperation.union, orderedPaths);
+      case _DesignPathfinderOperation.intersect:
+        return fold(PathOperation.intersect, orderedPaths);
+      case _DesignPathfinderOperation.exclude:
+        return fold(PathOperation.xor, orderedPaths);
+      case _DesignPathfinderOperation.minusFront:
+        final Path back = orderedPaths.first;
+        if (orderedPaths.length == 2) {
+          return Path.combine(
+              PathOperation.difference, back, orderedPaths.last);
+        }
+        final Path fronts = fold(
+          PathOperation.union,
+          orderedPaths.sublist(1),
+        );
+        return Path.combine(PathOperation.difference, back, fronts);
+      case _DesignPathfinderOperation.minusBack:
+        final Path front = orderedPaths.last;
+        if (orderedPaths.length == 2) {
+          return Path.combine(
+              PathOperation.difference, front, orderedPaths.first);
+        }
+        final Path backs = fold(
+          PathOperation.union,
+          orderedPaths.sublist(0, orderedPaths.length - 1),
+        );
+        return Path.combine(PathOperation.difference, front, backs);
+      case _DesignPathfinderOperation.divide:
+      case _DesignPathfinderOperation.trim:
+      case _DesignPathfinderOperation.merge:
+      case _DesignPathfinderOperation.crop:
+      case _DesignPathfinderOperation.outline:
+        throw UnsupportedError('Pathfinder operation is not implemented yet.');
+    }
+  }
+
+  String _pathToSvgPathData(
+    Path path, {
+    int precision = 2,
+    double sampleStep = 1.25,
+  }) {
+    final StringBuffer buffer = StringBuffer();
+    final Iterable<ui.PathMetric> metrics =
+        path.computeMetrics(forceClosed: false);
+    for (final ui.PathMetric metric in metrics) {
+      if (metric.length <= 0) {
+        continue;
+      }
+      final ui.Tangent? startTangent = metric.getTangentForOffset(0);
+      if (startTangent == null) {
+        continue;
+      }
+      final String x0 = startTangent.position.dx.toStringAsFixed(precision);
+      final String y0 = startTangent.position.dy.toStringAsFixed(precision);
+      buffer.write('M$x0 $y0');
+      for (double offset = sampleStep;
+          offset < metric.length;
+          offset += sampleStep) {
+        final ui.Tangent? tangent = metric.getTangentForOffset(offset);
+        if (tangent == null) {
+          continue;
+        }
+        final String x = tangent.position.dx.toStringAsFixed(precision);
+        final String y = tangent.position.dy.toStringAsFixed(precision);
+        buffer.write(' L$x $y');
+      }
+      final ui.Tangent? endTangent = metric.getTangentForOffset(metric.length);
+      if (endTangent != null) {
+        final String x1 = endTangent.position.dx.toStringAsFixed(precision);
+        final String y1 = endTangent.position.dy.toStringAsFixed(precision);
+        buffer.write(' L$x1 $y1');
+      }
+      if (metric.isClosed) {
+        buffer.write(' Z');
+      }
+      buffer.write(' ');
+    }
+    return buffer.toString().trim();
+  }
+
+  Future<void> _applyDesignPathfinderOperation(
+    _DesignPathfinderOperation operation,
+  ) async {
+    if (!_isFusionDesignWorkspace) return;
+    if (_isDesignPathfinderProcessing) return;
+    if (!_isSupportedDesignPathfinderOperation(operation)) {
+      _showExportMessage(
+        '${operation.label} will be added next. Core boolean ops are active now.',
+      );
+      return;
+    }
+    final List<EditorLayer> selectedLayers =
+        _designPathfinderLayersForSelection(_designPathfinderSelectionIds);
+    if (selectedLayers.length < 2) {
+      _showExportMessage('Select at least 2 shape layers first.',
+          isError: true);
+      return;
+    }
+
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    final Size? workspaceSize =
+        workspace == null ? null : _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      _showExportMessage('Create a project workspace first.', isError: true);
+      return;
+    }
+
+    final List<Path> workspacePaths = <Path>[];
+    for (final EditorLayer layer in selectedLayers) {
+      final Path? localPath = _fusionDesignLayerLocalPath(layer);
+      if (localPath == null) {
+        _showExportMessage(
+          'Could not build a vector path for "${layer.name}".',
+          isError: true,
+        );
+        return;
+      }
+      final Size sourceSize = _sanitizeVectorSourceSize(
+        preferred: layer.vectorSourceSize,
+        fallbackSize: layer.solidSize,
+      );
+      workspacePaths.add(
+        _transformDesignPathToWorkspace(
+          localPath: localPath,
+          layer: layer,
+          sourceSize: sourceSize,
+          workspaceSize: workspaceSize,
+        ),
+      );
+    }
+    if (workspacePaths.length < 2) {
+      _showExportMessage('Select at least 2 valid shape paths.', isError: true);
+      return;
+    }
+
+    setState(() {
+      _isDesignPathfinderProcessing = true;
+    });
+    try {
+      final Path combinedPath = _combineDesignPaths(operation, workspacePaths);
+      final Rect bounds = combinedPath.getBounds();
+      if (bounds.isEmpty || bounds.width <= 0.0001 || bounds.height <= 0.0001) {
+        _showExportMessage('Pathfinder result is empty.', isError: true);
+        return;
+      }
+      final Path normalizedPath = combinedPath.shift(-bounds.topLeft);
+      final String pathData = _pathToSvgPathData(normalizedPath);
+      if (pathData.trim().isEmpty) {
+        _showExportMessage('Pathfinder could not generate shape output.',
+            isError: true);
+        return;
+      }
+
+      final EditorLayer anchor = selectedLayers.last;
+      final Color fillColor = anchor.imageVectorFillEnabled
+          ? anchor.imageVectorFillColor.withAlpha(255)
+          : anchor.imageVectorStrokeColor.withAlpha(255);
+      final bool strokeEnabled = anchor.imageVectorStrokeEnabled &&
+          anchor.imageVectorStrokeWidth > 0.01;
+      final Color strokeColor = anchor.imageVectorStrokeColor.withAlpha(255);
+      final double strokeWidth =
+          anchor.imageVectorStrokeWidth.clamp(0.0, 220.0).toDouble();
+      final Size sourceSize = Size(
+        math.max(1.0, bounds.width),
+        math.max(1.0, bounds.height),
+      );
+      final String svgMarkup = _fusionDesignShapeSvgMarkup(
+        kind: _DesignShapeKind.path,
+        sourceSize: sourceSize,
+        fillEnabled: true,
+        fillColor: fillColor,
+        strokeEnabled: strokeEnabled,
+        strokeColor: strokeColor,
+        strokeWidth: strokeWidth,
+        pathData: pathData,
+      );
+      final vg.PictureInfo pictureInfo = await vg.vg.loadPicture(
+        vg.SvgStringLoader(svgMarkup),
+        null,
+      );
+      if (!mounted) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+
+      _pushUndoSnapshot();
+      setState(() {
+        final Set<String> selectedIds =
+            selectedLayers.map((layer) => layer.id).toSet();
+        final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
+        final List<int> selectedIndexes = <int>[];
+        for (int i = 0; i < nextLayers.length; i++) {
+          if (selectedIds.contains(nextLayers[i].id)) {
+            selectedIndexes.add(i);
+          }
+        }
+        selectedIndexes.sort();
+        final int topMostIndex = selectedIndexes.last;
+        for (int i = selectedIndexes.length - 1; i >= 0; i--) {
+          nextLayers.removeAt(selectedIndexes[i]);
+        }
+        final String newLayerId = 'layer_${_nextLayerId++}';
+        final int removedBeforeTop =
+            selectedIndexes.where((index) => index < topMostIndex).length;
+        final int insertIndex = (topMostIndex - removedBeforeTop)
+            .clamp(0, nextLayers.length)
+            .toInt();
+        final EditorLayer mergedLayer = EditorLayer(
+          id: newLayerId,
+          name: _buildUniqueLayerNameForList(
+            '${operation.label} Shape',
+            nextLayers,
+          ),
+          type: EditorLayerType.vector,
+          isVisible: true,
+          isBackground: false,
+          vectorPicture: pictureInfo.picture,
+          vectorSvgMarkup: svgMarkup,
+          vectorSourceSize: sourceSize,
+          solidSize: sourceSize,
+          position: bounds.center,
+          layerScale: 1.0,
+          layerRotation: 0.0,
+          imageVectorFillEnabled: true,
+          imageVectorFillColor: fillColor,
+          imageVectorStrokeEnabled: strokeEnabled,
+          imageVectorStrokeColor: strokeColor,
+          imageVectorStrokeWidth: strokeWidth,
+          elementFileUrl: _fusionDesignShapeFileUrl(_DesignShapeKind.path),
+        );
+        nextLayers.insert(insertIndex, mergedLayer);
+        _layers = nextLayers;
+        _selectedLayerId = mergedLayer.id;
+        _designPathfinderSelectionIds
+          ..clear()
+          ..add(mergedLayer.id);
+        _isDesignPathfinderSelectionMode = false;
+        _isTransformHistoryCaptured = false;
+      });
+      _showExportMessage('${operation.label} applied.');
+    } catch (error) {
+      _showExportMessage(
+        _normalizeOperationErrorMessage(error),
+        isError: true,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isDesignPathfinderProcessing = false;
+        });
+      }
+    }
   }
 
   void _updateImageAdjustmentLayer(
@@ -17645,7 +20546,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       final EditorLayer? selectedTextLayer = _selectedTextLayer();
       if (selectedTextLayer != null) {
         unawaited(
-          _ensureFontReady(
+          _warmupFontReady(
             family: selectedTextLayer.textFontFamily ?? '',
             weight: selectedTextLayer.textFontWeight ?? 400,
           ),
@@ -18044,38 +20945,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _openTextFontsFloatingPanel() {
-    final EditorLayer? selectedTextLayer = _selectedTextLayer();
-    if (selectedTextLayer == null) return;
-    unawaited(_syncCatalogTextFonts(force: true));
-    _syncTextLocaleFromFamily(selectedTextLayer.textFontFamily);
-    setState(() {
-      _resetTextQuickFloatingPanels();
-      _isTextFontsFloatingOpen = true;
-      _activeTextEffectFloatingPanel = null;
-      _isTextEditHistoryCaptured = false;
-    });
-    _textFontSearchQuery = '';
-    _textFontSearchController.clear();
-    _warmupCatalogFontsForCurrentTextBrowser(
-      locale: _textFontLocale,
-      query: '',
-    );
-    _closeToolSettingsSidebarIfOpen();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_textFontsFloatingScrollController.hasClients) {
-        _textFontsFloatingScrollController.jumpTo(0);
-      }
-    });
+    _openTextSettingsBottomSheetForTab(_TextSettingsBottomSheetTab.fonts);
   }
 
   void _toggleTextFontsFloatingPanel() {
-    if (_isTextFontsFloatingOpen) {
-      setState(() {
-        _isTextFontsFloatingOpen = false;
-      });
-      return;
-    }
-    _openTextFontsFloatingPanel();
+    _openTextSettingsBottomSheetForTab(_TextSettingsBottomSheetTab.fonts);
   }
 
   void _applyTextFontOption(_TextFontOption option) {
@@ -18085,17 +20959,21 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final int nextWeight =
         _resolveSupportedWeight(option.family, currentWeight);
     _syncTextLocaleFromFamily(option.family);
-    _updateTextLayer(
-      selectedTextLayer.id,
-      textFontFamily: option.family,
-      textFontWeight: nextWeight,
-      recordHistory: false,
-    );
     final int requestToken = ++_textFontApplyRequestToken;
     setState(() {
       _pendingTextFontFamily = option.family;
       _pendingTextFontWeight = nextWeight;
     });
+    if (_isFontFamilyReadyForImmediateUse(option.family)) {
+      _updateTextLayer(
+        selectedTextLayer.id,
+        textFontFamily: option.family,
+        textFontWeight: nextWeight,
+        recordHistory: false,
+      );
+      _clearPendingTextFontOptionIfCurrent(requestToken);
+      return;
+    }
     unawaited(
       _applyTextFontOptionAsync(
         option,
@@ -18112,11 +20990,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     required int initialResolvedWeight,
     required int requestToken,
   }) async {
-    await _ensureFontReady(
+    final bool ready = await _ensureFontReady(
       family: option.family,
       weight: initialResolvedWeight,
     );
     if (!mounted || requestToken != _textFontApplyRequestToken) {
+      return;
+    }
+    if (!ready) {
+      _clearPendingTextFontOptionIfCurrent(requestToken);
       return;
     }
     final int liveIndex = _layers.indexWhere((layer) => layer.id == layerId);
@@ -18125,10 +21007,20 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       return;
     }
     final EditorLayer liveLayer = _layers[liveIndex];
-    if ((liveLayer.textFontFamily ?? '').trim() != option.family.trim()) {
+    if ((_pendingTextFontFamily ?? '').trim() != option.family.trim()) {
       _clearPendingTextFontOptionIfCurrent(requestToken);
       return;
     }
+    final int liveWeight = _resolveSupportedWeight(
+      option.family,
+      liveLayer.textFontWeight ?? initialResolvedWeight,
+    );
+    _updateTextLayer(
+      layerId,
+      textFontFamily: option.family,
+      textFontWeight: liveWeight,
+      recordHistory: false,
+    );
     _clearPendingTextFontOptionIfCurrent(requestToken);
     if (mounted && requestToken == _textFontApplyRequestToken) {
       setState(() {});
@@ -18146,38 +21038,83 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     });
   }
 
-  Future<void> _ensureFontReady({
+  Future<void> _warmupFontReady({
+    required String family,
+    required int weight,
+  }) async {
+    await _ensureFontReady(family: family, weight: weight);
+  }
+
+  bool _isFontFamilyReadyForImmediateUse(String family) {
+    final String normalizedFamily = family.trim();
+    if (normalizedFamily.isEmpty) return true;
+    if (_uploadedTextFontFamilies.contains(normalizedFamily)) return true;
+    if (_catalogTextFontFamilies.contains(normalizedFamily)) {
+      return _catalogTextFontReadyFamilies.contains(normalizedFamily);
+    }
+    if (_kGoogleFontFamilies.contains(normalizedFamily)) {
+      return _googleFontRuntimeReadyFamilies.contains(normalizedFamily);
+    }
+    return true;
+  }
+
+  Future<bool> _ensureFontReady({
     required String family,
     required int weight,
   }) async {
     final String normalizedFamily = family.trim();
     if (normalizedFamily.isEmpty) {
-      return;
+      return true;
+    }
+    if (_uploadedTextFontFamilies.contains(normalizedFamily)) {
+      return true;
     }
     if (_catalogTextFontFamilies.contains(normalizedFamily)) {
       await _ensureCatalogTextFontReady(normalizedFamily);
-      return;
+      return _catalogTextFontReadyFamilies.contains(normalizedFamily);
     }
     if (!_kGoogleFontFamilies.contains(normalizedFamily)) {
-      return;
+      return true;
     }
+    if (_googleFontRuntimeReadyFamilies.contains(normalizedFamily)) {
+      return true;
+    }
+    final Future<void>? inFlightTask =
+        _googleTextFontLoadTasks[normalizedFamily];
+    if (inFlightTask != null) {
+      await inFlightTask;
+      return _googleFontRuntimeReadyFamilies.contains(normalizedFamily);
+    }
+
+    final Future<void> loadTask = () async {
+      try {
+        GoogleFonts.getFont(
+          normalizedFamily,
+          fontWeight: _fontWeightFromNumeric(weight),
+        );
+        await GoogleFonts.pendingFonts().timeout(
+          const Duration(seconds: 20),
+        );
+        _googleFontRuntimeReadyFamilies.add(normalizedFamily);
+      } catch (error) {
+        debugPrint('Google font warmup failed [$normalizedFamily]: $error');
+      }
+    }();
+    _googleTextFontLoadTasks[normalizedFamily] = loadTask;
     try {
-      GoogleFonts.getFont(
-        normalizedFamily,
-        fontWeight: _fontWeightFromNumeric(weight),
-      );
-      await GoogleFonts.pendingFonts();
-    } catch (_) {
-      // Keep current font when runtime fetch fails; avoid forced visual swap.
+      await loadTask;
+    } finally {
+      _googleTextFontLoadTasks.remove(normalizedFamily);
     }
+    return _googleFontRuntimeReadyFamilies.contains(normalizedFamily);
   }
 
   void _warmupCatalogFontsForCurrentTextBrowser({
     required _TextFontLocale locale,
     required String query,
-    int limit = 16,
+    int limit = 32,
   }) {
-    if (_catalogTextFontFamilies.isEmpty || limit <= 0) return;
+    if (limit <= 0) return;
     final List<_TextFontOption> options = _filteredTextFontOptions(
       locale: locale,
       query: query,
@@ -18187,10 +21124,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     for (final _TextFontOption option in options) {
       final String family = option.family.trim();
       if (family.isEmpty) continue;
-      if (!_catalogTextFontFamilies.contains(family)) continue;
-      if (_catalogTextFontReadyFamilies.contains(family)) continue;
-      if (_catalogTextFontLoadTasks.containsKey(family)) continue;
-      unawaited(_ensureCatalogTextFontReady(family));
+      if (_isFontFamilyReadyForImmediateUse(family)) continue;
+      if (_catalogTextFontLoadTasks.containsKey(family) ||
+          _googleTextFontLoadTasks.containsKey(family)) {
+        continue;
+      }
+      unawaited(
+        _warmupFontReady(
+          family: family,
+          weight: option.defaultWeight,
+        ),
+      );
       warmed++;
       if (warmed >= limit) break;
     }
@@ -18230,27 +21174,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _openTextWeightFloatingPanel() {
-    final EditorLayer? selectedTextLayer = _selectedTextLayer();
-    if (selectedTextLayer == null) return;
-    _syncTextLocaleFromFamily(selectedTextLayer.textFontFamily);
-    setState(() {
-      _resetTextQuickFloatingPanels(clearSearch: false);
-      _isTextWeightFloatingOpen = true;
-      _activeTextEffectFloatingPanel = null;
-    });
-    _closeToolSettingsSidebarIfOpen();
+    _openTextSettingsBottomSheetForTab(_TextSettingsBottomSheetTab.weight);
   }
 
   void _openTextColorFloatingPanel() {
-    final EditorLayer? selectedTextLayer = _selectedTextLayer();
-    if (selectedTextLayer == null) return;
-    _syncTextLocaleFromFamily(selectedTextLayer.textFontFamily);
-    setState(() {
-      _resetTextQuickFloatingPanels(clearSearch: false);
-      _isTextColorFloatingOpen = true;
-      _activeTextEffectFloatingPanel = null;
-    });
-    _closeToolSettingsSidebarIfOpen();
+    _openTextSettingsBottomSheetForTab(_TextSettingsBottomSheetTab.color);
   }
 
   List<int> _availableWeightsForFamily(String family) {
@@ -18339,9 +21267,118 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     return formatted;
   }
 
+  double _quantizeValue(
+    double value, {
+    required double step,
+    double? min,
+    double? max,
+  }) {
+    double safe = value;
+    if (!safe.isFinite) safe = 0;
+    if (step > 0) {
+      safe = (safe / step).roundToDouble() * step;
+    }
+    if (min != null || max != null) {
+      safe = safe.clamp(
+        min ?? double.negativeInfinity,
+        max ?? double.infinity,
+      );
+    }
+    return safe.toDouble();
+  }
+
   String _hexColor(Color color) {
     final String hex = color.value.toRadixString(16).padLeft(8, '0');
     return '#${hex.substring(2).toUpperCase()}';
+  }
+
+  void _queueThrottledTextLayerUpdate(
+    String layerId, {
+    String? textValue,
+    String? textFontFamily,
+    int? textFontWeight,
+    Color? textColor,
+    double? textOpacity,
+    double? textBend,
+    Color? textStrokeColor,
+    double? textStrokeWidth,
+    Color? textShadowColor,
+    double? textShadowOffsetX,
+    double? textShadowOffsetY,
+    double? textShadowBlur,
+    double? textShadowSpread,
+    double? textShadowOpacity,
+    bool recordHistory = false,
+  }) {
+    final Map<String, dynamic> pending = _pendingThrottledTextLayerUpdates
+        .putIfAbsent(layerId, () => <String, dynamic>{});
+    if (textValue != null) pending['textValue'] = textValue;
+    if (textFontFamily != null) pending['textFontFamily'] = textFontFamily;
+    if (textFontWeight != null) pending['textFontWeight'] = textFontWeight;
+    if (textColor != null) pending['textColor'] = textColor;
+    if (textOpacity != null) pending['textOpacity'] = textOpacity;
+    if (textBend != null) pending['textBend'] = textBend;
+    if (textStrokeColor != null) pending['textStrokeColor'] = textStrokeColor;
+    if (textStrokeWidth != null) pending['textStrokeWidth'] = textStrokeWidth;
+    if (textShadowColor != null) pending['textShadowColor'] = textShadowColor;
+    if (textShadowOffsetX != null)
+      pending['textShadowOffsetX'] = textShadowOffsetX;
+    if (textShadowOffsetY != null)
+      pending['textShadowOffsetY'] = textShadowOffsetY;
+    if (textShadowBlur != null) pending['textShadowBlur'] = textShadowBlur;
+    if (textShadowSpread != null)
+      pending['textShadowSpread'] = textShadowSpread;
+    if (textShadowOpacity != null)
+      pending['textShadowOpacity'] = textShadowOpacity;
+    if (recordHistory) pending['recordHistory'] = true;
+
+    if (_textLayerUpdateThrottleTimer?.isActive == true) return;
+    _textLayerUpdateThrottleTimer = Timer(
+      _textLayerUpdateThrottleInterval,
+      _drainThrottledTextLayerUpdates,
+    );
+  }
+
+  void _drainThrottledTextLayerUpdates({String? layerId}) {
+    _textLayerUpdateThrottleTimer?.cancel();
+    _textLayerUpdateThrottleTimer = null;
+
+    if (_pendingThrottledTextLayerUpdates.isEmpty) return;
+    final Map<String, Map<String, dynamic>> updates =
+        <String, Map<String, dynamic>>{};
+    if (layerId == null) {
+      updates.addAll(_pendingThrottledTextLayerUpdates);
+      _pendingThrottledTextLayerUpdates.clear();
+    } else {
+      final Map<String, dynamic>? single =
+          _pendingThrottledTextLayerUpdates.remove(layerId);
+      if (single != null) {
+        updates[layerId] = single;
+      }
+    }
+
+    for (final MapEntry<String, Map<String, dynamic>> entry
+        in updates.entries) {
+      final Map<String, dynamic> pending = entry.value;
+      _updateTextLayer(
+        entry.key,
+        textValue: pending['textValue'] as String?,
+        textFontFamily: pending['textFontFamily'] as String?,
+        textFontWeight: pending['textFontWeight'] as int?,
+        textColor: pending['textColor'] as Color?,
+        textOpacity: pending['textOpacity'] as double?,
+        textBend: pending['textBend'] as double?,
+        textStrokeColor: pending['textStrokeColor'] as Color?,
+        textStrokeWidth: pending['textStrokeWidth'] as double?,
+        textShadowColor: pending['textShadowColor'] as Color?,
+        textShadowOffsetX: pending['textShadowOffsetX'] as double?,
+        textShadowOffsetY: pending['textShadowOffsetY'] as double?,
+        textShadowBlur: pending['textShadowBlur'] as double?,
+        textShadowSpread: pending['textShadowSpread'] as double?,
+        textShadowOpacity: pending['textShadowOpacity'] as double?,
+        recordHistory: (pending['recordHistory'] as bool?) ?? false,
+      );
+    }
   }
 
   void _updateTextLayer(
@@ -18376,35 +21413,119 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final Color nextTextColor =
         textColor ?? current.textColor ?? const Color(0xFF1F2937);
     final Color currentTextColor = current.textColor ?? const Color(0xFF1F2937);
-    final double nextTextOpacity = textOpacity ?? current.textOpacity ?? 100;
-    final double currentTextOpacity = current.textOpacity ?? 100;
-    final double nextTextBend = textBend ?? current.textBend ?? 0;
-    final double currentTextBend = current.textBend ?? 0;
+    final double nextTextOpacity = _quantizeValue(
+      textOpacity ?? current.textOpacity ?? 100,
+      step: 0.5,
+      min: 0,
+      max: 100,
+    );
+    final double currentTextOpacity = _quantizeValue(
+      current.textOpacity ?? 100,
+      step: 0.5,
+      min: 0,
+      max: 100,
+    );
+    final double nextTextBend = _quantizeValue(
+      textBend ?? current.textBend ?? 0,
+      step: 1,
+      min: -100,
+      max: 100,
+    );
+    final double currentTextBend = _quantizeValue(
+      current.textBend ?? 0,
+      step: 1,
+      min: -100,
+      max: 100,
+    );
     final Color nextStrokeColor =
         textStrokeColor ?? current.textStrokeColor ?? const Color(0xFFFFFFFF);
     final Color currentStrokeColor =
         current.textStrokeColor ?? const Color(0xFFFFFFFF);
-    final double nextStrokeWidth =
-        textStrokeWidth ?? current.textStrokeWidth ?? 0;
-    final double currentStrokeWidth = current.textStrokeWidth ?? 0;
+    final double nextStrokeWidth = _quantizeValue(
+      textStrokeWidth ?? current.textStrokeWidth ?? 0,
+      step: 0.2,
+      min: 0,
+      max: 28,
+    );
+    final double currentStrokeWidth = _quantizeValue(
+      current.textStrokeWidth ?? 0,
+      step: 0.2,
+      min: 0,
+      max: 28,
+    );
     final Color nextShadowColor =
         textShadowColor ?? current.textShadowColor ?? const Color(0xFF19191A);
     final Color currentShadowColor =
         current.textShadowColor ?? const Color(0xFF19191A);
-    final double nextShadowOffsetX =
-        textShadowOffsetX ?? current.textShadowOffsetX ?? 0;
-    final double currentShadowOffsetX = current.textShadowOffsetX ?? 0;
-    final double nextShadowOffsetY =
-        textShadowOffsetY ?? current.textShadowOffsetY ?? 0;
-    final double currentShadowOffsetY = current.textShadowOffsetY ?? 0;
-    final double nextShadowBlur = textShadowBlur ?? current.textShadowBlur ?? 0;
-    final double currentShadowBlur = current.textShadowBlur ?? 0;
-    final double nextShadowSpread =
-        textShadowSpread ?? current.textShadowSpread ?? 0;
-    final double currentShadowSpread = current.textShadowSpread ?? 0;
-    final double nextShadowOpacity =
-        textShadowOpacity ?? current.textShadowOpacity ?? 0;
-    final double currentShadowOpacity = current.textShadowOpacity ?? 0;
+    final double nextShadowOffsetX = _quantizeValue(
+      textShadowOffsetX ?? current.textShadowOffsetX ?? 0,
+      step: 1,
+      min: -120,
+      max: 120,
+    );
+    final double currentShadowOffsetX = _quantizeValue(
+      current.textShadowOffsetX ?? 0,
+      step: 1,
+      min: -120,
+      max: 120,
+    );
+    final double nextShadowOffsetY = _quantizeValue(
+      textShadowOffsetY ?? current.textShadowOffsetY ?? 0,
+      step: 1,
+      min: -120,
+      max: 120,
+    );
+    final double currentShadowOffsetY = _quantizeValue(
+      current.textShadowOffsetY ?? 0,
+      step: 1,
+      min: -120,
+      max: 120,
+    );
+    final double nextShadowBlur = _quantizeValue(
+      textShadowBlur ?? current.textShadowBlur ?? 0,
+      step: 0.25,
+      min: 0,
+      max: 60,
+    );
+    final double currentShadowBlur = _quantizeValue(
+      current.textShadowBlur ?? 0,
+      step: 0.25,
+      min: 0,
+      max: 60,
+    );
+    final double nextShadowSpread = _quantizeValue(
+      textShadowSpread ?? current.textShadowSpread ?? 0,
+      step: 0.1,
+      min: 0,
+      max: 28,
+    );
+    final double currentShadowSpread = _quantizeValue(
+      current.textShadowSpread ?? 0,
+      step: 0.1,
+      min: 0,
+      max: 28,
+    );
+    final double nextShadowOpacity = _quantizeValue(
+      textShadowOpacity ?? current.textShadowOpacity ?? 0,
+      step: 1,
+      min: 0,
+      max: 100,
+    );
+    final double currentShadowOpacity = _quantizeValue(
+      current.textShadowOpacity ?? 0,
+      step: 1,
+      min: 0,
+      max: 100,
+    );
+    final bool shouldRenameLayer =
+        textValue != null && nextTextValue.trim() != currentTextValue.trim();
+    final String nextLayerName = shouldRenameLayer
+        ? _buildUniqueLayerNameForList(
+            _buildTextLayerName(nextTextValue),
+            nextLayers,
+            excludeLayerId: layerId,
+          )
+        : current.name;
     if (nextTextValue == currentTextValue &&
         nextFontFamily == currentFontFamily &&
         nextFontWeight == currentFontWeight &&
@@ -18418,24 +21539,26 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         nextShadowOffsetY == currentShadowOffsetY &&
         nextShadowBlur == currentShadowBlur &&
         nextShadowSpread == currentShadowSpread &&
-        nextShadowOpacity == currentShadowOpacity) {
+        nextShadowOpacity == currentShadowOpacity &&
+        nextLayerName == current.name) {
       return;
     }
     final EditorLayer next = current.copyWith(
+      name: nextLayerName,
       textValue: textValue,
       textFontFamily: textFontFamily,
       textFontWeight: textFontWeight,
       textColor: textColor,
-      textOpacity: textOpacity,
-      textBend: textBend,
+      textOpacity: nextTextOpacity,
+      textBend: nextTextBend,
       textStrokeColor: textStrokeColor,
-      textStrokeWidth: textStrokeWidth,
+      textStrokeWidth: nextStrokeWidth,
       textShadowColor: textShadowColor,
-      textShadowOffsetX: textShadowOffsetX,
-      textShadowOffsetY: textShadowOffsetY,
-      textShadowBlur: textShadowBlur,
-      textShadowSpread: textShadowSpread,
-      textShadowOpacity: textShadowOpacity,
+      textShadowOffsetX: nextShadowOffsetX,
+      textShadowOffsetY: nextShadowOffsetY,
+      textShadowBlur: nextShadowBlur,
+      textShadowSpread: nextShadowSpread,
+      textShadowOpacity: nextShadowOpacity,
     );
     nextLayers[index] = next;
     if (recordHistory) {
@@ -18477,15 +21600,18 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       return null;
     }
 
-    final int textCount =
-        _layers.where((layer) => layer.type == EditorLayerType.text).length;
     final String id = 'layer_${_nextLayerId++}';
+    const String defaultTextValue = 'Write your text here';
+    final String layerName = _buildUniqueLayerNameForList(
+      _buildTextLayerName(defaultTextValue),
+      _layers,
+    );
     final EditorLayer textLayer = EditorLayer(
       id: id,
-      name: textCount == 0 ? 'Text' : 'Text ${textCount + 1}',
+      name: layerName,
       type: EditorLayerType.text,
       isVisible: true,
-      textValue: 'Write your text here',
+      textValue: defaultTextValue,
       textColor: const Color(0xFF1F2937),
       textFontSize: 92,
       textFontFamily: _kEnglishFontOptions.first.family,
@@ -18588,6 +21714,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     if (index < 0) return;
     final EditorLayer layer = _layers[index];
     if (!layer.isVisible) return;
+    if (_isFusionDesignWorkspace) {
+      final Set<String> selectedIds = _effectiveDesignPathfinderSelectionIds();
+      if (selectedIds.length >= 2 && selectedIds.contains(layerId)) {
+        _openDesignPathfinderFromSelection(selectedIds);
+        return;
+      }
+    }
     if (layer.type == EditorLayerType.text) {
       _onTextLayerDoubleTap(layerId);
       return;
@@ -18647,6 +21780,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             controller: controller,
             scrollDirection: Axis.horizontal,
             primary: false,
+            dragStartBehavior: DragStartBehavior.down,
+            physics: const BouncingScrollPhysics(
+              decelerationRate: ScrollDecelerationRate.fast,
+            ),
             itemCount: palette.length,
             separatorBuilder: (_, __) => SizedBox(width: spacing),
             itemBuilder: (context, index) {
@@ -18727,12 +21864,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     return index < 0 ? 0 : index;
   }
 
-  void _animateColorStripToIndex({
+  double _colorStripOffsetForIndex({
     required ScrollController controller,
     required int index,
-    double scale = 0.94,
+    required double scale,
   }) {
-    if (index < 0 || !controller.hasClients) return;
     final (
       swatchWidth: _,
       spacing: _,
@@ -18742,20 +21878,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       scale: scale,
     );
     final double maxOffset = controller.position.maxScrollExtent;
-    final double targetOffset = (index * step).clamp(0.0, maxOffset);
-    controller.animateTo(
-      targetOffset,
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-    );
+    return (index * step).clamp(0.0, maxOffset);
   }
 
-  void _snapColorStripToNearest({
+  int _nearestColorStripIndexFromOffset({
     required ScrollController controller,
     required int paletteLength,
-    double scale = 0.94,
+    required double scale,
   }) {
-    if (!controller.hasClients || paletteLength <= 1) return;
+    if (paletteLength <= 0 || !controller.hasClients) return 0;
     final (
       swatchWidth: _,
       spacing: _,
@@ -18764,17 +21895,106 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       viewportWidth: controller.position.viewportDimension,
       scale: scale,
     );
-    if (step <= 0) return;
+    if (step <= 0) return 0;
     final double pixels =
         controller.offset.clamp(0.0, controller.position.maxScrollExtent);
-    final int nearestIndex =
-        (pixels / step).round().clamp(0, paletteLength - 1);
-    final double snappedOffset =
-        (nearestIndex * step).clamp(0.0, controller.position.maxScrollExtent);
-    if ((snappedOffset - pixels).abs() < 0.6) return;
+    return (pixels / step).round().clamp(0, paletteLength - 1).toInt();
+  }
+
+  int _resolveColorStripLeadingIndex({
+    required ScrollController controller,
+    required int paletteLength,
+    required int fallbackIndex,
+    required double scale,
+  }) {
+    if (!controller.hasClients || paletteLength <= 0) {
+      return fallbackIndex.clamp(0, math.max(0, paletteLength - 1)).toInt();
+    }
+    return _nearestColorStripIndexFromOffset(
+      controller: controller,
+      paletteLength: paletteLength,
+      scale: scale,
+    );
+  }
+
+  void _animateColorStripToIndex({
+    required ScrollController controller,
+    required int index,
+    double scale = 0.94,
+    Duration duration = const Duration(milliseconds: 170),
+    Curve curve = Curves.easeOutCubic,
+  }) {
+    if (index < 0 || !controller.hasClients) return;
+    final double targetOffset = _colorStripOffsetForIndex(
+      controller: controller,
+      index: index,
+      scale: scale,
+    );
+    final double currentOffset =
+        controller.offset.clamp(0.0, controller.position.maxScrollExtent);
+    if ((targetOffset - currentOffset).abs() < 0.6) return;
+    controller.animateTo(
+      targetOffset,
+      duration: duration,
+      curve: curve,
+    );
+  }
+
+  int _snapColorStripToNearest({
+    required ScrollController controller,
+    required int paletteLength,
+    double scale = 0.94,
+    Duration duration = const Duration(milliseconds: 130),
+    Curve curve = Curves.easeOutCubic,
+  }) {
+    if (!controller.hasClients || paletteLength <= 0) return 0;
+    final int nearestIndex = _nearestColorStripIndexFromOffset(
+      controller: controller,
+      paletteLength: paletteLength,
+      scale: scale,
+    );
+    final double pixels =
+        controller.offset.clamp(0.0, controller.position.maxScrollExtent);
+    final double snappedOffset = _colorStripOffsetForIndex(
+      controller: controller,
+      index: nearestIndex,
+      scale: scale,
+    );
+    if ((snappedOffset - pixels).abs() < 0.6) return nearestIndex;
     controller.animateTo(
       snappedOffset,
-      duration: const Duration(milliseconds: 170),
+      duration: duration,
+      curve: curve,
+    );
+    return nearestIndex;
+  }
+
+  void _syncColorStripLeadingSlotWithSelected({
+    required ScrollController controller,
+    required int selectedIndex,
+    required int paletteLength,
+    required double scale,
+    bool animate = false,
+  }) {
+    if (!controller.hasClients || paletteLength <= 0) return;
+    final int clampedIndex =
+        selectedIndex.clamp(0, math.max(0, paletteLength - 1)).toInt();
+    final double targetOffset = _colorStripOffsetForIndex(
+      controller: controller,
+      index: clampedIndex,
+      scale: scale,
+    );
+    final double currentOffset =
+        controller.offset.clamp(0.0, controller.position.maxScrollExtent);
+    if ((targetOffset - currentOffset).abs() < 0.6) return;
+    if (controller.position.isScrollingNotifier.value) return;
+    if (!animate) {
+      controller.jumpTo(targetOffset);
+      return;
+    }
+    controller.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 150),
       curve: Curves.easeOutCubic,
     );
   }
@@ -18789,20 +22009,42 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }) {
     if (palette.isEmpty) return const SizedBox.shrink();
     final int selectedIndex = _paletteColorIndexByValue(palette, selectedColor);
-    final bool canGoBack = selectedIndex > 0;
-    final bool canGoNext = selectedIndex < palette.length - 1;
+    final int leadingIndex = _resolveColorStripLeadingIndex(
+      controller: controller,
+      paletteLength: palette.length,
+      fallbackIndex: selectedIndex,
+      scale: stripScale,
+    );
+    final bool canGoBack = leadingIndex > 0;
+    final bool canGoNext = leadingIndex < palette.length - 1;
     final double navScale = (arrowScale + 0.10).clamp(0.8, 1.3).toDouble();
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncColorStripLeadingSlotWithSelected(
+        controller: controller,
+        selectedIndex: selectedIndex,
+        paletteLength: palette.length,
+        scale: stripScale,
+      );
+    });
+
     void jumpColor(int direction) {
+      final int baseIndex = _resolveColorStripLeadingIndex(
+        controller: controller,
+        paletteLength: palette.length,
+        fallbackIndex: selectedIndex,
+        scale: stripScale,
+      );
       final int nextIndex =
-          (selectedIndex + direction).clamp(0, palette.length - 1).toInt();
-      if (nextIndex == selectedIndex) return;
+          (baseIndex + direction).clamp(0, palette.length - 1).toInt();
+      if (nextIndex == baseIndex) return;
       onColorSelected(palette[nextIndex]);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _animateColorStripToIndex(
           controller: controller,
           index: nextIndex,
           scale: stripScale,
+          duration: const Duration(milliseconds: 130),
         );
       });
     }
@@ -18819,11 +22061,14 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         Expanded(
           child: NotificationListener<ScrollEndNotification>(
             onNotification: (_) {
-              _snapColorStripToNearest(
+              final int nearestIndex = _snapColorStripToNearest(
                 controller: controller,
                 paletteLength: palette.length,
                 scale: stripScale,
               );
+              if (nearestIndex != selectedIndex) {
+                onColorSelected(palette[nearestIndex]);
+              }
               return false;
             },
             child: _buildHorizontalColorStrip(
@@ -18839,6 +22084,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                     controller: controller,
                     index: nextIndex,
                     scale: stripScale,
+                    duration: const Duration(milliseconds: 130),
                   );
                 });
               },
@@ -18959,28 +22205,13 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   }
 
   void _openTextEffectFloatingPanel(_TextEffectFloatingPanel panel) {
-    final EditorLayer? selectedTextLayer = _selectedTextLayer();
-    if (selectedTextLayer == null) return;
-    setState(() {
-      _activeTextEffectFloatingPanel = panel;
-      _resetTextQuickFloatingPanels();
-      _isPencilSettingsFloatingOpen = false;
-      _pencilSettingsFloatingBaseline = null;
-      _isCloneSettingsFloatingOpen = false;
-      _isCloneSettingsBottomSheetOpen = false;
-      _cloneSettingsFloatingBaseline = null;
-      _cloneSourceArmedFloatingBaseline = null;
-      _cloneBrushSelectedFloatingBaseline = null;
-      _cloneEraseSelectedFloatingBaseline = null;
-      _isCropFloatingOpen = false;
-      _isOverlayImageShadowFloatingOpen = false;
-      _overlayImageShadowFloatingBaseline = null;
-      _overlayImageShadowFloatingLayerId = null;
-      _isPhotoRoomRemoveBgFloatingOpen = false;
-      _isPhotoRoomRemoveBgProcessing = false;
-      _isTextEditHistoryCaptured = false;
-    });
-    _closeToolSettingsSidebarIfOpen();
+    final _TextSettingsBottomSheetTab targetTab = switch (panel) {
+      _TextEffectFloatingPanel.opacity => _TextSettingsBottomSheetTab.opacity,
+      _TextEffectFloatingPanel.bend => _TextSettingsBottomSheetTab.blend,
+      _TextEffectFloatingPanel.stroke => _TextSettingsBottomSheetTab.stroke,
+      _TextEffectFloatingPanel.shadow => _TextSettingsBottomSheetTab.shadow,
+    };
+    _openTextSettingsBottomSheetForTab(targetTab);
   }
 
   void _openCloneSettingsFloatingPanel() {
@@ -19760,6 +22991,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         _availableWeightsForFamily(selectedFamily);
     final Color selectedColor =
         selectedTextLayer?.textColor ?? const Color(0xFF1F2937);
+    final Color selectedStrokeColor =
+        selectedTextLayer?.textStrokeColor ?? const Color(0xFFFFFFFF);
+    final double selectedStrokeWidth = selectedTextLayer?.textStrokeWidth ?? 0;
+    final double selectedShadowOpacity =
+        selectedTextLayer?.textShadowOpacity ?? 0;
     final double selectedTextOpacity = selectedTextLayer?.textOpacity ?? 100;
     final double selectedTextBend = selectedTextLayer?.textBend ?? 0;
 
@@ -19802,39 +23038,31 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             children: [
               _buildSidebarLauncherCard(
                 title: 'Fonts',
-                subtitle: _isTextFontsFloatingOpen
-                    ? 'Floating panel active'
-                    : 'Current: ${selectedFontOption?.label ?? selectedFamily}',
-                highlighted: _isTextFontsFloatingOpen,
+                subtitle:
+                    'Current: ${selectedFontOption?.label ?? selectedFamily}',
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: _openTextFontsFloatingPanel,
               ),
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Weight',
-                subtitle: _isTextWeightFloatingOpen
-                    ? 'Floating panel active'
-                    : 'Current: ${selectedWeight ~/ 100}00 (${availableWeights.length})',
-                highlighted: _isTextWeightFloatingOpen,
+                subtitle:
+                    'Current: ${selectedWeight ~/ 100}00 (${availableWeights.length})',
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: _openTextWeightFloatingPanel,
               ),
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Text Color',
-                subtitle: _isTextColorFloatingOpen
-                    ? 'Floating panel active'
-                    : _hexColor(selectedColor),
-                highlighted: _isTextColorFloatingOpen,
+                subtitle: _hexColor(selectedColor),
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: _openTextColorFloatingPanel,
               ),
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Opacity',
-                subtitle: _activeTextEffectFloatingPanel ==
-                        _TextEffectFloatingPanel.opacity
-                    ? 'Floating panel active'
-                    : '${selectedTextOpacity.toStringAsFixed(0)}%',
-                highlighted: _activeTextEffectFloatingPanel ==
-                    _TextEffectFloatingPanel.opacity,
+                subtitle: '${selectedTextOpacity.toStringAsFixed(0)}%',
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: () => _openTextEffectFloatingPanel(
                   _TextEffectFloatingPanel.opacity,
                 ),
@@ -19842,12 +23070,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Bend',
-                subtitle: _activeTextEffectFloatingPanel ==
-                        _TextEffectFloatingPanel.bend
-                    ? 'Floating panel active'
-                    : _formatSignedValue(selectedTextBend, fractionDigits: 0),
-                highlighted: _activeTextEffectFloatingPanel ==
-                    _TextEffectFloatingPanel.bend,
+                subtitle:
+                    _formatSignedValue(selectedTextBend, fractionDigits: 0),
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: () => _openTextEffectFloatingPanel(
                   _TextEffectFloatingPanel.bend,
                 ),
@@ -19855,24 +23080,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Stroke (Outline)',
-                subtitle: _activeTextEffectFloatingPanel ==
-                        _TextEffectFloatingPanel.stroke
-                    ? 'Floating panel active'
-                    : null,
-                highlighted: _activeTextEffectFloatingPanel ==
-                    _TextEffectFloatingPanel.stroke,
+                subtitle:
+                    '${selectedStrokeWidth.toStringAsFixed(1)} • ${_hexColor(selectedStrokeColor)}',
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: () => _openTextEffectFloatingPanel(
                     _TextEffectFloatingPanel.stroke),
               ),
               SizedBox(height: scaled(10, min: 8)),
               _buildSidebarLauncherCard(
                 title: 'Drop Shadow',
-                subtitle: _activeTextEffectFloatingPanel ==
-                        _TextEffectFloatingPanel.shadow
-                    ? 'Floating panel active'
-                    : null,
-                highlighted: _activeTextEffectFloatingPanel ==
-                    _TextEffectFloatingPanel.shadow,
+                subtitle: '${selectedShadowOpacity.toStringAsFixed(0)}%',
+                highlighted: _isTextSettingsBottomSheetOpen,
                 onTap: () => _openTextEffectFloatingPanel(
                     _TextEffectFloatingPanel.shadow),
               ),
@@ -19885,6 +23103,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   Widget _buildImageLayerSettingsPanel(EditorLayer imageLayer) {
     final bool isOverlay = !imageLayer.isBackground;
     final bool showPngEffectCard = _isCatalogElementPngLayer(imageLayer);
+    final bool showVectorEffectCard = _isCatalogElementVectorLayer(imageLayer);
     final _OverlayCutConfig config = _resolvedOverlayCutConfigForLayer(
       imageLayer.id,
     );
@@ -19919,6 +23138,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           _buildImagePngEffectCard(imageLayer),
           const SizedBox(height: 10),
         ],
+        if (showVectorEffectCard) ...[
+          _buildImageVectorEffectCard(imageLayer),
+          const SizedBox(height: 10),
+        ],
         _buildSidebarLauncherCard(
           title: 'Adjustment',
           subtitle: adjustFloatingOpen ? 'Floating panel active' : null,
@@ -19929,289 +23152,562 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     );
   }
 
-  Widget _buildImagePngEffectCard(EditorLayer layer) {
-    final bool expanded = _pngEffectExpandedLayerId == layer.id;
-    final bool enabled = layer.imagePngEffectEnabled;
-    final Color selectedColor = layer.imagePngEffectColor.withAlpha(255);
-    final double strength = layer.imagePngEffectStrength.clamp(0.0, 100.0);
-    final double details = layer.imagePngEffectDetails.clamp(0.0, 100.0);
-    final double threshold = layer.imagePngEffectThreshold.clamp(-100.0, 100.0);
+  Widget _buildVectorLayerSettingsPanel(EditorLayer vectorLayer) {
+    if (_isFusionDesignShapeLayer(vectorLayer)) {
+      return _buildFusionDesignShapeSettingsPanel(vectorLayer);
+    }
+    final bool showVectorEffectCard = _isCatalogElementVectorLayer(vectorLayer);
+    if (!showVectorEffectCard) {
+      return const _ToolHintCard(
+        title: 'Vector Layer',
+        message:
+            'Vector layer selected. Color controls appear for catalog SVG.',
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildImageVectorEffectCard(vectorLayer),
+      ],
+    );
+  }
 
-    Widget presetChip(String label, Color color) {
-      final bool selected = selectedColor.value == color.value;
-      return Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(9),
-          onTap: () {
-            _updateImagePngEffectLayer(
-              layer.id,
-              imagePngEffectEnabled: true,
-              imagePngEffectColor: color,
-            );
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOut,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-            decoration: BoxDecoration(
-              color: selected ? kActiveAccent : const Color(0xFF1E1F22),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                color: selected ? Colors.transparent : const Color(0xFF605E5E),
-              ),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: selected
-                    ? kActiveAccentForeground
-                    : const Color(0xFFF3F3F2),
-                fontSize: 11.2,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+  Widget _buildFusionDesignShapeSettingsPanel(EditorLayer layer) {
+    final _DesignShapeKind? kind = _fusionDesignShapeKindForLayer(layer);
+    if (kind == null) {
+      return const _ToolHintCard(
+        title: 'Shape Layer',
+        message: 'Select a shape layer to edit Fill and Stroke.',
+      );
+    }
+    final bool supportsFill = kind != _DesignShapeKind.line;
+    final bool fillEnabled = supportsFill && layer.imageVectorFillEnabled;
+    final Color fillColor = layer.imageVectorFillColor.withAlpha(255);
+    final bool strokeEnabled =
+        kind == _DesignShapeKind.line ? true : layer.imageVectorStrokeEnabled;
+    final Color strokeColor = layer.imageVectorStrokeColor.withAlpha(255);
+    final double persistedStrokeWidth =
+        layer.imageVectorStrokeWidth.clamp(0.0, 220.0).toDouble();
+    final double liveStrokeWidth =
+        _designShapeStrokeWidthDraftLayerId == layer.id &&
+                _designShapeStrokeWidthDraftValue != null
+            ? _designShapeStrokeWidthDraftValue!
+            : persistedStrokeWidth;
+    final double sliderMin = kind == _DesignShapeKind.line ? 1.0 : 0.0;
+    final double sliderValue = liveStrokeWidth.clamp(sliderMin, 220.0);
+    final bool canEditStrokeWidth =
+        kind == _DesignShapeKind.line ? true : strokeEnabled;
+
+    Widget sectionContainer({
+      required String title,
+      Widget? trailing,
+      required Widget child,
+    }) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1F22),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0x2B4F5358),
+            width: 0.55,
           ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFFF3F3F2),
+                    fontSize: 12.3,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                if (trailing != null) trailing,
+              ],
+            ),
+            const SizedBox(height: 8),
+            child,
+          ],
         ),
       );
     }
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 170),
-      curve: Curves.easeOut,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: expanded ? const Color(0xFF17191D) : const Color(0xFF1E1F22),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: expanded ? const Color(0x446D7380) : const Color(0x2B4F5358),
-          width: 0.55,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ToolHintCard(
+          title: 'Shape: ${kind.label}',
+          message:
+              'Double tap a shape to open this panel and edit Fill, Stroke, and stroke width.',
         ),
-      ),
-      child: Column(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () {
-                setState(() {
-                  _pngEffectExpandedLayerId = expanded ? null : layer.id;
-                });
+        const SizedBox(height: 10),
+        if (supportsFill) ...[
+          sectionContainer(
+            title: 'Fill',
+            trailing: Switch.adaptive(
+              value: fillEnabled,
+              activeColor: kActiveAccent,
+              onChanged: (value) {
+                unawaited(
+                  _updateFusionDesignShapeLayerStyle(
+                    layer.id,
+                    fillEnabled: value,
+                  ),
+                );
               },
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'PNG Effect',
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFF3F3F2),
+            ),
+            child: Opacity(
+              opacity: fillEnabled ? 1.0 : 0.42,
+              child: _buildHorizontalColorPickerWithNavigation(
+                palette: _kTextPalette,
+                selectedColor: fillColor,
+                controller: _designShapeFillColorStripController,
+                arrowScale: 0.86,
+                stripScale: 0.92,
+                onColorSelected: fillEnabled
+                    ? (color) {
+                        unawaited(
+                          _updateFusionDesignShapeLayerStyle(
+                            layer.id,
+                            fillColor: color,
+                          ),
+                        );
+                      }
+                    : (_) {},
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        sectionContainer(
+          title: 'Stroke',
+          trailing: kind == _DesignShapeKind.line
+              ? const Text(
+                  'Always On',
+                  style: TextStyle(
+                    color: Color(0xFFB8B7B5),
+                    fontSize: 10.6,
+                    fontWeight: FontWeight.w700,
+                  ),
+                )
+              : Switch.adaptive(
+                  value: strokeEnabled,
+                  activeColor: kActiveAccent,
+                  onChanged: (value) {
+                    unawaited(
+                      _updateFusionDesignShapeLayerStyle(
+                        layer.id,
+                        strokeEnabled: value,
+                      ),
+                    );
+                  },
+                ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Opacity(
+                opacity: strokeEnabled ? 1.0 : 0.42,
+                child: _buildHorizontalColorPickerWithNavigation(
+                  palette: _kTextPalette,
+                  selectedColor: strokeColor,
+                  controller: _designShapeStrokeColorStripController,
+                  arrowScale: 0.86,
+                  stripScale: 0.92,
+                  onColorSelected: strokeEnabled
+                      ? (color) {
+                          unawaited(
+                            _updateFusionDesignShapeLayerStyle(
+                              layer.id,
+                              strokeColor: color,
+                            ),
+                          );
+                        }
+                      : (_) {},
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Text(
+                    'Width',
+                    style: TextStyle(
+                      color: Color(0xFFB8B7B5),
+                      fontSize: 11.3,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    sliderValue.toStringAsFixed(1),
+                    style: const TextStyle(
+                      color: Color(0xFFF3F3F2),
+                      fontSize: 11.3,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  activeTrackColor: kActiveAccent,
+                  inactiveTrackColor: const Color(0xFF31353C),
+                  thumbColor: const Color(0xFFFFFFFF),
+                  overlayColor: const Color(0x40E6F24A),
+                  trackHeight: 2.8,
+                ),
+                child: Slider(
+                  value: sliderValue,
+                  min: sliderMin,
+                  max: 220.0,
+                  divisions: 440,
+                  onChangeStart: canEditStrokeWidth
+                      ? (value) {
+                          setState(() {
+                            _designShapeStrokeWidthDraftLayerId = layer.id;
+                            _designShapeStrokeWidthDraftValue = value;
+                          });
+                        }
+                      : null,
+                  onChanged: canEditStrokeWidth
+                      ? (value) {
+                          setState(() {
+                            _designShapeStrokeWidthDraftLayerId = layer.id;
+                            _designShapeStrokeWidthDraftValue = value;
+                          });
+                        }
+                      : null,
+                  onChangeEnd: canEditStrokeWidth
+                      ? (value) {
+                          setState(() {
+                            _designShapeStrokeWidthDraftLayerId = null;
+                            _designShapeStrokeWidthDraftValue = null;
+                          });
+                          unawaited(
+                            _updateFusionDesignShapeLayerStyle(
+                              layer.id,
+                              strokeWidth: value,
+                            ),
+                          );
+                        }
+                      : null,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDesignPathfinderSettingsPanel() {
+    final List<EditorLayer> selection =
+        _designPathfinderLayersForSelection(_designPathfinderSelectionIds);
+    final int count = selection.length;
+    if (count < 2) {
+      return const _ToolHintCard(
+        title: 'Pathfinder',
+        message: 'Select at least 2 shape layers to open Pathfinder actions.',
+      );
+    }
+    const List<_DesignPathfinderOperation> orderedOps =
+        <_DesignPathfinderOperation>[
+      _DesignPathfinderOperation.unite,
+      _DesignPathfinderOperation.minusFront,
+      _DesignPathfinderOperation.intersect,
+      _DesignPathfinderOperation.exclude,
+      _DesignPathfinderOperation.divide,
+      _DesignPathfinderOperation.trim,
+      _DesignPathfinderOperation.merge,
+      _DesignPathfinderOperation.crop,
+      _DesignPathfinderOperation.outline,
+      _DesignPathfinderOperation.minusBack,
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ToolHintCard(
+          title: 'Pathfinder',
+          message:
+              '$count shapes selected. Double tap any selected shape to keep this panel open.',
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1F22),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0x2B4F5358),
+              width: 0.55,
+            ),
+          ),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: orderedOps.map((operation) {
+              final bool supported =
+                  _isSupportedDesignPathfinderOperation(operation);
+              final bool enabled = supported && !_isDesignPathfinderProcessing;
+              return SizedBox(
+                width: 102,
+                child: Opacity(
+                  opacity: supported ? 1.0 : 0.56,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: enabled
+                          ? () {
+                              unawaited(
+                                _applyDesignPathfinderOperation(operation),
+                              );
+                            }
+                          : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF16181D),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: enabled
+                                ? const Color(0x335C6678)
+                                : const Color(0x224F5358),
+                            width: 0.6,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              operation.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFFF3F3F2),
+                                fontSize: 11.4,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              supported ? 'Apply' : 'Soon',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: supported
+                                    ? const Color(0xFFB8B7B5)
+                                    : const Color(0xFF8F95A3),
+                                fontSize: 10.0,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    Text(
-                      enabled ? 'Enabled' : 'Disabled',
-                      style: TextStyle(
-                        color: enabled
-                            ? const Color(0xFFE6F24A)
-                            : const Color(0xFF9CA3AF),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: const Color(0xFFC6CCD7),
-                      size: 19,
+                  ),
+                ),
+              );
+            }).toList(growable: false),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildImageVectorEffectCard(EditorLayer layer) {
+    final Color selectedColor = layer.imageVectorFillColor.withAlpha(255);
+    final bool active = _vectorEffectColorStripLayerId == layer.id;
+    final String subtitle = active
+        ? 'Color strip active - ${_hexColor(selectedColor)}'
+        : layer.imageVectorFillEnabled
+            ? 'Current: ${_hexColor(selectedColor)}'
+            : 'Tap to pick a color';
+    return _buildSidebarLauncherCard(
+      title: 'Vector Color',
+      subtitle: subtitle,
+      highlighted: active,
+      onTap: () => _openElementVectorColorStrip(layer.id),
+    );
+  }
+
+  Widget _buildImagePngEffectCard(EditorLayer layer) {
+    final Color selectedColor = layer.imagePngEffectColor.withAlpha(255);
+    final bool active = _pngEffectColorStripLayerId == layer.id;
+    final String subtitle = active
+        ? 'Color strip active - ${_hexColor(selectedColor)}'
+        : layer.imagePngEffectEnabled
+            ? 'Current: ${_hexColor(selectedColor)}'
+            : 'Tap to pick a color';
+    return _buildSidebarLauncherCard(
+      title: 'Element Color',
+      subtitle: subtitle,
+      highlighted: active,
+      onTap: () => _openElementPngColorStrip(layer.id),
+    );
+  }
+
+  Widget _buildElementPngColorStripOverlay() {
+    final EditorLayer? layer = _activeElementPngColorStripLayer();
+    if (layer == null) {
+      return const SizedBox.shrink();
+    }
+    const double uiScale = 0.86;
+    double scaled(double value, {required double min}) =>
+        math.max(min, value * uiScale);
+    final BorderRadius panelRadius = BorderRadius.circular(scaled(16, min: 12));
+    final Color selectedColor = layer.imagePngEffectColor.withAlpha(255);
+
+    return Positioned(
+      left: _textToolsHorizontalInset,
+      right: _textToolsHorizontalInset,
+      bottom: _bottomNavHeight + scaled(10, min: 8),
+      child: _buildBottomUpPanelAnimation(
+        keyId: 'element-png-color-strip-${layer.id}',
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: panelRadius,
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x330F172A),
+                blurRadius: 28,
+                spreadRadius: 2,
+                offset: Offset(0, 14),
+              ),
+              BoxShadow(
+                color: Color(0x150F172A),
+                blurRadius: 10,
+                spreadRadius: 0,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: panelRadius,
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(scaled(10, min: 8)),
+                decoration: BoxDecoration(
+                  color: _floatingPanelSurface,
+                  borderRadius: panelRadius,
+                  border: Border.all(
+                    color: _floatingPanelStroke,
+                    width: 0.45,
+                  ),
+                ),
+                child: _buildHorizontalColorPickerWithNavigation(
+                  palette: _kTextPalette,
+                  selectedColor: selectedColor,
+                  controller: _pngEffectColorStripController,
+                  stripScale: 0.94,
+                  arrowScale: uiScale,
+                  onColorSelected: (color) {
+                    _updateImagePngEffectLayer(
+                      layer.id,
+                      imagePngEffectEnabled: true,
+                      imagePngEffectColor: color.withAlpha(255),
+                      imagePngEffectStrength: 100,
+                      imagePngEffectDetails: 0,
+                      imagePngEffectThreshold: 0,
+                      recordHistory: false,
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildElementVectorColorStripOverlay() {
+    final EditorLayer? layer = _activeElementVectorColorStripLayer();
+    if (layer == null) {
+      return const SizedBox.shrink();
+    }
+    const double uiScale = 0.86;
+    double scaled(double value, {required double min}) =>
+        math.max(min, value * uiScale);
+    final BorderRadius panelRadius = BorderRadius.circular(scaled(16, min: 12));
+    final Color selectedColor = layer.imageVectorFillColor.withAlpha(255);
+
+    return Positioned(
+      left: _textToolsHorizontalInset,
+      right: _textToolsHorizontalInset,
+      bottom: _bottomNavHeight + scaled(10, min: 8),
+      child: _buildBottomUpPanelAnimation(
+        keyId: 'element-vector-color-strip-${layer.id}',
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: panelRadius,
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x330F172A),
+                blurRadius: 28,
+                spreadRadius: 2,
+                offset: Offset(0, 14),
+              ),
+              BoxShadow(
+                color: Color(0x150F172A),
+                blurRadius: 10,
+                spreadRadius: 0,
+                offset: Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: panelRadius,
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.all(scaled(10, min: 8)),
+                decoration: BoxDecoration(
+                  color: _floatingPanelSurface,
+                  borderRadius: panelRadius,
+                  border: Border.all(
+                    color: _floatingPanelStroke,
+                    width: 0.45,
+                  ),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHorizontalColorPickerWithNavigation(
+                      palette: _kTextPalette,
+                      selectedColor: selectedColor,
+                      controller: _vectorEffectColorStripController,
+                      stripScale: 0.94,
+                      arrowScale: uiScale,
+                      onColorSelected: (color) {
+                        _updateImageVectorEffectLayer(
+                          layer.id,
+                          imageVectorFillEnabled: true,
+                          imageVectorFillColor: color.withAlpha(255),
+                          recordHistory: false,
+                        );
+                      },
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 170),
-            switchInCurve: Curves.easeOut,
-            switchOutCurve: Curves.easeOut,
-            child: expanded
-                ? Padding(
-                    key: const ValueKey<String>('png_effect_expanded'),
-                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
-                    child: Column(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: WonderPicEditorScreen._panelBg,
-                            borderRadius: BorderRadius.circular(11),
-                            border: Border.all(
-                              color: const Color(0x244F5358),
-                              width: 0.4,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Expanded(
-                                child: Text(
-                                  'Apply tint to PNG element',
-                                  style: TextStyle(
-                                    fontSize: 11.6,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFFF3F3F2),
-                                  ),
-                                ),
-                              ),
-                              Switch.adaptive(
-                                value: enabled,
-                                activeColor: kActiveAccent,
-                                onChanged: (value) {
-                                  _updateImagePngEffectLayer(
-                                    layer.id,
-                                    imagePngEffectEnabled: value,
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (enabled) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Expanded(
-                                  child: presetChip('White', Colors.white)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                  child: presetChip('Black', Colors.black)),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          _buildHorizontalColorPickerWithNavigation(
-                            palette: _kTextPalette,
-                            selectedColor: selectedColor,
-                            controller: _pngEffectColorStripController,
-                            stripScale: 0.88,
-                            arrowScale: 0.84,
-                            onColorSelected: (color) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectColor: color.withAlpha(255),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          _SettingsSliderTile(
-                            label: 'Strength',
-                            value: strength,
-                            min: 0,
-                            max: 100,
-                            valueText: '${strength.toStringAsFixed(0)}%',
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectStrength: value,
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          _SettingsSliderTile(
-                            label: 'Details',
-                            value: details,
-                            min: 0,
-                            max: 100,
-                            valueText: '${details.toStringAsFixed(0)}%',
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectDetails: value,
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          _SettingsSliderTile(
-                            label: 'Threshold',
-                            value: threshold,
-                            min: -100,
-                            max: 100,
-                            valueText: _formatSignedValue(threshold,
-                                fractionDigits: 0),
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectThreshold: value,
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          _SettingsSliderTile(
-                            label: 'Red',
-                            value: selectedColor.red.toDouble(),
-                            min: 0,
-                            max: 255,
-                            valueText: '${selectedColor.red}',
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectColor:
-                                    selectedColor.withRed(value.round()),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          _SettingsSliderTile(
-                            label: 'Green',
-                            value: selectedColor.green.toDouble(),
-                            min: 0,
-                            max: 255,
-                            valueText: '${selectedColor.green}',
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectColor:
-                                    selectedColor.withGreen(value.round()),
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 6),
-                          _SettingsSliderTile(
-                            label: 'Blue',
-                            value: selectedColor.blue.toDouble(),
-                            min: 0,
-                            max: 255,
-                            valueText: '${selectedColor.blue}',
-                            compact: true,
-                            onChanged: (value) {
-                              _updateImagePngEffectLayer(
-                                layer.id,
-                                imagePngEffectColor:
-                                    selectedColor.withBlue(value.round()),
-                              );
-                            },
-                          ),
-                        ],
-                      ],
-                    ),
-                  )
-                : const SizedBox.shrink(
-                    key: ValueKey<String>('png_effect_closed')),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -24283,6 +27779,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   ) {
     final int layerIndex = _layers.indexWhere((entry) => entry.id == layerId);
     if (layerIndex < 0) return;
+    if (_isFusionDesignWorkspace) {
+      _invalidateDesignGuideCacheForLayer(layerId);
+    }
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final EditorLayer current = nextLayers[layerIndex];
     final Offset? normalizedPosition = current.isBackground
@@ -24296,6 +27795,12 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       position: normalizedPosition,
     );
     _layers = nextLayers;
+    if (_isFusionDesignWorkspace && _selectedLayerId == layerId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scheduleDesignGuidePreparationForSelection(force: true);
+      });
+    }
   }
 
   void _armCloneSourceSelection({
@@ -24825,6 +28330,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     for (final EditorLayer layer in _layers) {
       if (!layer.isVisible || layer.isBackground) continue;
       if (layer.type == EditorLayerType.text) return true;
+      if (layer.type == EditorLayerType.vector) return true;
       if (layer.type == EditorLayerType.image) {
         final String? shapeKey = layer.overlayShapeTypeKey;
         if (shapeKey != null && shapeKey.trim().isNotEmpty) {
@@ -24981,20 +28487,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           canvas.save();
           canvas.translate(data.center.dx, data.center.dy);
           canvas.rotate(data.rotation);
+          final Rect sourceRect = Rect.fromLTWH(
+            0,
+            0,
+            image.width.toDouble(),
+            image.height.toDouble(),
+          );
+          final Rect destinationRect = Rect.fromCenter(
+            center: Offset.zero,
+            width: data.width,
+            height: data.height,
+          );
           _drawImageLayerShadow(
             canvas: canvas,
             image: image,
-            sourceRect: Rect.fromLTWH(
-              0,
-              0,
-              image.width.toDouble(),
-              image.height.toDouble(),
-            ),
-            destinationRect: Rect.fromCenter(
-              center: Offset.zero,
-              width: data.width,
-              height: data.height,
-            ),
+            sourceRect: sourceRect,
+            destinationRect: destinationRect,
             color: data.shadowColor,
             offset: data.shadowOffset,
             blurSigma: data.shadowBlurSigma,
@@ -25002,17 +28510,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           );
           canvas.drawImageRect(
             image,
-            Rect.fromLTWH(
-              0,
-              0,
-              image.width.toDouble(),
-              image.height.toDouble(),
-            ),
-            Rect.fromCenter(
-              center: Offset.zero,
-              width: data.width,
-              height: data.height,
-            ),
+            sourceRect,
+            destinationRect,
             _buildImageLayerPaint(layer),
           );
           canvas.restore();
@@ -25032,6 +28531,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           final _BentTextLayout? bentFillLayout = data.bentFillLayout;
           final _BentTextLayout? bentStrokeLayout = data.bentStrokeLayout;
           final _BentTextLayout? bentShadowLayout = data.bentShadowLayout;
+          final double fillOpacity = data.textOpacity.clamp(0.0, 1.0);
           final bool usesBentRendering =
               bentFillLayout != null && data.textBend.abs() >= 0.5;
           if (usesBentRendering) {
@@ -25046,7 +28546,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             if (bentStrokeLayout != null) {
               _drawBentTextLayout(canvas, bentStrokeLayout);
             }
-            _drawBentTextLayout(canvas, bentFillLayout);
+            if (fillOpacity > 0.001) {
+              if (fillOpacity < 0.999) {
+                canvas.saveLayer(
+                  Rect.fromCenter(
+                    center: Offset.zero,
+                    width: data.width * 1.35,
+                    height: data.height * 1.35,
+                  ),
+                  Paint()..color = Colors.white.withOpacity(fillOpacity),
+                );
+                _drawBentTextLayout(canvas, bentFillLayout);
+                canvas.restore();
+              } else {
+                _drawBentTextLayout(canvas, bentFillLayout);
+              }
+            }
           } else {
             final Offset textTopLeft =
                 Offset(-data.width / 2, -data.height / 2);
@@ -25056,7 +28571,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               shadowPainter.paint(canvas, shadowOrigin);
               final double spread = data.shadowSpread;
               if (spread > 0.01) {
-                final int ringSteps = math.max(24, (spread * 14).round());
+                final int ringSteps = _textShadowSpreadRingSteps(spread);
                 for (int i = 0; i < ringSteps; i++) {
                   final double angle = (2 * math.pi * i) / ringSteps;
                   final Offset spreadOffset = Offset(
@@ -25068,11 +28583,43 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
               }
             }
             data.strokePainter?.paint(canvas, textTopLeft);
-            data.fillPainter.paint(canvas, textTopLeft);
+            if (fillOpacity > 0.001) {
+              if (fillOpacity < 0.999) {
+                canvas.saveLayer(
+                  Rect.fromLTWH(
+                    textTopLeft.dx,
+                    textTopLeft.dy,
+                    data.width,
+                    data.height,
+                  ),
+                  Paint()..color = Colors.white.withOpacity(fillOpacity),
+                );
+                data.fillPainter.paint(canvas, textTopLeft);
+                canvas.restore();
+              } else {
+                data.fillPainter.paint(canvas, textTopLeft);
+              }
+            }
           }
           canvas.restore();
           break;
         case EditorLayerType.vector:
+          final ui.Picture? picture = layer.vectorPicture;
+          if (picture == null) break;
+          final _VectorLayerSceneData? data = _buildVectorLayerSceneData(
+            layer: layer,
+            picture: picture,
+            artboard: artboard,
+            workspaceSize: workspaceSize,
+            rotateHandleDistance: 0,
+            moveHandleDistance: 0,
+          );
+          if (data == null) break;
+          _drawVectorLayer(
+            canvas: canvas,
+            layer: layer,
+            data: data,
+          );
           break;
         case EditorLayerType.mask:
           break;
@@ -25330,6 +28877,113 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     );
   }
 
+  void _setTemplateImportProgress(
+    String label,
+    double progress, {
+    bool force = false,
+  }) {
+    if (!mounted) return;
+    final String normalizedLabel =
+        label.trim().isEmpty ? 'Opening template...' : label.trim();
+    final double normalizedProgress = progress.clamp(0.0, 1.0).toDouble();
+    final int nowMs = DateTime.now().millisecondsSinceEpoch;
+    final bool isDuplicate = normalizedLabel == _templateImportStatus &&
+        (normalizedProgress - _templateImportProgress).abs() < 0.008;
+    if (isDuplicate && !force) return;
+    if (!force && (nowMs - _templateImportProgressUpdatedAtMs) < 65) return;
+    _templateImportProgressUpdatedAtMs = nowMs;
+    setState(() {
+      _templateImportStatus = normalizedLabel;
+      _templateImportProgress = normalizedProgress;
+    });
+  }
+
+  Widget _buildTemplateImportOverlay() {
+    final double panelWidth = math.min(
+      286,
+      math.max(198, MediaQuery.sizeOf(context).width - 46),
+    );
+    final double normalizedProgress =
+        _templateImportProgress.clamp(0.0, 1.0).toDouble();
+    final String percent = '${(normalizedProgress * 100).round()}%';
+    return Positioned.fill(
+      child: AbsorbPointer(
+        absorbing: true,
+        child: Container(
+          color: const Color(0x500B1020),
+          alignment: Alignment.center,
+          child: Container(
+            width: panelWidth,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1B1E24),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF5B5A57), width: 0.75),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x33000000),
+                  blurRadius: 18,
+                  spreadRadius: 0,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const SizedBox(
+                      width: 15,
+                      height: 15,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.1,
+                        color: Color(0xFFE6F24A),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        _templateImportStatus,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFF3F3F2),
+                          fontSize: 12.6,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      percent,
+                      style: const TextStyle(
+                        color: Color(0xFFD4D4D3),
+                        fontSize: 11.2,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 9),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value:
+                        normalizedProgress <= 0.001 ? null : normalizedProgress,
+                    minHeight: 4.2,
+                    backgroundColor: const Color(0xFF2B3038),
+                    color: const Color(0xFFE6F24A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildExportingOverlay() {
     final double panelWidth = math.min(
       244,
@@ -25394,6 +29048,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   void _onLayerImageChanged(String layerId, ui.Image image) {
     final int index = _layers.indexWhere((layer) => layer.id == layerId);
     if (index < 0) return;
+    if (_isFusionDesignWorkspace) {
+      _invalidateDesignGuideCacheForLayer(layerId);
+    }
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final EditorLayer current = nextLayers[index];
     _pushUndoSnapshot();
@@ -25407,6 +29064,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         _marqueeSelection = null;
       }
     });
+    if (_isFusionDesignWorkspace && _selectedLayerId == layerId) {
+      _scheduleDesignGuidePreparationForSelection(force: true);
+    }
   }
 
   void _onLayerSelected(String? layerId) {
@@ -25416,6 +29076,26 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     setState(() {
       _selectedLayerId = layerId;
       _resetMoveJoystickControls();
+      if (_designShapeStrokeWidthDraftLayerId != layerId) {
+        _designShapeStrokeWidthDraftLayerId = null;
+        _designShapeStrokeWidthDraftValue = null;
+      }
+      if (_isFusionDesignWorkspace) {
+        final Set<String> filtered =
+            _filteredDesignPathfinderSelection(_designPathfinderSelectionIds);
+        final bool keepCurrentSelection =
+            layerId != null && filtered.contains(layerId);
+        if (!keepCurrentSelection) {
+          _designPathfinderSelectionIds.clear();
+          _isDesignPathfinderSelectionMode = false;
+          _isDesignPathfinderProcessing = false;
+        } else {
+          _designPathfinderSelectionIds
+            ..clear()
+            ..addAll(filtered);
+          _isDesignPathfinderSelectionMode = filtered.length >= 2;
+        }
+      }
       final EditorLayer? selected = _selectedLayer();
       if (selected == null || selected.type != EditorLayerType.image) {
         _sketchReplaceBrushPreviewTimer?.cancel();
@@ -25471,10 +29151,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         _imageAdjustFloatingBaseline = null;
         _imageAdjustFloatingLayerId = null;
       }
-      if (selected == null || !_isCatalogElementPngLayer(selected)) {
-        _pngEffectExpandedLayerId = null;
-      } else if (_pngEffectExpandedLayerId != selected.id) {
-        _pngEffectExpandedLayerId = null;
+      if (selected == null ||
+          !_isCatalogElementPngLayer(selected) ||
+          _pngEffectColorStripLayerId != selected.id) {
+        _pngEffectColorStripLayerId = null;
+      }
+      if (selected == null ||
+          !_isCatalogElementVectorLayer(selected) ||
+          _vectorEffectColorStripLayerId != selected.id) {
+        _vectorEffectColorStripLayerId = null;
       }
       if (_isCropFloatingOpen) {
         if (selected == null ||
@@ -25506,7 +29191,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final EditorLayer? liveSelected = _selectedLayer();
     if (liveSelected?.type == EditorLayerType.text) {
       unawaited(
-        _ensureFontReady(
+        _warmupFontReady(
           family: liveSelected?.textFontFamily ?? '',
           weight: liveSelected?.textFontWeight ?? 400,
         ),
@@ -25514,6 +29199,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     }
     if (layerId == null) _sketchReplaceBrushPreviewTimer?.cancel();
     _syncTextInputFromSelectedLayer();
+    if (_isFusionDesignWorkspace) {
+      _scheduleDesignGuidePreparationForSelection();
+    }
   }
 
   void _onLayerTransformChanged(
@@ -25632,6 +29320,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
   void _upsertSolidBackground({
     required Size solidSize,
     required String name,
+    Color solidColor = const Color(0xFFFFFFFF),
   }) {
     final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
     final int existingIndex =
@@ -25646,7 +29335,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       type: EditorLayerType.solid,
       isBackground: true,
       isVisible: true,
-      solidColor: const Color(0xFFFFFFFF),
+      solidColor: solidColor,
       solidSize: solidSize,
     );
 
@@ -25666,6 +29355,105 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     if (_marqueeSelection != null && _marqueeSelection!.layerId != layerId) {
       _marqueeSelection = null;
     }
+  }
+
+  void _applyBlankCanvasToActiveProject({
+    required _ProjectCreateRequest request,
+  }) {
+    final bool hadWorkspaceBefore = _workspaceLayerForEdit(_layers) != null;
+    final String projectName = _activeProjectSessionName();
+    _pushUndoSnapshot();
+    setState(() {
+      _upsertSolidBackground(
+        solidSize: request.workspaceSize,
+        name: 'Background',
+        solidColor: request.workspaceMode == _ProjectWorkspaceMode.transparent
+            ? const Color(0x00000000)
+            : request.solidColor,
+      );
+      _isToolEnabled = false;
+    });
+    _resetMoveJoystickControls();
+    _closeToolSettingsSidebarIfOpen();
+    final bool transparentMode =
+        request.workspaceMode == _ProjectWorkspaceMode.transparent;
+    _showExportMessage(
+      hadWorkspaceBefore
+          ? (transparentMode
+              ? 'Blank canvas updated in $projectName.'
+              : 'Solid canvas updated in $projectName.')
+          : (transparentMode
+              ? 'Blank canvas added to $projectName.'
+              : 'Solid canvas added to $projectName.'),
+    );
+  }
+
+  _EditorSnapshot _buildProjectSnapshotFromRequest(
+    _ProjectCreateRequest request,
+  ) {
+    const String backgroundLayerId = 'layer_1';
+    return _EditorSnapshot(
+      layers: <EditorLayer>[
+        EditorLayer(
+          id: backgroundLayerId,
+          name: 'Background',
+          type: EditorLayerType.solid,
+          isVisible: true,
+          isBackground: true,
+          solidColor: request.workspaceMode == _ProjectWorkspaceMode.transparent
+              ? const Color(0x00000000)
+              : request.solidColor,
+          solidSize: request.workspaceSize,
+        ),
+      ],
+      pencilStrokes: <_BrushStroke>[],
+      selectedLayerId: backgroundLayerId,
+      activeTool: EditorTool.move,
+      isToolEnabled: false,
+      nextLayerId: 2,
+      isCloneSourceArmed: false,
+      isCloneBrushSelected: false,
+      isCloneEraseSelected: false,
+      textFontLocale: _textFontLocale,
+      marqueeMode: _marqueeMode,
+      marqueeSelection: null,
+    );
+  }
+
+  void _createProjectSessionFromRequest({
+    required _ProjectCreateRequest request,
+  }) {
+    if (_isProjectSwitchOrCreateBlocked()) return;
+    _persistActiveProjectSessionState();
+
+    final String id = _nextProjectSessionId();
+    final String name = _nextProjectDisplayName();
+    final _EditorSnapshot snapshot = _buildProjectSnapshotFromRequest(request);
+    final _EditorProjectSession session = _EditorProjectSession(
+      id: id,
+      name: name,
+      snapshot: snapshot,
+      undoStack: <_EditorSnapshot>[],
+      redoStack: <_EditorSnapshot>[],
+      updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+    );
+
+    setState(() {
+      _projectSessions.add(session);
+      _undoStack.clear();
+      _redoStack.clear();
+      _activeProjectSessionId = id;
+    });
+    _applySnapshot(snapshot);
+    _resetMoveJoystickControls();
+    _closeToolSettingsSidebarIfOpen();
+    final String workspaceLabel =
+        request.workspaceMode == _ProjectWorkspaceMode.solid
+            ? 'Solid'
+            : 'Blank';
+    _showExportMessage(
+      'Created $name ($workspaceLabel • ${request.sizeLabel} • ${request.dpiLabel}).',
+    );
   }
 
   void _addOverlayImageLayer({
@@ -25742,12 +29530,282 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     required ui.Image image,
     required Size workspaceSize,
   }) {
-    final double longestImageEdge =
-        math.max(image.width, image.height).toDouble().clamp(1.0, 100000.0);
+    final Size sourceSize =
+        Size(image.width.toDouble(), image.height.toDouble());
+    return _elementInitialLayerScaleForSourceSize(
+      sourceSize: sourceSize,
+      workspaceSize: workspaceSize,
+    );
+  }
+
+  double _elementInitialLayerScaleForSourceSize({
+    required Size sourceSize,
+    required Size workspaceSize,
+  }) {
+    final double longestImageEdge = math
+        .max(sourceSize.width, sourceSize.height)
+        .clamp(1.0, 100000.0)
+        .toDouble();
     final double target = _elementTargetLongestEdgeInSource(workspaceSize);
     return (target / longestImageEdge)
         .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
         .toDouble();
+  }
+
+  void _addOverlayVectorLayer({
+    required ui.Picture picture,
+    required String svgMarkup,
+    required Size vectorSourceSize,
+    required Size workspaceSize,
+    Offset? position,
+    double? initialLayerScaleOverride,
+    String layerNamePrefix = 'Uploaded SVG Element',
+    bool isCatalogElement = false,
+    String? elementAssetId,
+    String? elementMimeType,
+    String? elementFileUrl,
+  }) {
+    final int overlayVectorCount = _layers
+        .where(
+          (entry) =>
+              entry.type == EditorLayerType.vector &&
+              !entry.isBackground &&
+              entry.name.startsWith(layerNamePrefix),
+        )
+        .length;
+    final double initialScale = (initialLayerScaleOverride ??
+            _elementInitialLayerScaleForSourceSize(
+              sourceSize: vectorSourceSize,
+              workspaceSize: workspaceSize,
+            ))
+        .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
+        .toDouble();
+    final String newId = 'layer_${_nextLayerId++}';
+    final Offset resolvedPosition = _clampSourcePositionToWorkspace(
+      position ?? Offset(workspaceSize.width / 2, workspaceSize.height / 2),
+      workspaceSize,
+    );
+    final EditorLayer overlay = EditorLayer(
+      id: newId,
+      name: overlayVectorCount == 0
+          ? layerNamePrefix
+          : '$layerNamePrefix ${overlayVectorCount + 1}',
+      type: EditorLayerType.vector,
+      isBackground: false,
+      isVisible: true,
+      vectorPicture: picture,
+      vectorSvgMarkup: svgMarkup,
+      vectorSourceSize: vectorSourceSize,
+      solidSize: vectorSourceSize,
+      position: resolvedPosition,
+      layerScale: initialScale,
+      layerRotation: 0.0,
+      isCatalogElement: isCatalogElement,
+      elementAssetId: elementAssetId,
+      elementMimeType: elementMimeType,
+      elementFileUrl: elementFileUrl,
+    );
+    _layers = <EditorLayer>[..._layers, overlay];
+    _selectedLayerId = newId;
+  }
+
+  Size _fusionDesignShapeSourceSize(_DesignShapeKind kind) {
+    switch (kind) {
+      case _DesignShapeKind.rectangle:
+        return const Size(640, 640);
+      case _DesignShapeKind.circle:
+        return const Size(640, 640);
+      case _DesignShapeKind.line:
+        return const Size(860, 180);
+      case _DesignShapeKind.path:
+        return const Size(640, 640);
+    }
+  }
+
+  double _fusionDesignShapeDefaultStrokeWidth(_DesignShapeKind kind) {
+    switch (kind) {
+      case _DesignShapeKind.rectangle:
+      case _DesignShapeKind.circle:
+      case _DesignShapeKind.path:
+        return 0;
+      case _DesignShapeKind.line:
+        return 28;
+    }
+  }
+
+  String _fusionDesignShapeLayerName(_DesignShapeKind kind) {
+    switch (kind) {
+      case _DesignShapeKind.rectangle:
+        return 'Rectangle';
+      case _DesignShapeKind.circle:
+        return 'Circle';
+      case _DesignShapeKind.line:
+        return 'Line';
+      case _DesignShapeKind.path:
+        return 'Shape';
+    }
+  }
+
+  String _fusionDesignShapeFileUrl(_DesignShapeKind kind) {
+    return '$_designShapeLayerUrlPrefix${kind.key}';
+  }
+
+  String _formatSvgNumber(double value) {
+    final double safe = value.isFinite ? value : 0;
+    final double rounded = safe.roundToDouble();
+    if ((safe - rounded).abs() < 0.0001) {
+      return rounded.toInt().toString();
+    }
+    return safe
+        .toStringAsFixed(3)
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+
+  String _fusionDesignShapeSvgMarkup({
+    required _DesignShapeKind kind,
+    required Size sourceSize,
+    required bool fillEnabled,
+    required Color fillColor,
+    required bool strokeEnabled,
+    required Color strokeColor,
+    required double strokeWidth,
+    String? pathData,
+  }) {
+    final double width = math.max(2.0, sourceSize.width);
+    final double height = math.max(2.0, sourceSize.height);
+    final bool effectiveFillEnabled =
+        kind == _DesignShapeKind.line ? false : fillEnabled;
+    final bool effectiveStrokeEnabled =
+        kind == _DesignShapeKind.line ? true : strokeEnabled;
+    final String fillValue =
+        effectiveFillEnabled ? _hexColor(fillColor) : 'none';
+    final String strokeValue =
+        effectiveStrokeEnabled ? _hexColor(strokeColor) : 'none';
+    final double safeStrokeWidth = effectiveStrokeEnabled
+        ? strokeWidth
+            .clamp(
+              kind == _DesignShapeKind.line ? 1.0 : 0.0,
+              math.max(width, height),
+            )
+            .toDouble()
+        : 0.0;
+    final double halfStroke = safeStrokeWidth / 2;
+    final String shapeMarkup;
+    switch (kind) {
+      case _DesignShapeKind.rectangle:
+        final double x = halfStroke.clamp(0.0, width / 2 - 1);
+        final double y = halfStroke.clamp(0.0, height / 2 - 1);
+        final double rectWidth = math.max(1.0, width - (x * 2));
+        final double rectHeight = math.max(1.0, height - (y * 2));
+        shapeMarkup =
+            '<rect x="${_formatSvgNumber(x)}" y="${_formatSvgNumber(y)}" '
+            'width="${_formatSvgNumber(rectWidth)}" height="${_formatSvgNumber(rectHeight)}" '
+            'fill="$fillValue" stroke="$strokeValue" stroke-width="${_formatSvgNumber(safeStrokeWidth)}" '
+            'stroke-linejoin="round"/>';
+        break;
+      case _DesignShapeKind.circle:
+        final double radius = math.max(
+          1.0,
+          (math.min(width, height) / 2) - halfStroke,
+        );
+        shapeMarkup =
+            '<circle cx="${_formatSvgNumber(width / 2)}" cy="${_formatSvgNumber(height / 2)}" '
+            'r="${_formatSvgNumber(radius)}" fill="$fillValue" stroke="$strokeValue" '
+            'stroke-width="${_formatSvgNumber(safeStrokeWidth)}"/>';
+        break;
+      case _DesignShapeKind.line:
+        final double y = height / 2;
+        final double x1 = math.max(halfStroke + 8, width * 0.08);
+        final double x2 = math.min(width - halfStroke - 8, width * 0.92);
+        shapeMarkup =
+            '<line x1="${_formatSvgNumber(x1)}" y1="${_formatSvgNumber(y)}" '
+            'x2="${_formatSvgNumber(x2)}" y2="${_formatSvgNumber(y)}" '
+            'stroke="$strokeValue" stroke-width="${_formatSvgNumber(safeStrokeWidth)}" '
+            'stroke-linecap="round"/>';
+        break;
+      case _DesignShapeKind.path:
+        final String safePath = (pathData ?? '').trim();
+        if (safePath.isEmpty) {
+          shapeMarkup = '<path d="M0 0" fill="none" stroke="none"/>';
+          break;
+        }
+        shapeMarkup =
+            '<path d="$safePath" fill="$fillValue" stroke="$strokeValue" '
+            'stroke-width="${_formatSvgNumber(safeStrokeWidth)}" '
+            'fill-rule="evenodd" stroke-linejoin="round" stroke-linecap="round"/>';
+        break;
+    }
+    return '<svg xmlns="http://www.w3.org/2000/svg" '
+        'width="${_formatSvgNumber(width)}" height="${_formatSvgNumber(height)}" '
+        'viewBox="0 0 ${_formatSvgNumber(width)} ${_formatSvgNumber(height)}">'
+        '$shapeMarkup'
+        '</svg>';
+  }
+
+  Future<void> _insertFusionDesignShapeLayer(_DesignShapeKind kind) async {
+    if (!_isFusionDesignWorkspace || !mounted) return;
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    if (workspace == null) {
+      _showExportMessage('Create a project first.', isError: true);
+      return;
+    }
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      _showExportMessage('Create a project first.', isError: true);
+      return;
+    }
+    final Size sourceSize = _fusionDesignShapeSourceSize(kind);
+    final bool fillEnabled = kind != _DesignShapeKind.line;
+    final bool strokeEnabled = kind == _DesignShapeKind.line;
+    final double strokeWidth = _fusionDesignShapeDefaultStrokeWidth(kind);
+    final String svgMarkup = _fusionDesignShapeSvgMarkup(
+      kind: kind,
+      sourceSize: sourceSize,
+      fillEnabled: fillEnabled,
+      fillColor: _designShapeDefaultFillColor,
+      strokeEnabled: strokeEnabled,
+      strokeColor: _designShapeDefaultStrokeColor,
+      strokeWidth: strokeWidth,
+    );
+    try {
+      final vg.PictureInfo pictureInfo = await vg.vg.loadPicture(
+        vg.SvgStringLoader(svgMarkup),
+        null,
+      );
+      if (!mounted) {
+        pictureInfo.picture.dispose();
+        return;
+      }
+      final double initialScale = _elementInitialLayerScaleForSourceSize(
+        sourceSize: sourceSize,
+        workspaceSize: workspaceSize,
+      );
+      _pushUndoSnapshot();
+      setState(() {
+        _addOverlayVectorLayer(
+          picture: pictureInfo.picture,
+          svgMarkup: svgMarkup,
+          vectorSourceSize: sourceSize,
+          workspaceSize: workspaceSize,
+          position: Offset(workspaceSize.width / 2, workspaceSize.height / 2),
+          initialLayerScaleOverride: initialScale,
+          layerNamePrefix: _fusionDesignShapeLayerName(kind),
+          isCatalogElement: false,
+          elementAssetId: 'fusion_shape_${kind.key}',
+          elementMimeType: 'image/svg+xml',
+          elementFileUrl: _fusionDesignShapeFileUrl(kind),
+        );
+        _activeTool = EditorTool.move;
+        _isToolEnabled = true;
+        _designShapeStrokeWidthDraftLayerId = null;
+        _designShapeStrokeWidthDraftValue = null;
+      });
+    } catch (error) {
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
+    }
   }
 
   _PendingElementPlacement _preparePendingElementPlacement({
@@ -25808,7 +29866,9 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     );
   }
 
-  Future<_LoadedElementAsset> _loadElementAsset(String fileUrl) async {
+  Future<_LoadedElementAsset> _loadElementAsset(
+      _ElementsAssetItem asset) async {
+    final String fileUrl = asset.fileUrl;
     final http.Response imageResponse =
         await http.get(Uri.parse(fileUrl)).timeout(const Duration(minutes: 2));
     if (imageResponse.statusCode < 200 || imageResponse.statusCode >= 300) {
@@ -25817,7 +29877,17 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       );
     }
     final Uint8List bytes = imageResponse.bodyBytes;
-    final ui.Image image = await _decodeUiImage(bytes);
+    final ui.Image decodedImage = await _decodeUiImage(bytes);
+    final ui.Image image = await _maybeUpscaleCatalogPngImageForCanvas(
+      image: decodedImage,
+      fileUrl: fileUrl,
+      mimeType: asset.mimeType,
+      widthHint: asset.width,
+      heightHint: asset.height,
+    );
+    if (!identical(image, decodedImage)) {
+      decodedImage.dispose();
+    }
     return _LoadedElementAsset(
       bytes: bytes,
       image: image,
@@ -25830,8 +29900,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     required bool placeOnDrop,
   }) async {
     try {
-      final _LoadedElementAsset loaded =
-          await _loadElementAsset(selectedAsset.fileUrl);
+      final _LoadedElementAsset loaded = await _loadElementAsset(selectedAsset);
       if (!mounted) return;
       final _PendingElementPlacement? current = _pendingElementPlacement;
       if (current == null || current.assetId != selectedAsset.id) return;
@@ -26790,6 +30859,15 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           _KieIdeogramImageSize.portrait43,
           _KieIdeogramImageSize.portrait169,
         ];
+      case _KieAiImageModel.zImage:
+        // z-image only accepts 1:1, 4:3, 3:4, 16:9, 9:16.
+        return const <_KieIdeogramImageSize>[
+          _KieIdeogramImageSize.square,
+          _KieIdeogramImageSize.portrait43,
+          _KieIdeogramImageSize.landscape43,
+          _KieIdeogramImageSize.portrait169,
+          _KieIdeogramImageSize.landscape169,
+        ];
       default:
         return _KieIdeogramImageSize.values;
     }
@@ -26807,6 +30885,22 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     final List<_KieFluxAspectRatio> options = _kieGptAspectRatioOptions();
     if (options.contains(value)) return value;
     return options.first;
+  }
+
+  String _zImageAspectRatioForSize(_KieIdeogramImageSize size) {
+    switch (size) {
+      case _KieIdeogramImageSize.square:
+      case _KieIdeogramImageSize.squareHd:
+        return '1:1';
+      case _KieIdeogramImageSize.portrait43:
+        return '3:4';
+      case _KieIdeogramImageSize.portrait169:
+        return '9:16';
+      case _KieIdeogramImageSize.landscape43:
+        return '4:3';
+      case _KieIdeogramImageSize.landscape169:
+        return '16:9';
+    }
   }
 
   Map<String, dynamic> _buildKieImageInput({
@@ -26841,7 +30935,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     } else if (model == _KieAiImageModel.flux2Pro ||
         model == _KieAiImageModel.gptImage15 ||
         model == _KieAiImageModel.seedream5Lite ||
-        model == _KieAiImageModel.ideogramV3Remix) {
+        model == _KieAiImageModel.ideogramV3Remix ||
+        model == _KieAiImageModel.zImage) {
       effectivePrompt = cleanPrompt;
     } else {
       effectivePrompt = _buildKieReferencePrompt(
@@ -26951,7 +31046,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       case _KieAiImageModel.zImage:
         return <String, dynamic>{
           'prompt': effectivePrompt,
-          'aspect_ratio': sizePreset.aspectRatio,
+          'aspect_ratio': _zImageAspectRatioForSize(ideogramImageSize),
         };
     }
   }
@@ -26986,6 +31081,8 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       case _KieAiImageModel.qwen:
         return 1;
       case _KieAiImageModel.ideogramV3Remix:
+        return 0;
+      case _KieAiImageModel.zImage:
         return 0;
       default:
         return 2;
@@ -27700,8 +31797,28 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
     _KieIdeogramImageSize selectedIdeogramImageSize =
         _defaultKieIdeogramImageSize;
     _AiGenerationQuality selectedAiQuality = _defaultAiGenerationQuality;
-    _AiCanvasSizePreset selectedProjectSizePreset = _AiCanvasSizePreset.story;
-    _ProjectDpiPreset selectedProjectDpi = _ProjectDpiPreset.dpi300;
+    _ProjectWorkspaceMode? selectedProjectWorkspaceMode;
+    _ProjectCanvasPreset? selectedProjectCanvasPreset;
+    _ProjectCanvasUnit selectedProjectCanvasUnit = _ProjectCanvasUnit.mm;
+    _ProjectDpiChoice? selectedProjectDpiChoice;
+    Color selectedProjectSolidColor = const Color(0xFFFFFFFF);
+    final TextEditingController customProjectWidthController =
+        TextEditingController(text: '108');
+    final TextEditingController customProjectHeightController =
+        TextEditingController(text: '192');
+    final TextEditingController customProjectDpiController =
+        TextEditingController(text: '300');
+    final ScrollController projectColorStripController = ScrollController();
+    const List<Color> projectSolidColorChoices = <Color>[
+      Color(0xFFFFFFFF),
+      Color(0xFFF1F5F9),
+      Color(0xFF0F172A),
+      Color(0xFF1D4ED8),
+      Color(0xFF16A34A),
+      Color(0xFFF59E0B),
+      Color(0xFFDC2626),
+      Color(0xFF7C3AED),
+    ];
     final List<Uint8List?> aiReferenceImages =
         List<Uint8List?>.filled(16, null, growable: false);
     bool sheetOpen = true;
@@ -27717,7 +31834,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
         barrierColor: Colors.transparent,
         backgroundColor: Colors.transparent,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.36,
+          maxHeight: MediaQuery.sizeOf(context).height * 0.78,
         ),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(34)),
@@ -27731,6 +31848,11 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
           bool qualityMenuExpanded = false;
           bool styleMenuExpanded = false;
           bool sizeMenuExpanded = false;
+          bool projectTypeMenuExpanded = false;
+          bool projectSizeMenuExpanded = false;
+          bool projectUnitMenuExpanded = false;
+          bool projectDpiMenuExpanded = false;
+          bool projectColorMenuExpanded = false;
 
           Future<void> pickAiReferenceImage(
             StateSetter setSheetState,
@@ -27959,31 +32081,6 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-            );
-          }
-
-          Widget buildSegmentWrap<T>({
-            required List<T> items,
-            required T value,
-            required String Function(T) labelOf,
-            required ValueChanged<T> onChanged,
-          }) {
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List<Widget>.generate(items.length, (int index) {
-                  final T item = items[index];
-                  return Padding(
-                    padding: EdgeInsets.only(
-                        right: index == items.length - 1 ? 0 : 6),
-                    child: buildChip(
-                      label: labelOf(item),
-                      selected: item == value,
-                      onTap: () => onChanged(item),
-                    ),
-                  );
-                }),
               ),
             );
           }
@@ -28271,19 +32368,1349 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
             );
           }
 
-          return Theme(
-            data: Theme.of(sheetContext).copyWith(
-              bottomSheetTheme: const BottomSheetThemeData(
-                surfaceTintColor: Colors.transparent,
-                backgroundColor: aiSheetSurface,
-              ),
-            ),
-            child: ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(34)),
-              child: Stack(
-                children: [
-                  Positioned.fill(
+          return StatefulBuilder(
+            builder: (sheetContext, setSheetState) {
+              final double aiPageMaxHeight =
+                  MediaQuery.sizeOf(sheetContext).height * 0.6;
+              final double sheetTopPadding = pageIndex == 1 ? 4 : 10;
+              final double sheetBottomPadding = pageIndex == 1 ? 38 : 18;
+              Widget rootContent() {
+                return Column(
+                  key: const ValueKey<String>('add-root'),
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4F5358),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    ListTile(
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(
+                          color: _floatingPanelStrokeSolid,
+                          width: 0.55,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      tileColor: _floatingPanelSurfaceSolid,
+                      leading: const Icon(
+                        Icons.dashboard_customize_outlined,
+                        color: Color(0xFFD4D4D3),
+                        size: 20,
+                      ),
+                      title: const Text(
+                        'Create new project',
+                        style: TextStyle(
+                          color: Color(0xFFF3F3F2),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Open a fresh project tab',
+                        style: TextStyle(
+                          color: Color(0xFFB8B7B5),
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap: () {
+                        setSheetState(() {
+                          selectedProjectWorkspaceMode = null;
+                          selectedProjectCanvasPreset = null;
+                          selectedProjectCanvasUnit = _ProjectCanvasUnit.mm;
+                          selectedProjectDpiChoice = null;
+                          customProjectWidthController.text = '108';
+                          customProjectHeightController.text = '192';
+                          customProjectDpiController.text = '300';
+                          selectedProjectSolidColor = const Color(0xFFFFFFFF);
+                          projectTypeMenuExpanded = false;
+                          projectSizeMenuExpanded = false;
+                          projectUnitMenuExpanded = false;
+                          projectDpiMenuExpanded = false;
+                          projectColorMenuExpanded = false;
+                          pageIndex = 1;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(
+                          color: _floatingPanelStrokeSolid,
+                          width: 0.55,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      tileColor: _floatingPanelSurfaceSolid,
+                      leading: const Icon(
+                        Icons.add_photo_alternate_outlined,
+                        color: Color(0xFFD4D4D3),
+                        size: 20,
+                      ),
+                      title: const Text(
+                        'Add image',
+                        style: TextStyle(
+                          color: Color(0xFFF3F3F2),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onTap: () {
+                        sheetOpen = false;
+                        Navigator.of(sheetContext).pop(
+                          const _AddBottomSheetResult.image(),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    ListTile(
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(
+                          color: _floatingPanelStrokeSolid,
+                          width: 0.55,
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      tileColor: _floatingPanelSurfaceSolid,
+                      leading: const Icon(
+                        Icons.auto_awesome_outlined,
+                        color: Color(0xFFD4D4D3),
+                        size: 20,
+                      ),
+                      title: const Text(
+                        'Generate image by AI',
+                        style: TextStyle(
+                          color: Color(0xFFF3F3F2),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      subtitle: const Text(
+                        'Open model page',
+                        style: TextStyle(
+                          color: Color(0xFFB8B7B5),
+                          fontSize: 12,
+                        ),
+                      ),
+                      onTap: () {
+                        setSheetState(() {
+                          pageIndex = 2;
+                        });
+                      },
+                    ),
+                  ],
+                );
+              }
+
+              Widget projectContent() {
+                int? parsePositiveInt(TextEditingController controller) {
+                  final int? parsed = int.tryParse(controller.text.trim());
+                  if (parsed == null || parsed <= 0) return null;
+                  return parsed;
+                }
+
+                String projectColorLabel(Color color) {
+                  if (color.value == const Color(0xFFFFFFFF).value) {
+                    return 'White';
+                  }
+                  if (color.value == const Color(0xFF0F172A).value) {
+                    return 'Dark';
+                  }
+                  if (color.value == const Color(0xFF1D4ED8).value) {
+                    return 'Blue';
+                  }
+                  if (color.value == const Color(0xFF16A34A).value) {
+                    return 'Green';
+                  }
+                  if (color.value == const Color(0xFFF59E0B).value) {
+                    return 'Amber';
+                  }
+                  if (color.value == const Color(0xFFDC2626).value) {
+                    return 'Red';
+                  }
+                  if (color.value == const Color(0xFF7C3AED).value) {
+                    return 'Purple';
+                  }
+                  final String hex = color.value
+                      .toRadixString(16)
+                      .padLeft(8, '0')
+                      .substring(2)
+                      .toUpperCase();
+                  return '#$hex';
+                }
+
+                void syncProjectColorStripToSelection() {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _animateColorStripToIndex(
+                      controller: projectColorStripController,
+                      index: _paletteColorIndexByValue(
+                        projectSolidColorChoices,
+                        selectedProjectSolidColor,
+                      ),
+                      scale: 0.98,
+                    );
+                  });
+                }
+
+                Widget buildNumericField({
+                  required String label,
+                  required TextEditingController controller,
+                  required String hint,
+                  required void Function(String value) onChanged,
+                  bool allowDecimal = false,
+                }) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: Color(0xFFD8D7D4),
+                          fontSize: 11.6,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF17181C),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _floatingPanelStrokeSolid,
+                            width: 0.55,
+                          ),
+                        ),
+                        child: TextField(
+                          controller: controller,
+                          keyboardType: allowDecimal
+                              ? const TextInputType.numberWithOptions(
+                                  decimal: true,
+                                )
+                              : TextInputType.number,
+                          inputFormatters: allowDecimal
+                              ? <TextInputFormatter>[
+                                  FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9\.,]'),
+                                  ),
+                                ]
+                              : <TextInputFormatter>[
+                                  FilteringTextInputFormatter.digitsOnly,
+                                ],
+                          style: const TextStyle(
+                            color: Color(0xFFF3F3F2),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          onChanged: onChanged,
+                          decoration: InputDecoration(
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 11,
+                            ),
+                            hintText: hint,
+                            hintStyle: const TextStyle(
+                              color: Color(0xFF7F8792),
+                              fontSize: 12.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }
+
+                double? parsePositiveDouble(TextEditingController controller) {
+                  final String raw = controller.text.trim();
+                  if (raw.isEmpty) return null;
+                  final String normalized = raw.replaceAll(',', '.');
+                  final double? parsed = double.tryParse(normalized);
+                  if (parsed == null || !parsed.isFinite || parsed <= 0) {
+                    return null;
+                  }
+                  return parsed;
+                }
+
+                String formatCanvasUnitValue(double value) {
+                  final double rounded = value.roundToDouble();
+                  if ((value - rounded).abs() < 0.0001) {
+                    return rounded.toInt().toString();
+                  }
+                  return value
+                      .toStringAsFixed(2)
+                      .replaceFirst(RegExp(r'0+$'), '')
+                      .replaceFirst(RegExp(r'\.$'), '');
+                }
+
+                final Size? resolvedCanvasSizeInUnit =
+                    selectedProjectCanvasPreset == _ProjectCanvasPreset.custom
+                        ? (() {
+                            final double? width = parsePositiveDouble(
+                              customProjectWidthController,
+                            );
+                            final double? height = parsePositiveDouble(
+                              customProjectHeightController,
+                            );
+                            if (width == null || height == null) return null;
+                            return Size(width, height);
+                          })()
+                        : selectedProjectCanvasPreset
+                            ?.sizeForUnit(selectedProjectCanvasUnit);
+
+                final int? resolvedProjectDpi =
+                    selectedProjectDpiChoice == _ProjectDpiChoice.custom
+                        ? parsePositiveInt(customProjectDpiController)
+                        : selectedProjectDpiChoice?.fixedDpi;
+
+                final bool showCanvasStep =
+                    selectedProjectWorkspaceMode != null;
+                final bool showResolutionStep =
+                    showCanvasStep && resolvedCanvasSizeInUnit != null;
+                final bool showColorStep = showResolutionStep &&
+                    resolvedProjectDpi != null &&
+                    selectedProjectWorkspaceMode == _ProjectWorkspaceMode.solid;
+                final bool canCreateProject = showResolutionStep &&
+                    resolvedProjectDpi != null &&
+                    selectedProjectWorkspaceMode != null;
+
+                String resolvedSizeLabel() {
+                  final _ProjectCanvasPreset? preset =
+                      selectedProjectCanvasPreset;
+                  if (preset == null) return 'Size';
+                  if (preset != _ProjectCanvasPreset.custom) {
+                    return preset.summaryForUnit(selectedProjectCanvasUnit);
+                  }
+                  final double? width =
+                      parsePositiveDouble(customProjectWidthController);
+                  final double? height =
+                      parsePositiveDouble(customProjectHeightController);
+                  if (width == null || height == null) {
+                    return 'Custom Size';
+                  }
+                  return 'Custom ${formatCanvasUnitValue(width)}×${formatCanvasUnitValue(height)} ${selectedProjectCanvasUnit.label}';
+                }
+
+                String resolvedDpiLabel() {
+                  if (resolvedProjectDpi == null) return 'DPI';
+                  return '$resolvedProjectDpi DPI';
+                }
+
+                final Size? resolvedWorkspaceSize =
+                    resolvedCanvasSizeInUnit != null &&
+                            resolvedProjectDpi != null
+                        ? (() {
+                            if (selectedProjectCanvasUnit ==
+                                _ProjectCanvasUnit.px) {
+                              return Size(
+                                math
+                                    .max(
+                                      1,
+                                      resolvedCanvasSizeInUnit.width.round(),
+                                    )
+                                    .toDouble(),
+                                math
+                                    .max(
+                                      1,
+                                      resolvedCanvasSizeInUnit.height.round(),
+                                    )
+                                    .toDouble(),
+                              );
+                            }
+                            final double pxPerMm = resolvedProjectDpi / 25.4;
+                            return Size(
+                              math
+                                  .max(
+                                    1,
+                                    (resolvedCanvasSizeInUnit.width * pxPerMm)
+                                        .round(),
+                                  )
+                                  .toDouble(),
+                              math
+                                  .max(
+                                    1,
+                                    (resolvedCanvasSizeInUnit.height * pxPerMm)
+                                        .round(),
+                                  )
+                                  .toDouble(),
+                            );
+                          })()
+                        : null;
+
+                return Column(
+                  key: const ValueKey<String>(
+                    'add-project-page',
+                  ),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 2),
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xAA6F778A),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () {
+                            setSheetState(() {
+                              projectTypeMenuExpanded = false;
+                              projectSizeMenuExpanded = false;
+                              projectUnitMenuExpanded = false;
+                              projectDpiMenuExpanded = false;
+                              projectColorMenuExpanded = false;
+                              pageIndex = 0;
+                            });
+                          },
+                          child: const SizedBox(
+                            width: 34,
+                            height: 34,
+                            child: Icon(
+                              Icons.arrow_back_rounded,
+                              size: 20,
+                              color: Color(0xFFD4D4D3),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Expanded(
+                          child: Text(
+                            'Create New Project',
+                            style: TextStyle(
+                              color: Color(0xFFF3F3F2),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    buildInlineDropdownField<_ProjectWorkspaceMode>(
+                      title: 'Layer Type',
+                      valueLabel:
+                          selectedProjectWorkspaceMode?.label ?? 'Choose',
+                      isExpanded: projectTypeMenuExpanded,
+                      highlightHeader: true,
+                      onToggle: () {
+                        setSheetState(() {
+                          projectTypeMenuExpanded = !projectTypeMenuExpanded;
+                          if (projectTypeMenuExpanded) {
+                            projectSizeMenuExpanded = false;
+                            projectUnitMenuExpanded = false;
+                            projectDpiMenuExpanded = false;
+                            projectColorMenuExpanded = false;
+                          }
+                        });
+                      },
+                      items: _ProjectWorkspaceMode.values,
+                      selectedValue: selectedProjectWorkspaceMode ??
+                          _ProjectWorkspaceMode.solid,
+                      labelOf: (mode) => mode.label,
+                      onSelected: (value) {
+                        setSheetState(() {
+                          selectedProjectWorkspaceMode = value;
+                          projectTypeMenuExpanded = false;
+                          projectSizeMenuExpanded = false;
+                          projectUnitMenuExpanded = false;
+                          projectDpiMenuExpanded = false;
+                          projectColorMenuExpanded = false;
+                        });
+                      },
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: showCanvasStep
+                          ? Padding(
+                              key: const ValueKey<String>(
+                                'project-step-size',
+                              ),
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  buildInlineDropdownField<
+                                      _ProjectCanvasPreset>(
+                                    title: 'Canvas Size',
+                                    valueLabel:
+                                        selectedProjectCanvasPreset?.label ??
+                                            'Choose',
+                                    isExpanded: projectSizeMenuExpanded,
+                                    onToggle: () {
+                                      setSheetState(() {
+                                        projectSizeMenuExpanded =
+                                            !projectSizeMenuExpanded;
+                                        if (projectSizeMenuExpanded) {
+                                          projectTypeMenuExpanded = false;
+                                          projectUnitMenuExpanded = false;
+                                          projectDpiMenuExpanded = false;
+                                          projectColorMenuExpanded = false;
+                                        }
+                                      });
+                                    },
+                                    items: _ProjectCanvasPreset.values,
+                                    selectedValue:
+                                        selectedProjectCanvasPreset ??
+                                            _ProjectCanvasPreset.post,
+                                    labelOf: (preset) => preset.label,
+                                    onSelected: (value) {
+                                      setSheetState(() {
+                                        selectedProjectCanvasPreset = value;
+                                        projectSizeMenuExpanded = false;
+                                      });
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                  buildInlineDropdownField<_ProjectCanvasUnit>(
+                                    title: 'Unit',
+                                    valueLabel: selectedProjectCanvasUnit.label,
+                                    isExpanded: projectUnitMenuExpanded,
+                                    onToggle: () {
+                                      setSheetState(() {
+                                        projectUnitMenuExpanded =
+                                            !projectUnitMenuExpanded;
+                                        if (projectUnitMenuExpanded) {
+                                          projectTypeMenuExpanded = false;
+                                          projectSizeMenuExpanded = false;
+                                          projectDpiMenuExpanded = false;
+                                          projectColorMenuExpanded = false;
+                                        }
+                                      });
+                                    },
+                                    items: _ProjectCanvasUnit.values,
+                                    selectedValue: selectedProjectCanvasUnit,
+                                    labelOf: (unit) => unit.label,
+                                    onSelected: (value) {
+                                      setSheetState(() {
+                                        selectedProjectCanvasUnit = value;
+                                        if (selectedProjectCanvasPreset ==
+                                            _ProjectCanvasPreset.custom) {
+                                          if (value == _ProjectCanvasUnit.mm) {
+                                            customProjectWidthController.text =
+                                                '108';
+                                            customProjectHeightController.text =
+                                                '192';
+                                          } else {
+                                            customProjectWidthController.text =
+                                                '1080';
+                                            customProjectHeightController.text =
+                                                '1920';
+                                          }
+                                        }
+                                        projectUnitMenuExpanded = false;
+                                      });
+                                    },
+                                  ),
+                                  if (selectedProjectCanvasPreset ==
+                                      _ProjectCanvasPreset.custom) ...[
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: buildNumericField(
+                                            label:
+                                                'Width (${selectedProjectCanvasUnit.label})',
+                                            controller:
+                                                customProjectWidthController,
+                                            hint: selectedProjectCanvasUnit ==
+                                                    _ProjectCanvasUnit.mm
+                                                ? '108'
+                                                : '1080',
+                                            allowDecimal:
+                                                selectedProjectCanvasUnit ==
+                                                    _ProjectCanvasUnit.mm,
+                                            onChanged: (_) {
+                                              setSheetState(() {});
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: buildNumericField(
+                                            label:
+                                                'Height (${selectedProjectCanvasUnit.label})',
+                                            controller:
+                                                customProjectHeightController,
+                                            hint: selectedProjectCanvasUnit ==
+                                                    _ProjectCanvasUnit.mm
+                                                ? '192'
+                                                : '1920',
+                                            allowDecimal:
+                                                selectedProjectCanvasUnit ==
+                                                    _ProjectCanvasUnit.mm,
+                                            onChanged: (_) {
+                                              setSheetState(() {});
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: showResolutionStep
+                          ? Padding(
+                              key: const ValueKey<String>(
+                                'project-step-resolution',
+                              ),
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  buildInlineDropdownField<_ProjectDpiChoice>(
+                                    title: 'Resolution',
+                                    valueLabel: selectedProjectDpiChoice == null
+                                        ? 'Choose'
+                                        : resolvedDpiLabel(),
+                                    isExpanded: projectDpiMenuExpanded,
+                                    onToggle: () {
+                                      setSheetState(() {
+                                        projectDpiMenuExpanded =
+                                            !projectDpiMenuExpanded;
+                                        if (projectDpiMenuExpanded) {
+                                          projectTypeMenuExpanded = false;
+                                          projectSizeMenuExpanded = false;
+                                          projectUnitMenuExpanded = false;
+                                          projectColorMenuExpanded = false;
+                                        }
+                                      });
+                                    },
+                                    items: _ProjectDpiChoice.values,
+                                    selectedValue: selectedProjectDpiChoice ??
+                                        _ProjectDpiChoice.dpi300,
+                                    labelOf: (choice) => choice.label,
+                                    onSelected: (value) {
+                                      setSheetState(() {
+                                        selectedProjectDpiChoice = value;
+                                        projectDpiMenuExpanded = false;
+                                      });
+                                    },
+                                  ),
+                                  if (selectedProjectDpiChoice ==
+                                      _ProjectDpiChoice.custom) ...[
+                                    const SizedBox(height: 8),
+                                    buildNumericField(
+                                      label: 'Custom DPI',
+                                      controller: customProjectDpiController,
+                                      hint: '300',
+                                      onChanged: (_) {
+                                        setSheetState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: showColorStep
+                          ? Padding(
+                              key: const ValueKey<String>(
+                                'project-step-color',
+                              ),
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _BouncyInkWell(
+                                    pressedScale: 0.985,
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: () {
+                                      setSheetState(() {
+                                        projectColorMenuExpanded =
+                                            !projectColorMenuExpanded;
+                                        if (projectColorMenuExpanded) {
+                                          projectTypeMenuExpanded = false;
+                                          projectSizeMenuExpanded = false;
+                                          projectUnitMenuExpanded = false;
+                                          projectDpiMenuExpanded = false;
+                                        }
+                                      });
+                                      if (!projectColorMenuExpanded) return;
+                                      syncProjectColorStripToSelection();
+                                    },
+                                    child: AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 180),
+                                      curve: Curves.easeOutCubic,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: _floatingPanelSurfaceSolid,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: _floatingPanelStrokeSolid,
+                                          width: 0.55,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Text(
+                                            'Canvas Color',
+                                            style: TextStyle(
+                                              color: Color(0xFFD8D7D4),
+                                              fontSize: 11.6,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          const Spacer(),
+                                          Container(
+                                            width: 22,
+                                            height: 14,
+                                            decoration: BoxDecoration(
+                                              color: selectedProjectSolidColor,
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
+                                              border: Border.all(
+                                                color: selectedProjectSolidColor
+                                                            .computeLuminance() >
+                                                        0.86
+                                                    ? const Color(0x664F5358)
+                                                    : const Color(0x99FFFFFF),
+                                                width: 0.75,
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Icon(
+                                            projectColorMenuExpanded
+                                                ? Icons
+                                                    .keyboard_arrow_up_rounded
+                                                : Icons
+                                                    .keyboard_arrow_down_rounded,
+                                            size: 18,
+                                            color: const Color(0xFFF3F3F2),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  ClipRect(
+                                    child: AnimatedSize(
+                                      duration:
+                                          const Duration(milliseconds: 190),
+                                      curve: Curves.easeOutCubic,
+                                      child: projectColorMenuExpanded
+                                          ? Container(
+                                              margin:
+                                                  const EdgeInsets.only(top: 6),
+                                              padding: const EdgeInsets.all(8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF17181C),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color:
+                                                      _floatingPanelStrokeSolid,
+                                                  width: 0.55,
+                                                ),
+                                              ),
+                                              child:
+                                                  _buildHorizontalColorPickerWithNavigation(
+                                                palette:
+                                                    projectSolidColorChoices,
+                                                selectedColor:
+                                                    selectedProjectSolidColor,
+                                                onColorSelected: (color) {
+                                                  setSheetState(() {
+                                                    selectedProjectSolidColor =
+                                                        color;
+                                                  });
+                                                },
+                                                controller:
+                                                    projectColorStripController,
+                                                arrowScale: 0.9,
+                                                stripScale: 0.98,
+                                              ),
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOutCubic,
+                      switchOutCurve: Curves.easeInCubic,
+                      child: canCreateProject
+                          ? Padding(
+                              key: const ValueKey<String>(
+                                'project-actions',
+                              ),
+                              padding: const EdgeInsets.only(
+                                top: 14,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF17181C),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border: Border.all(
+                                        color: _floatingPanelStrokeSolid,
+                                        width: 0.55,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      '${selectedProjectWorkspaceMode!.label} • ${resolvedSizeLabel()} • ${resolvedDpiLabel()}',
+                                      style: const TextStyle(
+                                        color: Color(0xFFD9D8D6),
+                                        fontSize: 11.8,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child:
+                                            _buildTextEffectFloatingActionButton(
+                                          label: 'Cancel',
+                                          onTap: () {
+                                            sheetOpen = false;
+                                            Navigator.of(sheetContext).pop();
+                                          },
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child:
+                                            _buildTextEffectFloatingActionButton(
+                                          accent: true,
+                                          label: 'Create',
+                                          onTap: () {
+                                            final Size workspaceSize =
+                                                resolvedWorkspaceSize!;
+                                            final Size canvasSizeInUnit =
+                                                resolvedCanvasSizeInUnit;
+                                            final int projectDpi =
+                                                resolvedProjectDpi;
+                                            sheetOpen = false;
+                                            Navigator.of(
+                                              sheetContext,
+                                            ).pop(
+                                              _AddBottomSheetResult.project(
+                                                projectRequest:
+                                                    _ProjectCreateRequest(
+                                                  workspaceSize: workspaceSize,
+                                                  canvasSizeInUnit:
+                                                      canvasSizeInUnit,
+                                                  canvasUnit:
+                                                      selectedProjectCanvasUnit,
+                                                  dpi: projectDpi,
+                                                  workspaceMode:
+                                                      selectedProjectWorkspaceMode!,
+                                                  solidColor:
+                                                      selectedProjectSolidColor,
+                                                  sizeLabel:
+                                                      resolvedSizeLabel(),
+                                                  dpiLabel: resolvedDpiLabel(),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const SizedBox.shrink(),
+                    ),
+                  ],
+                );
+              }
+
+              Widget aiContent() {
+                const List<_KieAiImageModel> visibleAiModels =
+                    <_KieAiImageModel>[
+                  _KieAiImageModel.zImage,
+                  _KieAiImageModel.nanoBanana,
+                  _KieAiImageModel.gptImage15,
+                  _KieAiImageModel.ideogramV3Remix,
+                  _KieAiImageModel.flux2Pro,
+                  _KieAiImageModel.seedream5Lite,
+                ];
+                if (!visibleAiModels.contains(selectedModel)) {
+                  selectedModel = visibleAiModels.first;
+                }
+                void resetAiControls() {
+                  setSheetState(() {
+                    selectedModel = _defaultKieAiImageModel;
+                    selectedNanoVersion = _defaultKieNanoVersion;
+                    selectedNanoAspectRatio = _defaultKieNanoAspectRatio;
+                    selectedFluxAspectRatio = _defaultKieFluxAspectRatio;
+                    selectedSeedreamAspectRatio =
+                        _defaultKieSeedreamAspectRatio;
+                    selectedIdeogramStyle = _defaultKieIdeogramStyle;
+                    selectedIdeogramImageSize = _defaultKieIdeogramImageSize;
+                    selectedAiQuality = _defaultAiGenerationQuality;
+                    promptController.clear();
+                    for (int i = 0; i < aiReferenceImages.length; i++) {
+                      aiReferenceImages[i] = null;
+                    }
+                    modelMenuExpanded = false;
+                    qualityMenuExpanded = false;
+                    styleMenuExpanded = false;
+                    sizeMenuExpanded = false;
+                    aiError = null;
+                  });
+                }
+
+                return Column(
+                  key: const ValueKey<String>('add-ai-page'),
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 2),
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xAA6F778A),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _floatingPanelSurfaceSolid,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: _floatingPanelStrokeSolid,
+                        ),
+                      ),
+                      child: TextField(
+                        controller: promptController,
+                        maxLines: 4,
+                        minLines: 3,
+                        textInputAction: TextInputAction.done,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFFF3F3F2),
+                        ),
+                        onChanged: (_) {
+                          setSheetState(() {
+                            aiError = null;
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: 'Description...',
+                          hintStyle: TextStyle(
+                            color: Color(0xFFB8B7B5),
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    buildInlineDropdownField<_KieAiImageModel>(
+                      title: 'Model',
+                      valueLabel: selectedModel.label,
+                      isExpanded: modelMenuExpanded,
+                      highlightHeader: true,
+                      onToggle: () {
+                        setSheetState(() {
+                          modelMenuExpanded = !modelMenuExpanded;
+                          if (modelMenuExpanded) {
+                            qualityMenuExpanded = false;
+                            styleMenuExpanded = false;
+                            sizeMenuExpanded = false;
+                          }
+                        });
+                      },
+                      items: visibleAiModels,
+                      selectedValue: selectedModel,
+                      labelOf: (model) => model.label,
+                      onSelected: (value) {
+                        setSheetState(() {
+                          selectedModel = value;
+                          final List<_AiGenerationQuality> options =
+                              _kieQualityOptionsForModel(selectedModel);
+                          if (selectedModel == _KieAiImageModel.flux2Pro ||
+                              selectedModel == _KieAiImageModel.seedream5Lite) {
+                            selectedAiQuality =
+                                _kieDefaultQualityForModel(selectedModel);
+                          } else if (!options.contains(selectedAiQuality)) {
+                            selectedAiQuality =
+                                _kieDefaultQualityForModel(selectedModel);
+                          }
+                          final List<_KieIdeogramImageSize> sizeOptions =
+                              _kieImageSizeOptionsForModel(selectedModel);
+                          if (!sizeOptions
+                              .contains(selectedIdeogramImageSize)) {
+                            selectedIdeogramImageSize = sizeOptions.first;
+                          }
+                          if (selectedModel == _KieAiImageModel.gptImage15 &&
+                              !_kieGptAspectRatioOptions()
+                                  .contains(selectedFluxAspectRatio)) {
+                            selectedFluxAspectRatio =
+                                _kieGptAspectRatioOptions().first;
+                          }
+                          modelMenuExpanded = false;
+                          qualityMenuExpanded = false;
+                          styleMenuExpanded = false;
+                          sizeMenuExpanded = false;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    buildInlineDropdownField<_AiGenerationQuality>(
+                      title: selectedModel == _KieAiImageModel.ideogramV3Remix
+                          ? 'Quality'
+                          : 'Resolution',
+                      valueLabel: _kieQualityLabelForModel(
+                        selectedModel,
+                        _kieQualityOptionsForModel(selectedModel)
+                                .contains(selectedAiQuality)
+                            ? selectedAiQuality
+                            : _kieDefaultQualityForModel(selectedModel),
+                      ),
+                      isExpanded: qualityMenuExpanded,
+                      onToggle: () {
+                        setSheetState(() {
+                          qualityMenuExpanded = !qualityMenuExpanded;
+                          if (qualityMenuExpanded) {
+                            modelMenuExpanded = false;
+                            styleMenuExpanded = false;
+                            sizeMenuExpanded = false;
+                          }
+                        });
+                      },
+                      items: _kieQualityOptionsForModel(selectedModel),
+                      selectedValue: _kieQualityOptionsForModel(selectedModel)
+                              .contains(selectedAiQuality)
+                          ? selectedAiQuality
+                          : _kieDefaultQualityForModel(selectedModel),
+                      labelOf: (quality) =>
+                          _kieQualityLabelForModel(selectedModel, quality),
+                      onSelected: (value) {
+                        setSheetState(() {
+                          selectedAiQuality = value;
+                          qualityMenuExpanded = false;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                    if (selectedModel == _KieAiImageModel.ideogramV3Remix) ...[
+                      buildInlineDropdownField<_KieIdeogramStyle>(
+                        title: 'Style',
+                        valueLabel: selectedIdeogramStyle.label,
+                        isExpanded: styleMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            styleMenuExpanded = !styleMenuExpanded;
+                            if (styleMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              sizeMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _KieIdeogramStyle.values,
+                        selectedValue: selectedIdeogramStyle,
+                        labelOf: (style) => style.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedIdeogramStyle = value;
+                            styleMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (selectedModel == _KieAiImageModel.nanoBanana) ...[
+                      buildInlineDropdownField<_KieNanoAspectRatio>(
+                        title: 'Size',
+                        valueLabel: selectedNanoAspectRatio.label,
+                        isExpanded: sizeMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            sizeMenuExpanded = !sizeMenuExpanded;
+                            if (sizeMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              styleMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _KieNanoAspectRatio.values,
+                        selectedValue: selectedNanoAspectRatio,
+                        labelOf: (ratio) => ratio.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedNanoAspectRatio = value;
+                            sizeMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ] else if (selectedModel == _KieAiImageModel.flux2Pro) ...[
+                      buildInlineDropdownField<_KieFluxAspectRatio>(
+                        title: 'Size',
+                        valueLabel: selectedFluxAspectRatio.label,
+                        isExpanded: sizeMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            sizeMenuExpanded = !sizeMenuExpanded;
+                            if (sizeMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              styleMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _KieFluxAspectRatio.values,
+                        selectedValue: selectedFluxAspectRatio,
+                        labelOf: (ratio) => ratio.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedFluxAspectRatio = value;
+                            sizeMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ] else if (selectedModel ==
+                        _KieAiImageModel.seedream5Lite) ...[
+                      buildInlineDropdownField<_KieSeedreamAspectRatio>(
+                        title: 'Size',
+                        valueLabel: selectedSeedreamAspectRatio.label,
+                        isExpanded: sizeMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            sizeMenuExpanded = !sizeMenuExpanded;
+                            if (sizeMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              styleMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _KieSeedreamAspectRatio.values,
+                        selectedValue: selectedSeedreamAspectRatio,
+                        labelOf: (ratio) => ratio.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedSeedreamAspectRatio = value;
+                            sizeMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ] else if (selectedModel ==
+                        _KieAiImageModel.gptImage15) ...[
+                      buildInlineDropdownField<_KieFluxAspectRatio>(
+                        title: 'Size',
+                        valueLabel: _sanitizeGptAspectRatio(
+                          selectedFluxAspectRatio,
+                        ).label,
+                        isExpanded: sizeMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            sizeMenuExpanded = !sizeMenuExpanded;
+                            if (sizeMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              styleMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _kieGptAspectRatioOptions(),
+                        selectedValue: _sanitizeGptAspectRatio(
+                          selectedFluxAspectRatio,
+                        ),
+                        labelOf: (ratio) => ratio.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedFluxAspectRatio = value;
+                            sizeMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ] else ...[
+                      buildInlineDropdownField<_KieIdeogramImageSize>(
+                        title: 'Size',
+                        valueLabel: (_kieImageSizeOptionsForModel(selectedModel)
+                                    .contains(selectedIdeogramImageSize)
+                                ? selectedIdeogramImageSize
+                                : _kieImageSizeOptionsForModel(selectedModel)
+                                    .first)
+                            .label,
+                        isExpanded: sizeMenuExpanded,
+                        onToggle: () {
+                          setSheetState(() {
+                            sizeMenuExpanded = !sizeMenuExpanded;
+                            if (sizeMenuExpanded) {
+                              modelMenuExpanded = false;
+                              qualityMenuExpanded = false;
+                              styleMenuExpanded = false;
+                            }
+                          });
+                        },
+                        items: _kieImageSizeOptionsForModel(selectedModel),
+                        selectedValue:
+                            _kieImageSizeOptionsForModel(selectedModel)
+                                    .contains(selectedIdeogramImageSize)
+                                ? selectedIdeogramImageSize
+                                : _kieImageSizeOptionsForModel(selectedModel)
+                                    .first,
+                        labelOf: (size) => size.label,
+                        onSelected: (value) {
+                          setSheetState(() {
+                            selectedIdeogramImageSize = value;
+                            sizeMenuExpanded = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_kieMaxReferenceImages(selectedModel) > 0) ...[
+                      buildReferencePickerRow(setSheetState),
+                      const SizedBox(height: 14),
+                    ] else
+                      const SizedBox(height: 6),
+                    if (aiError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          aiError!,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFFB91C1C),
+                          ),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildTextEffectFloatingActionButton(
+                            label: 'Refresh',
+                            icon: Icons.refresh_rounded,
+                            onTap:
+                                isUploadingReference ? () {} : resetAiControls,
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _buildTextEffectFloatingActionButton(
+                            accent: true,
+                            icon: Icons.auto_awesome_rounded,
+                            label: isUploadingReference
+                                ? 'Uploading...'
+                                : 'Generate',
+                            onTap: isUploadingReference
+                                ? () {}
+                                : () => submitAiRequest(setSheetState),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                );
+              }
+
+              Widget activePage() {
+                return pageIndex == 2
+                    ? aiContent()
+                    : (pageIndex == 1 ? projectContent() : rootContent());
+              }
+
+              Widget animatedPageSwitcher() {
+                return AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  layoutBuilder:
+                      (Widget? currentChild, List<Widget> previousChildren) {
+                    return Stack(
+                      alignment: Alignment.topCenter,
+                      children: <Widget>[
+                        ...previousChildren,
+                        if (currentChild != null) currentChild,
+                      ],
+                    );
+                  },
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0.08, 0),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: activePage(),
+                );
+              }
+
+              return Theme(
+                data: Theme.of(sheetContext).copyWith(
+                  bottomSheetTheme: const BottomSheetThemeData(
+                    surfaceTintColor: Colors.transparent,
+                    backgroundColor: aiSheetSurface,
+                  ),
+                ),
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(34),
+                  ),
+                  child: AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    alignment: Alignment.topCenter,
                     child: Container(
                       decoration: BoxDecoration(
                         color: aiSheetSurface,
@@ -28301,770 +33728,56 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
                         child: SafeArea(
                           top: false,
                           child: AnimatedPadding(
-                            duration: const Duration(milliseconds: 180),
+                            duration: const Duration(
+                              milliseconds: 180,
+                            ),
                             curve: Curves.easeOut,
                             padding: EdgeInsets.fromLTRB(
                               16,
-                              10,
+                              sheetTopPadding,
                               16,
-                              18 +
+                              sheetBottomPadding +
                                   MediaQuery.of(sheetContext).viewInsets.bottom,
                             ),
-                            child: StatefulBuilder(
-                              builder: (sheetContext, setSheetState) {
-                                Widget rootContent() {
-                                  return Column(
-                                    key: const ValueKey<String>('add-root'),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.max,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                IgnorePointer(
+                                  child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Container(
-                                        width: 38,
-                                        height: 4,
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFF4F5358),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
+                                        height: 1,
+                                        color: aiSheetStroke.withOpacity(
+                                          0.75,
                                         ),
                                       ),
-                                      const SizedBox(height: 24),
-                                      ListTile(
-                                        shape: RoundedRectangleBorder(
-                                          side: const BorderSide(
-                                            color: _floatingPanelStrokeSolid,
-                                            width: 0.55,
-                                          ),
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                        ),
-                                        tileColor: _floatingPanelSurfaceSolid,
-                                        leading: const Icon(
-                                          Icons.add_photo_alternate_outlined,
-                                          color: Color(0xFFD4D4D3),
-                                          size: 20,
-                                        ),
-                                        title: const Text(
-                                          'Add image',
-                                          style: TextStyle(
-                                            color: Color(0xFFF3F3F2),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        onTap: () {
-                                          sheetOpen = false;
-                                          Navigator.of(sheetContext).pop(
-                                            const _AddBottomSheetResult.image(),
-                                          );
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ListTile(
-                                        shape: RoundedRectangleBorder(
-                                          side: const BorderSide(
-                                            color: _floatingPanelStrokeSolid,
-                                            width: 0.55,
-                                          ),
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                        ),
-                                        tileColor: _floatingPanelSurfaceSolid,
-                                        leading: const Icon(
-                                          Icons.dashboard_customize_outlined,
-                                          color: Color(0xFFD4D4D3),
-                                          size: 20,
-                                        ),
-                                        title: const Text(
-                                          'Create new project',
-                                          style: TextStyle(
-                                            color: Color(0xFFF3F3F2),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        subtitle: const Text(
-                                          'Square, Portrait, Story + DPI',
-                                          style: TextStyle(
-                                            color: Color(0xFFB8B7B5),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        onTap: () {
-                                          setSheetState(() {
-                                            pageIndex = 1;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
-                                      ListTile(
-                                        shape: RoundedRectangleBorder(
-                                          side: const BorderSide(
-                                            color: _floatingPanelStrokeSolid,
-                                            width: 0.55,
-                                          ),
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                        ),
-                                        tileColor: _floatingPanelSurfaceSolid,
-                                        leading: const Icon(
-                                          Icons.auto_awesome_outlined,
-                                          color: Color(0xFFD4D4D3),
-                                          size: 20,
-                                        ),
-                                        title: const Text(
-                                          'Generate image by AI',
-                                          style: TextStyle(
-                                            color: Color(0xFFF3F3F2),
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        subtitle: const Text(
-                                          'Open model page',
-                                          style: TextStyle(
-                                            color: Color(0xFFB8B7B5),
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                        onTap: () {
-                                          setSheetState(() {
-                                            pageIndex = 2;
-                                          });
-                                        },
-                                      ),
+                                      buildTopBorderPulse(),
                                     ],
-                                  );
-                                }
-
-                                Widget projectContent() {
-                                  return Column(
-                                    key: const ValueKey<String>(
-                                        'add-project-page'),
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          InkWell(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                            onTap: () {
-                                              setSheetState(() {
-                                                pageIndex = 0;
-                                              });
-                                            },
-                                            child: const SizedBox(
-                                              width: 34,
-                                              height: 34,
-                                              child: Icon(
-                                                Icons.arrow_back_rounded,
-                                                size: 20,
-                                                color: Color(0xFFD4D4D3),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          const Expanded(
-                                            child: Text(
-                                              'Create New Project',
-                                              style: TextStyle(
-                                                color: Color(0xFFF3F3F2),
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-                                      sectionTitle('Canvas Size'),
-                                      buildSegmentWrap<_AiCanvasSizePreset>(
-                                        items: _AiCanvasSizePreset.values,
-                                        value: selectedProjectSizePreset,
-                                        labelOf: (size) => size.label,
-                                        onChanged: (value) {
-                                          setSheetState(() {
-                                            selectedProjectSizePreset = value;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 10),
-                                      sectionTitle('Resolution (DPI)'),
-                                      buildSegmentWrap<_ProjectDpiPreset>(
-                                        items: _ProjectDpiPreset.values,
-                                        value: selectedProjectDpi,
-                                        labelOf: (dpi) => dpi.label,
-                                        onChanged: (value) {
-                                          setSheetState(() {
-                                            selectedProjectDpi = value;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 14),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child:
-                                                _buildTextEffectFloatingActionButton(
-                                              label: 'Cancel',
-                                              onTap: () {
-                                                sheetOpen = false;
-                                                Navigator.of(sheetContext)
-                                                    .pop();
-                                              },
-                                            ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child:
-                                                _buildTextEffectFloatingActionButton(
-                                              label: 'Create',
-                                              onTap: () {
-                                                sheetOpen = false;
-                                                Navigator.of(sheetContext).pop(
-                                                  _AddBottomSheetResult.project(
-                                                    projectRequest:
-                                                        _ProjectCreateRequest(
-                                                      sizePreset:
-                                                          selectedProjectSizePreset,
-                                                      dpi: selectedProjectDpi,
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  );
-                                }
-
-                                Widget aiContent() {
-                                  const List<_KieAiImageModel> visibleAiModels =
-                                      <_KieAiImageModel>[
-                                    _KieAiImageModel.nanoBanana,
-                                    _KieAiImageModel.gptImage15,
-                                    _KieAiImageModel.ideogramV3Remix,
-                                    _KieAiImageModel.flux2Pro,
-                                    _KieAiImageModel.seedream5Lite,
-                                  ];
-                                  if (!visibleAiModels
-                                      .contains(selectedModel)) {
-                                    selectedModel = visibleAiModels.first;
-                                  }
-                                  void resetAiControls() {
-                                    setSheetState(() {
-                                      selectedModel = _defaultKieAiImageModel;
-                                      selectedNanoVersion =
-                                          _defaultKieNanoVersion;
-                                      selectedNanoAspectRatio =
-                                          _defaultKieNanoAspectRatio;
-                                      selectedFluxAspectRatio =
-                                          _defaultKieFluxAspectRatio;
-                                      selectedSeedreamAspectRatio =
-                                          _defaultKieSeedreamAspectRatio;
-                                      selectedIdeogramStyle =
-                                          _defaultKieIdeogramStyle;
-                                      selectedIdeogramImageSize =
-                                          _defaultKieIdeogramImageSize;
-                                      selectedAiQuality =
-                                          _defaultAiGenerationQuality;
-                                      promptController.clear();
-                                      for (int i = 0;
-                                          i < aiReferenceImages.length;
-                                          i++) {
-                                        aiReferenceImages[i] = null;
-                                      }
-                                      modelMenuExpanded = false;
-                                      qualityMenuExpanded = false;
-                                      styleMenuExpanded = false;
-                                      sizeMenuExpanded = false;
-                                      aiError = null;
-                                    });
-                                  }
-
-                                  return Column(
-                                    key: const ValueKey<String>('add-ai-page'),
-                                    mainAxisSize: MainAxisSize.min,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 2),
-                                      Center(
-                                        child: Container(
-                                          width: 44,
-                                          height: 4,
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xAA6F778A),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 8,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _floatingPanelSurfaceSolid,
-                                          borderRadius:
-                                              BorderRadius.circular(14),
-                                          border: Border.all(
-                                            color: _floatingPanelStrokeSolid,
-                                          ),
-                                        ),
-                                        child: TextField(
-                                          controller: promptController,
-                                          maxLines: 4,
-                                          minLines: 3,
-                                          textInputAction: TextInputAction.done,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFFF3F3F2),
-                                          ),
-                                          onChanged: (_) {
-                                            setSheetState(() {
-                                              aiError = null;
-                                            });
-                                          },
-                                          decoration: const InputDecoration(
-                                            isDense: true,
-                                            border: InputBorder.none,
-                                            hintText: 'Description...',
-                                            hintStyle: TextStyle(
-                                              color: Color(0xFFB8B7B5),
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      buildInlineDropdownField<
-                                          _KieAiImageModel>(
-                                        title: 'Model',
-                                        valueLabel: selectedModel.label,
-                                        isExpanded: modelMenuExpanded,
-                                        highlightHeader: true,
-                                        onToggle: () {
-                                          setSheetState(() {
-                                            modelMenuExpanded =
-                                                !modelMenuExpanded;
-                                            if (modelMenuExpanded) {
-                                              qualityMenuExpanded = false;
-                                              styleMenuExpanded = false;
-                                              sizeMenuExpanded = false;
-                                            }
-                                          });
-                                        },
-                                        items: visibleAiModels,
-                                        selectedValue: selectedModel,
-                                        labelOf: (model) => model.label,
-                                        onSelected: (value) {
-                                          setSheetState(() {
-                                            selectedModel = value;
-                                            final List<_AiGenerationQuality>
-                                                options =
-                                                _kieQualityOptionsForModel(
-                                                    selectedModel);
-                                            if (selectedModel ==
-                                                    _KieAiImageModel.flux2Pro ||
-                                                selectedModel ==
-                                                    _KieAiImageModel
-                                                        .seedream5Lite) {
-                                              selectedAiQuality =
-                                                  _kieDefaultQualityForModel(
-                                                      selectedModel);
-                                            } else if (!options
-                                                .contains(selectedAiQuality)) {
-                                              selectedAiQuality =
-                                                  _kieDefaultQualityForModel(
-                                                      selectedModel);
-                                            }
-                                            final List<_KieIdeogramImageSize>
-                                                sizeOptions =
-                                                _kieImageSizeOptionsForModel(
-                                                    selectedModel);
-                                            if (!sizeOptions.contains(
-                                                selectedIdeogramImageSize)) {
-                                              selectedIdeogramImageSize =
-                                                  sizeOptions.first;
-                                            }
-                                            if (selectedModel ==
-                                                    _KieAiImageModel
-                                                        .gptImage15 &&
-                                                !_kieGptAspectRatioOptions()
-                                                    .contains(
-                                                        selectedFluxAspectRatio)) {
-                                              selectedFluxAspectRatio =
-                                                  _kieGptAspectRatioOptions()
-                                                      .first;
-                                            }
-                                            modelMenuExpanded = false;
-                                            qualityMenuExpanded = false;
-                                            styleMenuExpanded = false;
-                                            sizeMenuExpanded = false;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
-                                      buildInlineDropdownField<
-                                          _AiGenerationQuality>(
-                                        title: selectedModel ==
-                                                _KieAiImageModel.ideogramV3Remix
-                                            ? 'Quality'
-                                            : 'Resolution',
-                                        valueLabel: _kieQualityLabelForModel(
-                                          selectedModel,
-                                          _kieQualityOptionsForModel(
-                                                      selectedModel)
-                                                  .contains(selectedAiQuality)
-                                              ? selectedAiQuality
-                                              : _kieDefaultQualityForModel(
-                                                  selectedModel),
-                                        ),
-                                        isExpanded: qualityMenuExpanded,
-                                        onToggle: () {
-                                          setSheetState(() {
-                                            qualityMenuExpanded =
-                                                !qualityMenuExpanded;
-                                            if (qualityMenuExpanded) {
-                                              modelMenuExpanded = false;
-                                              styleMenuExpanded = false;
-                                              sizeMenuExpanded = false;
-                                            }
-                                          });
-                                        },
-                                        items: _kieQualityOptionsForModel(
-                                            selectedModel),
-                                        selectedValue:
-                                            _kieQualityOptionsForModel(
-                                                        selectedModel)
-                                                    .contains(selectedAiQuality)
-                                                ? selectedAiQuality
-                                                : _kieDefaultQualityForModel(
-                                                    selectedModel),
-                                        labelOf: (quality) =>
-                                            _kieQualityLabelForModel(
-                                                selectedModel, quality),
-                                        onSelected: (value) {
-                                          setSheetState(() {
-                                            selectedAiQuality = value;
-                                            qualityMenuExpanded = false;
-                                          });
-                                        },
-                                      ),
-                                      const SizedBox(height: 8),
-                                      if (selectedModel ==
-                                          _KieAiImageModel.ideogramV3Remix) ...[
-                                        buildInlineDropdownField<
-                                            _KieIdeogramStyle>(
-                                          title: 'Style',
-                                          valueLabel:
-                                              selectedIdeogramStyle.label,
-                                          isExpanded: styleMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              styleMenuExpanded =
-                                                  !styleMenuExpanded;
-                                              if (styleMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                sizeMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _KieIdeogramStyle.values,
-                                          selectedValue: selectedIdeogramStyle,
-                                          labelOf: (style) => style.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedIdeogramStyle = value;
-                                              styleMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      if (selectedModel ==
-                                          _KieAiImageModel.nanoBanana) ...[
-                                        buildInlineDropdownField<
-                                            _KieNanoAspectRatio>(
-                                          title: 'Size',
-                                          valueLabel:
-                                              selectedNanoAspectRatio.label,
-                                          isExpanded: sizeMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              sizeMenuExpanded =
-                                                  !sizeMenuExpanded;
-                                              if (sizeMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                styleMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _KieNanoAspectRatio.values,
-                                          selectedValue:
-                                              selectedNanoAspectRatio,
-                                          labelOf: (ratio) => ratio.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedNanoAspectRatio = value;
-                                              sizeMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ] else if (selectedModel ==
-                                          _KieAiImageModel.flux2Pro) ...[
-                                        buildInlineDropdownField<
-                                            _KieFluxAspectRatio>(
-                                          title: 'Size',
-                                          valueLabel:
-                                              selectedFluxAspectRatio.label,
-                                          isExpanded: sizeMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              sizeMenuExpanded =
-                                                  !sizeMenuExpanded;
-                                              if (sizeMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                styleMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _KieFluxAspectRatio.values,
-                                          selectedValue:
-                                              selectedFluxAspectRatio,
-                                          labelOf: (ratio) => ratio.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedFluxAspectRatio = value;
-                                              sizeMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ] else if (selectedModel ==
-                                          _KieAiImageModel.seedream5Lite) ...[
-                                        buildInlineDropdownField<
-                                            _KieSeedreamAspectRatio>(
-                                          title: 'Size',
-                                          valueLabel:
-                                              selectedSeedreamAspectRatio.label,
-                                          isExpanded: sizeMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              sizeMenuExpanded =
-                                                  !sizeMenuExpanded;
-                                              if (sizeMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                styleMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _KieSeedreamAspectRatio.values,
-                                          selectedValue:
-                                              selectedSeedreamAspectRatio,
-                                          labelOf: (ratio) => ratio.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedSeedreamAspectRatio =
-                                                  value;
-                                              sizeMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ] else if (selectedModel ==
-                                          _KieAiImageModel.gptImage15) ...[
-                                        buildInlineDropdownField<
-                                            _KieFluxAspectRatio>(
-                                          title: 'Size',
-                                          valueLabel: _sanitizeGptAspectRatio(
-                                            selectedFluxAspectRatio,
-                                          ).label,
-                                          isExpanded: sizeMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              sizeMenuExpanded =
-                                                  !sizeMenuExpanded;
-                                              if (sizeMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                styleMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _kieGptAspectRatioOptions(),
-                                          selectedValue:
-                                              _sanitizeGptAspectRatio(
-                                            selectedFluxAspectRatio,
-                                          ),
-                                          labelOf: (ratio) => ratio.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedFluxAspectRatio = value;
-                                              sizeMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ] else ...[
-                                        buildInlineDropdownField<
-                                            _KieIdeogramImageSize>(
-                                          title: 'Size',
-                                          valueLabel: (_kieImageSizeOptionsForModel(
-                                                          selectedModel)
-                                                      .contains(
-                                                          selectedIdeogramImageSize)
-                                                  ? selectedIdeogramImageSize
-                                                  : _kieImageSizeOptionsForModel(
-                                                          selectedModel)
-                                                      .first)
-                                              .label,
-                                          isExpanded: sizeMenuExpanded,
-                                          onToggle: () {
-                                            setSheetState(() {
-                                              sizeMenuExpanded =
-                                                  !sizeMenuExpanded;
-                                              if (sizeMenuExpanded) {
-                                                modelMenuExpanded = false;
-                                                qualityMenuExpanded = false;
-                                                styleMenuExpanded = false;
-                                              }
-                                            });
-                                          },
-                                          items: _kieImageSizeOptionsForModel(
-                                              selectedModel),
-                                          selectedValue:
-                                              _kieImageSizeOptionsForModel(
-                                                          selectedModel)
-                                                      .contains(
-                                                          selectedIdeogramImageSize)
-                                                  ? selectedIdeogramImageSize
-                                                  : _kieImageSizeOptionsForModel(
-                                                          selectedModel)
-                                                      .first,
-                                          labelOf: (size) => size.label,
-                                          onSelected: (value) {
-                                            setSheetState(() {
-                                              selectedIdeogramImageSize = value;
-                                              sizeMenuExpanded = false;
-                                            });
-                                          },
-                                        ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                      if (_kieMaxReferenceImages(
-                                              selectedModel) >
-                                          0) ...[
-                                        buildReferencePickerRow(setSheetState),
-                                        const SizedBox(height: 14),
-                                      ] else
-                                        const SizedBox(height: 6),
-                                      if (aiError != null)
-                                        Padding(
-                                          padding:
-                                              const EdgeInsets.only(bottom: 8),
-                                          child: Text(
-                                            aiError!,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFFB91C1C),
-                                            ),
-                                          ),
-                                        ),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child:
-                                                _buildTextEffectFloatingActionButton(
-                                              label: 'Refresh',
-                                              icon: Icons.refresh_rounded,
-                                              onTap: isUploadingReference
-                                                  ? () {}
-                                                  : resetAiControls,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 16),
-                                          Expanded(
-                                            child:
-                                                _buildTextEffectFloatingActionButton(
-                                              accent: true,
-                                              icon: Icons.auto_awesome_rounded,
-                                              label: isUploadingReference
-                                                  ? 'Uploading...'
-                                                  : 'Generate',
-                                              onTap: isUploadingReference
-                                                  ? () {}
-                                                  : () => submitAiRequest(
-                                                      setSheetState),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  );
-                                }
-
-                                return SingleChildScrollView(
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 180),
-                                    switchInCurve: Curves.easeOutCubic,
-                                    switchOutCurve: Curves.easeInCubic,
-                                    transitionBuilder: (child, animation) {
-                                      return FadeTransition(
-                                        opacity: animation,
-                                        child: SlideTransition(
-                                          position: Tween<Offset>(
-                                            begin: const Offset(0.08, 0),
-                                            end: Offset.zero,
-                                          ).animate(animation),
-                                          child: child,
-                                        ),
-                                      );
-                                    },
-                                    child: pageIndex == 2
-                                        ? aiContent()
-                                        : (pageIndex == 1
-                                            ? projectContent()
-                                            : rootContent()),
                                   ),
-                                );
-                              },
+                                ),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    physics: const BouncingScrollPhysics(),
+                                    child: ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        minHeight: aiPageMaxHeight,
+                                      ),
+                                      child: animatedPageSwitcher(),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            height: 1,
-                            color: aiSheetStroke.withOpacity(0.75),
-                          ),
-                          buildTopBorderPulse(),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           );
         },
       ).whenComplete(() {
@@ -29080,13 +33793,7 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
       if (result.action == _AddAction.project &&
           result.projectRequest != null) {
         final _ProjectCreateRequest request = result.projectRequest!;
-        _pushUndoSnapshot();
-        setState(() {
-          _upsertSolidBackground(
-            solidSize: request.projectSize,
-            name: 'Background',
-          );
-        });
+        _createProjectSessionFromRequest(request: request);
         return;
       }
       if (result.action != _AddAction.aiImageRequest ||
@@ -29096,6 +33803,10 @@ class _WonderPicEditorScreenState extends State<WonderPicEditorScreen>
 
       await _runAiImageGenerateRequest(result.aiGenerateRequest!);
     } finally {
+      customProjectWidthController.dispose();
+      customProjectHeightController.dispose();
+      customProjectDpiController.dispose();
+      projectColorStripController.dispose();
       promptController.dispose();
     }
   }
@@ -29681,6 +34392,2582 @@ Hard requirements:
     throw const FormatException('OpenAI image response missing PNG payload.');
   }
 
+  Uri _templatesCatalogUri({
+    int limit = 120,
+    int offset = 0,
+  }) {
+    return Uri.parse('$_kSupabaseUrl/functions/v1/templates-catalog').replace(
+      queryParameters: <String, String>{
+        'limit': '$limit',
+        'offset': '$offset',
+      },
+    );
+  }
+
+  Future<_TemplatesCatalogResponse> _fetchTemplatesCatalog({
+    int limit = 120,
+    int offset = 0,
+  }) async {
+    final Uri uri = _templatesCatalogUri(
+      limit: limit,
+      offset: offset,
+    );
+    final http.Response response = await http.get(
+      uri,
+      headers: const <String, String>{
+        'Accept': 'application/json',
+      },
+    ).timeout(const Duration(seconds: 30));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw StateError('Templates request failed (${response.statusCode}).');
+    }
+    final dynamic decoded = jsonDecode(utf8.decode(response.bodyBytes));
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid templates response.');
+    }
+    if (decoded['ok'] == false) {
+      throw StateError(
+        (decoded['error'] ?? 'Templates request failed.').toString(),
+      );
+    }
+    return _TemplatesCatalogResponse.fromJson(decoded);
+  }
+
+  String _buildUniqueProjectName(String preferred) {
+    final String baseRaw = preferred.trim();
+    if (baseRaw.isEmpty) return _nextProjectDisplayName();
+    final String base =
+        baseRaw.length <= 64 ? baseRaw : baseRaw.substring(0, 64);
+    final Set<String> used = _projectSessions
+        .map((session) => session.name.trim().toLowerCase())
+        .toSet();
+    if (!used.contains(base.toLowerCase())) return base;
+    int suffix = 2;
+    while (used.contains('$base $suffix'.toLowerCase())) {
+      suffix++;
+    }
+    return '$base $suffix';
+  }
+
+  String _xmlEscapeAttributeValue(String value) {
+    return value
+        .replaceAll('&', '&amp;')
+        .replaceAll('"', '&quot;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
+  }
+
+  double? _tryParseSvgDimension(String raw) {
+    final String value = raw.trim();
+    if (value.isEmpty || value.endsWith('%')) return null;
+    final RegExp match =
+        RegExp(r'^([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)\s*([a-zA-Z]*)$');
+    final Match? found = match.firstMatch(value);
+    if (found == null) return null;
+    final double? parsed = double.tryParse(found.group(1) ?? '');
+    if (parsed == null || !parsed.isFinite || parsed <= 0) return null;
+    final String unit = (found.group(2) ?? '').trim().toLowerCase();
+    const Map<String, double> unitsToPx = <String, double>{
+      '': 1.0,
+      'px': 1.0,
+      'pt': 96 / 72,
+      'pc': 16.0,
+      'in': 96.0,
+      'cm': 96 / 2.54,
+      'mm': 96 / 25.4,
+      'q': 96 / 101.6,
+    };
+    final double? factor = unitsToPx[unit];
+    if (factor == null || !factor.isFinite || factor <= 0) return null;
+    return parsed * factor;
+  }
+
+  Size _resolveSvgWorkspaceSize({
+    required xml.XmlElement root,
+    int? widthHint,
+    int? heightHint,
+  }) {
+    final String viewBox = (root.getAttribute('viewBox') ?? '').trim();
+    if (viewBox.isNotEmpty) {
+      final List<double> values = viewBox
+          .split(RegExp(r'[\s,]+'))
+          .map((entry) => double.tryParse(entry.trim()) ?? double.nan)
+          .where((entry) => entry.isFinite)
+          .toList(growable: false);
+      if (values.length >= 4 && values[2] > 0 && values[3] > 0) {
+        return Size(values[2], values[3]);
+      }
+    }
+    final double? widthAttr = _tryParseSvgDimension(
+      (root.getAttribute('width') ?? '').trim(),
+    );
+    final double? heightAttr = _tryParseSvgDimension(
+      (root.getAttribute('height') ?? '').trim(),
+    );
+    final double widthFromHint =
+        (widthHint ?? 0) > 0 ? widthHint!.toDouble() : 0;
+    final double heightFromHint =
+        (heightHint ?? 0) > 0 ? heightHint!.toDouble() : 0;
+    final double resolvedWidth =
+        widthAttr ?? (widthFromHint > 0 ? widthFromHint : 1080);
+    final double resolvedHeight =
+        heightAttr ?? (heightFromHint > 0 ? heightFromHint : 1080);
+    if (resolvedWidth <= 0 || resolvedHeight <= 0) {
+      return const Size(1080, 1080);
+    }
+    return Size(resolvedWidth, resolvedHeight);
+  }
+
+  ({int width, int height, bool downscaled}) _resolveTemplateRenderSize(
+      Size workspaceSize) {
+    int width = math.max(1, workspaceSize.width.round());
+    int height = math.max(1, workspaceSize.height.round());
+    double ratio = 1.0;
+    final int longEdge = math.max(width, height);
+    if (longEdge > _templateSvgRenderMaxLongEdge) {
+      ratio = math.min(ratio, _templateSvgRenderMaxLongEdge / longEdge);
+    }
+    final int totalPixels = width * height;
+    if (totalPixels > _templateSvgRenderMaxTotalPixels) {
+      final double pixelRatio =
+          math.sqrt(_templateSvgRenderMaxTotalPixels / totalPixels);
+      ratio = math.min(ratio, pixelRatio);
+    }
+    if (ratio >= 0.999999) {
+      return (width: width, height: height, downscaled: false);
+    }
+    width = math.max(1, (width * ratio).round());
+    height = math.max(1, (height * ratio).round());
+    return (width: width, height: height, downscaled: true);
+  }
+
+  String _svgLayerDisplayName(xml.XmlElement element, int index) {
+    String? label = element.getAttribute(
+      'label',
+      namespace: 'http://www.inkscape.org/namespaces/inkscape',
+    );
+    label ??= element.getAttribute('id');
+    label = (label ?? '').trim();
+    if (label.isEmpty) {
+      label = '${element.name.local} $index';
+    }
+    if (label.length > 64) {
+      label = label.substring(0, 64);
+    }
+    return label;
+  }
+
+  bool _isSvgImportableLayerTag(String localName) {
+    switch (localName.toLowerCase()) {
+      case 'g':
+      case 'path':
+      case 'rect':
+      case 'circle':
+      case 'ellipse':
+      case 'line':
+      case 'polyline':
+      case 'polygon':
+      case 'text':
+      case 'image':
+      case 'use':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _isSvgLeafImportableTag(String localName) {
+    switch (localName.toLowerCase()) {
+      case 'path':
+      case 'rect':
+      case 'circle':
+      case 'ellipse':
+      case 'line':
+      case 'polyline':
+      case 'polygon':
+      case 'text':
+      case 'image':
+      case 'use':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _isSvgNonLayerTag(String localName) {
+    switch (localName.toLowerCase()) {
+      case 'defs':
+      case 'title':
+      case 'desc':
+      case 'metadata':
+      case 'style':
+      case 'script':
+      case 'clippath':
+      case 'mask':
+      case 'pattern':
+      case 'marker':
+      case 'symbol':
+      case 'lineargradient':
+      case 'radialgradient':
+      case 'filter':
+      case 'foreignobject':
+      case 'namedview':
+      case 'page':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  List<xml.XmlElement> _svgImmediateImportableChildren(
+    xml.XmlElement parent,
+  ) {
+    return parent.children.whereType<xml.XmlElement>().where((element) {
+      final String local = element.name.local.toLowerCase();
+      if (_isSvgNonLayerTag(local)) return false;
+      if (!_isSvgImportableLayerTag(local)) return false;
+      if (_isSvgElementHidden(element)) return false;
+      return true;
+    }).toList(growable: false);
+  }
+
+  bool _isSvgExplicitLayerGroup(xml.XmlElement element) {
+    if (element.name.local.toLowerCase() != 'g') return false;
+    final String mode = (element.getAttribute(
+              'groupmode',
+              namespace: 'http://www.inkscape.org/namespaces/inkscape',
+            ) ??
+            element.getAttribute('inkscape:groupmode') ??
+            '')
+        .trim()
+        .toLowerCase();
+    if (mode == 'layer') return true;
+    final String dataLayer =
+        (element.getAttribute('data-layer') ?? '').trim().toLowerCase();
+    if (dataLayer == 'true' || dataLayer == '1') return true;
+    final String id = (element.getAttribute('id') ?? '').trim().toLowerCase();
+    if (id.startsWith('layer')) return true;
+    return false;
+  }
+
+  String _buildSvgRootDrawableFragment(xml.XmlElement root) {
+    final StringBuffer buffer = StringBuffer();
+    for (final xml.XmlNode child in root.children) {
+      if (child is xml.XmlElement) {
+        final String local = child.name.local.toLowerCase();
+        if (_isSvgNonLayerTag(local)) {
+          continue;
+        }
+      }
+      buffer.write(child.toXmlString());
+    }
+    return buffer.toString();
+  }
+
+  bool _svgElementHasDrawableContent(xml.XmlElement element) {
+    if (_isSvgElementHidden(element)) return false;
+    final String local = element.name.local.toLowerCase();
+    if (_isSvgNonLayerTag(local)) return false;
+    if (_isSvgLeafImportableTag(local)) return true;
+    for (final xml.XmlElement child
+        in element.children.whereType<xml.XmlElement>()) {
+      if (_svgElementHasDrawableContent(child)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  List<xml.XmlElement> _svgVisibleGroupChildren(xml.XmlElement parent) {
+    return _svgImmediateImportableChildren(parent)
+        .where(
+          (element) =>
+              element.name.local.toLowerCase() == 'g' &&
+              _svgElementHasDrawableContent(element),
+        )
+        .toList(growable: false);
+  }
+
+  xml.XmlElement _unwrapUploadedSvgGroup(xml.XmlElement element) {
+    xml.XmlElement current = element;
+    while (true) {
+      if (current.name.local.toLowerCase() != 'g') return current;
+      if (_isSvgExplicitLayerGroup(current)) return current;
+      final List<xml.XmlElement> children =
+          _svgImmediateImportableChildren(current);
+      if (children.length != 1) return current;
+      final xml.XmlElement only = children.first;
+      if (only.name.local.toLowerCase() != 'g') return current;
+      if (!_svgElementHasDrawableContent(only)) return current;
+      current = only;
+    }
+  }
+
+  List<xml.XmlElement> _resolveUploadedSvgSplitGroups(
+      xml.XmlElement container) {
+    List<xml.XmlElement> frontier = _svgVisibleGroupChildren(container)
+        .map(_unwrapUploadedSvgGroup)
+        .toList(growable: false);
+    while (frontier.isNotEmpty) {
+      if (frontier.length >= 2) {
+        return frontier;
+      }
+      final xml.XmlElement only = frontier.first;
+      final List<xml.XmlElement> next = _svgVisibleGroupChildren(only)
+          .map(_unwrapUploadedSvgGroup)
+          .toList(growable: false);
+      if (next.isEmpty) {
+        break;
+      }
+      frontier = next;
+    }
+    return const <xml.XmlElement>[];
+  }
+
+  List<xml.XmlElement> _resolveUploadedSvgLayerElements({
+    required xml.XmlElement root,
+  }) {
+    xml.XmlElement currentContainer = root;
+    List<xml.XmlElement> currentChildren =
+        _svgImmediateImportableChildren(currentContainer);
+    if (currentChildren.isEmpty) {
+      return const <xml.XmlElement>[];
+    }
+
+    while (currentChildren.length == 1) {
+      final xml.XmlElement only = currentChildren.first;
+      final String local = only.name.local.toLowerCase();
+      if (local != 'g') {
+        break;
+      }
+      if (!_svgElementHasDrawableContent(only)) {
+        break;
+      }
+      currentContainer = only;
+      currentChildren = _svgImmediateImportableChildren(currentContainer);
+    }
+
+    final List<xml.XmlElement> explicitChildren =
+        currentChildren.where(_isSvgExplicitLayerGroup).toList(growable: false);
+    if (explicitChildren.length >= 2) {
+      return explicitChildren;
+    }
+
+    final List<xml.XmlElement> splitGroups =
+        _resolveUploadedSvgSplitGroups(currentContainer);
+    if (splitGroups.length >= 2) {
+      return splitGroups;
+    }
+
+    final List<xml.XmlElement> immediateGroups =
+        _svgVisibleGroupChildren(currentContainer)
+            .map(_unwrapUploadedSvgGroup)
+            .toList(growable: false);
+    if (immediateGroups.length >= 2) {
+      return immediateGroups;
+    }
+
+    if (explicitChildren.isNotEmpty) {
+      return explicitChildren;
+    }
+
+    if (immediateGroups.length == 1) {
+      return immediateGroups;
+    }
+
+    if (!identical(currentContainer, root)) {
+      return <xml.XmlElement>[currentContainer];
+    }
+    return const <xml.XmlElement>[];
+  }
+
+  double? _parseSvgCoordinateValue(String? raw) {
+    final String value = (raw ?? '').trim();
+    if (value.isEmpty) return null;
+    final double? dimension = _tryParseSvgDimension(value);
+    if (dimension != null && dimension.isFinite) {
+      return dimension;
+    }
+    final double? parsed = double.tryParse(value);
+    if (parsed == null || !parsed.isFinite) return null;
+    return parsed;
+  }
+
+  List<double> _parseSvgNumberTokenList(String raw) {
+    final Iterable<Match> matches = RegExp(
+      r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    ).allMatches(raw.replaceAll('−', '-'));
+    return matches
+        .map((match) => double.tryParse(match.group(0) ?? ''))
+        .whereType<double>()
+        .where((value) => value.isFinite)
+        .toList(growable: false);
+  }
+
+  List<double> _parseSvgTransformParams(String params) {
+    final List<double> result = <double>[];
+    String current = '';
+    for (int i = 0; i < params.length; i++) {
+      final String char = params[i];
+      final bool isSeparator = char == ' ' || char == '-' || char == ',';
+      final bool isExponent = i > 0 && params[i - 1].toLowerCase() == 'e';
+      if (isSeparator && !isExponent) {
+        if (current.isNotEmpty) {
+          final double? parsed = double.tryParse(current);
+          if (parsed != null && parsed.isFinite) {
+            result.add(parsed);
+          }
+        }
+        current = char == '-' ? '-' : '';
+      } else {
+        if (char == '.' && current.contains('.')) {
+          final double? parsed = double.tryParse(current);
+          if (parsed != null && parsed.isFinite) {
+            result.add(parsed);
+          }
+          current = '';
+        }
+        current += char;
+      }
+    }
+    if (current.isNotEmpty) {
+      final double? parsed = double.tryParse(current);
+      if (parsed != null && parsed.isFinite) {
+        result.add(parsed);
+      }
+    }
+    return result;
+  }
+
+  vgcompiler.AffineMatrix? _parseSvgAffineTransform(String? transform) {
+    final String value = (transform ?? '').trim();
+    if (value.isEmpty) return null;
+    final RegExp commandPattern = RegExp(r' *,?([^(]+)\(([^)]*)\)');
+    final List<Match> matches = commandPattern.allMatches(value).toList();
+    if (matches.isEmpty) return null;
+    vgcompiler.AffineMatrix result = vgcompiler.AffineMatrix.identity;
+    for (final Match match in matches.reversed) {
+      final String command = (match.group(1) ?? '').trim();
+      final List<double> params =
+          _parseSvgTransformParams((match.group(2) ?? '').trim());
+      if (params.isEmpty && command != 'matrix') continue;
+      switch (command) {
+        case 'matrix':
+          if (params.length != 6) continue;
+          result = vgcompiler.AffineMatrix(
+            params[0],
+            params[1],
+            params[2],
+            params[3],
+            params[4],
+            params[5],
+          ).multiplied(result);
+          break;
+        case 'translate':
+          result = vgcompiler.AffineMatrix(
+            1,
+            0,
+            0,
+            1,
+            params[0],
+            params.length > 1 ? params[1] : 0,
+          ).multiplied(result);
+          break;
+        case 'scale':
+          final double sx = params[0];
+          final double sy = params.length > 1 ? params[1] : sx;
+          result =
+              vgcompiler.AffineMatrix(sx, 0, 0, sy, 0, 0).multiplied(result);
+          break;
+        case 'rotate':
+          if (params.isEmpty) continue;
+          final double radians = params[0] * math.pi / 180.0;
+          final vgcompiler.AffineMatrix rotate =
+              vgcompiler.AffineMatrix.identity.rotated(radians);
+          if (params.length > 1) {
+            final double cx = params[1];
+            final double cy = params.length > 2 ? params[2] : cx;
+            result = vgcompiler.AffineMatrix(1, 0, 0, 1, cx, cy)
+                .multiplied(rotate)
+                .translated(-cx, -cy)
+                .multiplied(result);
+          } else {
+            result = rotate.multiplied(result);
+          }
+          break;
+        case 'skewX':
+          if (params.isEmpty) continue;
+          result = vgcompiler.AffineMatrix(
+            1,
+            0,
+            math.tan(params[0]),
+            1,
+            0,
+            0,
+          ).multiplied(result);
+          break;
+        case 'skewY':
+          if (params.isEmpty) continue;
+          result = vgcompiler.AffineMatrix(
+            1,
+            math.tan(params[0]),
+            0,
+            1,
+            0,
+            0,
+          ).multiplied(result);
+          break;
+        default:
+          continue;
+      }
+    }
+    return result;
+  }
+
+  vgcompiler.AffineMatrix _svgEffectiveTransformForElement({
+    required xml.XmlElement element,
+    required xml.XmlElement root,
+  }) {
+    vgcompiler.AffineMatrix result = vgcompiler.AffineMatrix.identity;
+    xml.XmlNode? current = element;
+    while (current is xml.XmlElement) {
+      final vgcompiler.AffineMatrix? transform =
+          _parseSvgAffineTransform(current.getAttribute('transform'));
+      if (transform != null) {
+        result = transform.multiplied(result);
+      }
+      if (identical(current, root)) {
+        break;
+      }
+      current = current.parent;
+    }
+    return result;
+  }
+
+  Rect? _rectFromOffsets(Iterable<Offset> points) {
+    double minX = double.infinity;
+    double minY = double.infinity;
+    double maxX = -double.infinity;
+    double maxY = -double.infinity;
+    bool hasPoint = false;
+    for (final Offset point in points) {
+      if (!point.dx.isFinite || !point.dy.isFinite) continue;
+      hasPoint = true;
+      if (point.dx < minX) minX = point.dx;
+      if (point.dx > maxX) maxX = point.dx;
+      if (point.dy < minY) minY = point.dy;
+      if (point.dy > maxY) maxY = point.dy;
+    }
+    if (!hasPoint) return null;
+    return Rect.fromLTRB(minX, minY, maxX, maxY);
+  }
+
+  Rect? _rectFromVgRect(vgcompiler.Rect rect) {
+    if (rect.width.isNaN ||
+        rect.height.isNaN ||
+        !rect.left.isFinite ||
+        !rect.top.isFinite ||
+        !rect.right.isFinite ||
+        !rect.bottom.isFinite) {
+      return null;
+    }
+    return Rect.fromLTRB(rect.left, rect.top, rect.right, rect.bottom);
+  }
+
+  Rect? _combineBounds(Rect? a, Rect? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return Rect.fromLTRB(
+      math.min(a.left, b.left),
+      math.min(a.top, b.top),
+      math.max(a.right, b.right),
+      math.max(a.bottom, b.bottom),
+    );
+  }
+
+  double _svgRectSeparationDistance(Rect a, Rect b) {
+    final double dx = math.max(
+      0,
+      math.max(a.left - b.right, b.left - a.right),
+    );
+    final double dy = math.max(
+      0,
+      math.max(a.top - b.bottom, b.top - a.bottom),
+    );
+    if (dx <= 0 && dy <= 0) return 0;
+    return math.sqrt((dx * dx) + (dy * dy));
+  }
+
+  double _svgWorkspaceCoverageRatio({
+    required Rect bounds,
+    required Size workspaceSize,
+  }) {
+    if (workspaceSize.width <= 0 || workspaceSize.height <= 0) return 0;
+    final double coveredWidth = bounds.width.clamp(0, workspaceSize.width);
+    final double coveredHeight = bounds.height.clamp(0, workspaceSize.height);
+    final double totalArea = workspaceSize.width * workspaceSize.height;
+    if (totalArea <= 0) return 0;
+    return (coveredWidth * coveredHeight) / totalArea;
+  }
+
+  Rect? _tryComputeSvgElementBounds({
+    required xml.XmlElement element,
+    required xml.XmlElement root,
+  }) {
+    final String local = element.name.local.toLowerCase();
+    final vgcompiler.AffineMatrix transform =
+        _svgEffectiveTransformForElement(element: element, root: root);
+
+    try {
+      switch (local) {
+        case 'svg':
+        case 'g':
+          Rect? combinedBounds;
+          for (final xml.XmlElement child
+              in element.children.whereType<xml.XmlElement>()) {
+            final String childLocal = child.name.local.toLowerCase();
+            if (_isSvgNonLayerTag(childLocal)) continue;
+            if (_isSvgElementHidden(child)) continue;
+            final Rect? childBounds = _tryComputeSvgElementBounds(
+              element: child,
+              root: root,
+            );
+            combinedBounds = _combineBounds(combinedBounds, childBounds);
+          }
+          return combinedBounds;
+        case 'path':
+          final String d = (element.getAttribute('d') ?? '').trim();
+          if (d.isEmpty) return null;
+          final vgcompiler.Path path = vgcompiler.parseSvgPathData(d);
+          return _rectFromVgRect(path.transformed(transform).bounds());
+        case 'rect':
+          final double x =
+              _parseSvgCoordinateValue(element.getAttribute('x')) ?? 0;
+          final double y =
+              _parseSvgCoordinateValue(element.getAttribute('y')) ?? 0;
+          final double? width =
+              _parseSvgCoordinateValue(element.getAttribute('width'));
+          final double? height =
+              _parseSvgCoordinateValue(element.getAttribute('height'));
+          if (width == null || height == null || width <= 0 || height <= 0) {
+            return null;
+          }
+          return _rectFromVgRect(transform.transformRect(
+            vgcompiler.Rect.fromLTWH(x, y, width, height),
+          ));
+        case 'circle':
+          final double? cx =
+              _parseSvgCoordinateValue(element.getAttribute('cx'));
+          final double? cy =
+              _parseSvgCoordinateValue(element.getAttribute('cy'));
+          final double? r = _parseSvgCoordinateValue(element.getAttribute('r'));
+          if (cx == null || cy == null || r == null || r <= 0) return null;
+          return _rectFromVgRect(transform.transformRect(
+            vgcompiler.Rect.fromCircle(cx, cy, r),
+          ));
+        case 'ellipse':
+          final double? cx =
+              _parseSvgCoordinateValue(element.getAttribute('cx'));
+          final double? cy =
+              _parseSvgCoordinateValue(element.getAttribute('cy'));
+          final double? rx =
+              _parseSvgCoordinateValue(element.getAttribute('rx'));
+          final double? ry =
+              _parseSvgCoordinateValue(element.getAttribute('ry'));
+          if (cx == null ||
+              cy == null ||
+              rx == null ||
+              ry == null ||
+              rx <= 0 ||
+              ry <= 0) {
+            return null;
+          }
+          return _rectFromVgRect(transform.transformRect(
+            vgcompiler.Rect.fromLTWH(cx - rx, cy - ry, rx * 2, ry * 2),
+          ));
+        case 'line':
+          final double? x1 =
+              _parseSvgCoordinateValue(element.getAttribute('x1'));
+          final double? y1 =
+              _parseSvgCoordinateValue(element.getAttribute('y1'));
+          final double? x2 =
+              _parseSvgCoordinateValue(element.getAttribute('x2'));
+          final double? y2 =
+              _parseSvgCoordinateValue(element.getAttribute('y2'));
+          if (x1 == null || y1 == null || x2 == null || y2 == null) {
+            return null;
+          }
+          return _rectFromOffsets(<Offset>[
+            Offset(
+              transform.transformPoint(vgcompiler.Point(x1, y1)).x,
+              transform.transformPoint(vgcompiler.Point(x1, y1)).y,
+            ),
+            Offset(
+              transform.transformPoint(vgcompiler.Point(x2, y2)).x,
+              transform.transformPoint(vgcompiler.Point(x2, y2)).y,
+            ),
+          ]);
+        case 'polyline':
+        case 'polygon':
+          final List<double> points =
+              _parseSvgNumberTokenList(element.getAttribute('points') ?? '');
+          if (points.length < 2) return null;
+          final List<Offset> transformedPoints = <Offset>[];
+          for (int i = 0; i + 1 < points.length; i += 2) {
+            final vgcompiler.Point point = transform.transformPoint(
+              vgcompiler.Point(points[i], points[i + 1]),
+            );
+            transformedPoints.add(Offset(point.x, point.y));
+          }
+          return _rectFromOffsets(transformedPoints);
+        case 'image':
+          final double x =
+              _parseSvgCoordinateValue(element.getAttribute('x')) ?? 0;
+          final double y =
+              _parseSvgCoordinateValue(element.getAttribute('y')) ?? 0;
+          final double? width =
+              _parseSvgCoordinateValue(element.getAttribute('width'));
+          final double? height =
+              _parseSvgCoordinateValue(element.getAttribute('height'));
+          if (width == null || height == null || width <= 0 || height <= 0) {
+            return null;
+          }
+          return _rectFromVgRect(transform.transformRect(
+            vgcompiler.Rect.fromLTWH(x, y, width, height),
+          ));
+        default:
+          return null;
+      }
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _formatSvgDouble(double value) {
+    if (!value.isFinite) return '0';
+    String text = value.toStringAsFixed(4);
+    text = text.replaceFirst(RegExp(r'0+$'), '');
+    text = text.replaceFirst(RegExp(r'\.$'), '');
+    if (text == '-0') return '0';
+    return text;
+  }
+
+  Rect _inflateAndClampSvgBounds({
+    required Rect bounds,
+    required Size workspaceSize,
+    required int renderWidth,
+    required int renderHeight,
+  }) {
+    final double pixelUnitX = workspaceSize.width / math.max(1, renderWidth);
+    final double pixelUnitY = workspaceSize.height / math.max(1, renderHeight);
+    final double minWidth = pixelUnitX * 6;
+    final double minHeight = pixelUnitY * 6;
+    final double inflateX = math.max(pixelUnitX * 3, bounds.width * 0.02);
+    final double inflateY = math.max(pixelUnitY * 3, bounds.height * 0.02);
+    double left = math.max(0, bounds.left - inflateX);
+    double top = math.max(0, bounds.top - inflateY);
+    double right = math.min(workspaceSize.width, bounds.right + inflateX);
+    double bottom = math.min(workspaceSize.height, bounds.bottom + inflateY);
+    if ((right - left) < minWidth) {
+      final double mid = (left + right) / 2;
+      left = math.max(0, mid - (minWidth / 2));
+      right = math.min(workspaceSize.width, mid + (minWidth / 2));
+    }
+    if ((bottom - top) < minHeight) {
+      final double mid = (top + bottom) / 2;
+      top = math.max(0, mid - (minHeight / 2));
+      bottom = math.min(workspaceSize.height, mid + (minHeight / 2));
+    }
+    if ((right - left) < minWidth) {
+      right = math.min(workspaceSize.width, left + minWidth);
+      left = math.max(0, right - minWidth);
+    }
+    if ((bottom - top) < minHeight) {
+      bottom = math.min(workspaceSize.height, top + minHeight);
+      top = math.max(0, bottom - minHeight);
+    }
+    return Rect.fromLTRB(left, top, right, bottom);
+  }
+
+  _SvgLayerRenderConfig _buildSvgLayerRenderConfig({
+    required _SvgLayerRenderCandidate candidate,
+    required String rootAttributes,
+    required String rootBaseAttributes,
+    required String sharedResourceMarkup,
+    required Size workspaceSize,
+    required int renderWidth,
+    required int renderHeight,
+  }) {
+    final Rect? rawBounds = candidate.workspaceBounds;
+    if (rawBounds == null || rawBounds.isEmpty) {
+      return _SvgLayerRenderConfig(
+        svgMarkup:
+            '<svg$rootAttributes>$sharedResourceMarkup${candidate.svgFragment}</svg>',
+        widthPx: renderWidth,
+        heightPx: renderHeight,
+        originInRenderSpace: Offset.zero,
+      );
+    }
+    final Rect bounds = _inflateAndClampSvgBounds(
+      bounds: rawBounds,
+      workspaceSize: workspaceSize,
+      renderWidth: renderWidth,
+      renderHeight: renderHeight,
+    );
+    final double scaleX = renderWidth / workspaceSize.width;
+    final double scaleY = renderHeight / workspaceSize.height;
+    final int widthPx = math.max(1, (bounds.width * scaleX).ceil());
+    final int heightPx = math.max(1, (bounds.height * scaleY).ceil());
+    final String viewBox = [
+      _formatSvgDouble(bounds.left),
+      _formatSvgDouble(bounds.top),
+      _formatSvgDouble(bounds.width),
+      _formatSvgDouble(bounds.height),
+    ].join(' ');
+    return _SvgLayerRenderConfig(
+      svgMarkup:
+          '<svg$rootBaseAttributes viewBox="$viewBox" width="$widthPx" height="$heightPx">$sharedResourceMarkup${candidate.svgFragment}</svg>',
+      widthPx: widthPx,
+      heightPx: heightPx,
+      originInRenderSpace: Offset(bounds.left * scaleX, bounds.top * scaleY),
+    );
+  }
+
+  String _svgStylePropertyValue(
+    xml.XmlElement element,
+    String propertyName,
+  ) {
+    final String attr = (element.getAttribute(propertyName) ?? '').trim();
+    if (attr.isNotEmpty) return attr;
+    final String style = (element.getAttribute('style') ?? '').trim();
+    if (style.isEmpty) return '';
+    final String key = propertyName.toLowerCase();
+    for (final String part in style.split(';')) {
+      final int separator = part.indexOf(':');
+      if (separator <= 0) continue;
+      final String entryKey = part.substring(0, separator).trim().toLowerCase();
+      if (entryKey != key) continue;
+      final String value = part.substring(separator + 1).trim();
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
+  bool _isSvgElementHidden(xml.XmlElement element) {
+    final String display =
+        _svgStylePropertyValue(element, 'display').trim().toLowerCase();
+    if (display == 'none') return true;
+
+    final String visibility =
+        _svgStylePropertyValue(element, 'visibility').trim().toLowerCase();
+    if (visibility == 'hidden' || visibility == 'collapse') return true;
+
+    final String opacityRaw = _svgStylePropertyValue(element, 'opacity').trim();
+    final double? opacity = double.tryParse(opacityRaw);
+    if (opacity != null && opacity <= 0.0001) {
+      return true;
+    }
+    return false;
+  }
+
+  String _buildIsolatedSvgElementFragment({
+    required xml.XmlElement root,
+    required xml.XmlElement element,
+  }) {
+    String wrappedMarkup = element.toXmlString();
+    xml.XmlNode? currentParent = element.parent;
+    while (currentParent is xml.XmlElement && !identical(currentParent, root)) {
+      final String parentLocal = currentParent.name.local.toLowerCase();
+      if (_isSvgNonLayerTag(parentLocal)) {
+        break;
+      }
+      final String parentAttributes = currentParent.attributes
+          .map(
+            (attribute) =>
+                ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+          )
+          .join();
+      final String parentTag = currentParent.name.qualified;
+      wrappedMarkup =
+          '<$parentTag$parentAttributes>$wrappedMarkup</$parentTag>';
+      currentParent = currentParent.parent;
+    }
+    return wrappedMarkup;
+  }
+
+  String _buildIsolatedSvgElementsFragment({
+    required xml.XmlElement root,
+    required xml.XmlElement container,
+    required List<xml.XmlElement> elements,
+  }) {
+    if (elements.isEmpty) return '';
+    final StringBuffer buffer = StringBuffer();
+    for (final xml.XmlElement element in elements) {
+      buffer.write(element.toXmlString());
+    }
+    String wrappedMarkup = buffer.toString();
+    xml.XmlNode? currentParent = container;
+    while (currentParent is xml.XmlElement && !identical(currentParent, root)) {
+      final String parentLocal = currentParent.name.local.toLowerCase();
+      if (_isSvgNonLayerTag(parentLocal)) {
+        break;
+      }
+      final String parentAttributes = currentParent.attributes
+          .map(
+            (attribute) =>
+                ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+          )
+          .join();
+      final String parentTag = currentParent.name.qualified;
+      wrappedMarkup =
+          '<$parentTag$parentAttributes>$wrappedMarkup</$parentTag>';
+      currentParent = currentParent.parent;
+    }
+    return wrappedMarkup;
+  }
+
+  List<List<int>> _clusterSvgNodeIndexes({
+    required List<Rect> bounds,
+    required double baseGap,
+    required double maxGap,
+    List<bool>? bridgeMask,
+  }) {
+    if (bounds.length <= 1) {
+      return <List<int>>[
+        List<int>.generate(bounds.length, (index) => index),
+      ];
+    }
+
+    final List<int> parent = List<int>.generate(bounds.length, (i) => i);
+    final List<int> rank = List<int>.filled(bounds.length, 0);
+
+    int find(int index) {
+      int root = index;
+      while (parent[root] != root) {
+        root = parent[root];
+      }
+      while (parent[index] != index) {
+        final int next = parent[index];
+        parent[index] = root;
+        index = next;
+      }
+      return root;
+    }
+
+    void union(int a, int b) {
+      int rootA = find(a);
+      int rootB = find(b);
+      if (rootA == rootB) return;
+      if (rank[rootA] < rank[rootB]) {
+        final int swap = rootA;
+        rootA = rootB;
+        rootB = swap;
+      }
+      parent[rootB] = rootA;
+      if (rank[rootA] == rank[rootB]) {
+        rank[rootA] += 1;
+      }
+    }
+
+    final List<int> sorted = List<int>.generate(bounds.length, (i) => i)
+      ..sort((a, b) => bounds[a].left.compareTo(bounds[b].left));
+
+    for (int i = 0; i < sorted.length; i++) {
+      final int ia = sorted[i];
+      final Rect a = bounds[ia];
+      final double aPad = (math.max(a.width, a.height) * 0.18)
+          .clamp(baseGap, maxGap)
+          .toDouble();
+      final double searchRight = a.right + maxGap;
+      for (int j = i + 1; j < sorted.length; j++) {
+        final int ib = sorted[j];
+        final Rect b = bounds[ib];
+        if (b.left > searchRight) break;
+        if (bridgeMask != null && (!bridgeMask[ia] || !bridgeMask[ib])) {
+          continue;
+        }
+        final double bPad = (math.max(b.width, b.height) * 0.18)
+            .clamp(baseGap, maxGap)
+            .toDouble();
+        final double threshold = math.min(maxGap, aPad + bPad);
+        if (_svgRectSeparationDistance(a, b) <= threshold) {
+          union(ia, ib);
+        }
+      }
+    }
+
+    final Map<int, List<int>> byRoot = <int, List<int>>{};
+    for (int i = 0; i < bounds.length; i++) {
+      final int root = find(i);
+      byRoot.putIfAbsent(root, () => <int>[]).add(i);
+    }
+    final List<List<int>> clusters = byRoot.values.toList(growable: false)
+      ..sort((a, b) => a.first.compareTo(b.first));
+    for (final List<int> cluster in clusters) {
+      cluster.sort();
+    }
+    return clusters;
+  }
+
+  List<_SvgLayerRenderCandidate>? _buildClusteredSvgCandidatesFromContainer({
+    required xml.XmlElement root,
+    required xml.XmlElement container,
+  }) {
+    final List<xml.XmlElement> directChildren = _svgImmediateImportableChildren(
+      container,
+    ).where((entry) => _svgElementHasDrawableContent(entry)).toList(
+          growable: false,
+        );
+    if (directChildren.length < 8) return null;
+    if (_svgVisibleGroupChildren(container).length >= 2) return null;
+
+    final List<
+        ({
+          xml.XmlElement element,
+          Rect bounds,
+          int sourceIndex,
+        })> nodes = <({
+      xml.XmlElement element,
+      Rect bounds,
+      int sourceIndex,
+    })>[];
+    for (int i = 0; i < directChildren.length; i++) {
+      final xml.XmlElement element = directChildren[i];
+      final Rect? bounds = _tryComputeSvgElementBounds(
+        element: element,
+        root: root,
+      );
+      if (bounds == null || bounds.isEmpty) continue;
+      nodes.add((element: element, bounds: bounds, sourceIndex: i));
+    }
+    if (nodes.length < 2) return null;
+
+    final Size workspaceSize = _resolveSvgWorkspaceSize(root: root);
+    final double longEdge = math.max(workspaceSize.width, workspaceSize.height);
+    final double workspaceArea =
+        math.max(1.0, workspaceSize.width * workspaceSize.height);
+    final List<double> majorSizes = nodes
+        .map((entry) => math.max(entry.bounds.width, entry.bounds.height))
+        .where((value) => value.isFinite && value > 0)
+        .toList(growable: false)
+      ..sort();
+    if (majorSizes.isEmpty) return null;
+    final int p50Index = ((majorSizes.length - 1) * 0.50).round();
+    final int p90Index = ((majorSizes.length - 1) * 0.90).round();
+    final double sizeMedian = majorSizes[p50Index];
+    final double sizeHigh = majorSizes[p90Index];
+    final double bridgeMajorLimit = math.max(sizeHigh * 6.0, sizeMedian * 18.0);
+    final List<bool> bridgeMask = nodes.map((entry) {
+      final double major = math.max(entry.bounds.width, entry.bounds.height);
+      final double coverage =
+          ((entry.bounds.width * entry.bounds.height) / workspaceArea)
+              .clamp(0.0, 1.0)
+              .toDouble();
+      return major <= bridgeMajorLimit && coverage <= 0.08;
+    }).toList(growable: false);
+    const List<double> gapMultipliers = <double>[
+      1.0,
+      1.5,
+      2.1,
+      2.8,
+      3.6,
+      4.8,
+      6.0,
+      8.0,
+    ];
+
+    List<List<int>> bestClusters = <List<int>>[];
+    double bestScore = double.infinity;
+    for (final double factor in gapMultipliers) {
+      final double baseGap = (sizeMedian * 0.55 * factor)
+          .clamp(math.max(0.08, sizeMedian * 0.18), math.max(2.0, sizeHigh))
+          .toDouble();
+      final double maxGap = (sizeHigh * 1.8 * factor)
+          .clamp(
+            math.max(baseGap * 2.0, sizeMedian * 2.6),
+            math.max(sizeHigh * 6.0, longEdge * 0.025),
+          )
+          .toDouble();
+      final List<List<int>> clusters = _clusterSvgNodeIndexes(
+        bounds: nodes.map((entry) => entry.bounds).toList(growable: false),
+        baseGap: baseGap,
+        maxGap: maxGap,
+        bridgeMask: bridgeMask,
+      );
+      if (clusters.length <= 1) continue;
+      final double averageMembers = nodes.length / clusters.length;
+      if (clusters.length > 480 || averageMembers < 1.08) {
+        continue;
+      }
+      final double score = clusters.length.toDouble();
+      if (score < bestScore) {
+        bestScore = score;
+        bestClusters = clusters;
+      }
+    }
+    if (bestClusters.length <= 1) return null;
+
+    final List<_SvgLayerRenderCandidate> clustered =
+        <_SvgLayerRenderCandidate>[];
+    for (int clusterIndex = 0;
+        clusterIndex < bestClusters.length;
+        clusterIndex++) {
+      final List<int> memberIndexes = bestClusters[clusterIndex];
+      final List<xml.XmlElement> memberElements = memberIndexes
+          .map((index) => nodes[index].element)
+          .toList(growable: false);
+      Rect? clusterBounds;
+      for (final int member in memberIndexes) {
+        clusterBounds = _combineBounds(clusterBounds, nodes[member].bounds);
+      }
+      final xml.XmlElement firstElement = memberElements.first;
+      final String label = memberElements.length == 1
+          ? _svgLayerDisplayName(firstElement, clusterIndex + 1)
+          : 'Element ${clusterIndex + 1}';
+      clustered.add(
+        _SvgLayerRenderCandidate(
+          element: firstElement,
+          displayName: label,
+          svgFragment: _buildIsolatedSvgElementsFragment(
+            root: root,
+            container: container,
+            elements: memberElements,
+          ),
+          workspaceBounds: clusterBounds,
+        ),
+      );
+    }
+
+    return clustered;
+  }
+
+  List<_SvgLayerRenderCandidate> _collectSvgLayerRenderCandidates({
+    required xml.XmlElement root,
+  }) {
+    final List<xml.XmlElement> layerElements =
+        _resolveUploadedSvgLayerElements(root: root);
+    if (layerElements.length == 1 &&
+        layerElements.first.name.local.toLowerCase() == 'g') {
+      final List<_SvgLayerRenderCandidate>? clusteredFallback =
+          _buildClusteredSvgCandidatesFromContainer(
+        root: root,
+        container: layerElements.first,
+      );
+      if (clusteredFallback != null && clusteredFallback.length >= 2) {
+        return clusteredFallback;
+      }
+    }
+    if (layerElements.isNotEmpty) {
+      return List<_SvgLayerRenderCandidate>.generate(
+        layerElements.length,
+        (int index) {
+          final xml.XmlElement element = layerElements[index];
+          return _SvgLayerRenderCandidate(
+            element: element,
+            displayName: _svgLayerDisplayName(element, index + 1),
+            svgFragment: _buildIsolatedSvgElementFragment(
+              root: root,
+              element: element,
+            ),
+            workspaceBounds: _tryComputeSvgElementBounds(
+              element: element,
+              root: root,
+            ),
+          );
+        },
+      );
+    }
+
+    return <_SvgLayerRenderCandidate>[
+      _SvgLayerRenderCandidate(
+        element: root,
+        displayName: 'Artwork',
+        svgFragment: _buildSvgRootDrawableFragment(root),
+        workspaceBounds: _tryComputeSvgElementBounds(
+          element: root,
+          root: root,
+        ),
+      ),
+    ];
+  }
+
+  List<_SvgLayerRenderCandidate> _collectUploadedSvgLayerRenderCandidates({
+    required xml.XmlElement root,
+  }) {
+    List<xml.XmlElement> expandGroupsWithSiblingDrawables(
+      List<xml.XmlElement> baseGroups,
+    ) {
+      if (baseGroups.isEmpty) return baseGroups;
+      final xml.XmlElement? parent = baseGroups.first.parent is xml.XmlElement
+          ? baseGroups.first.parent as xml.XmlElement
+          : null;
+      if (parent == null ||
+          !baseGroups.every((group) => identical(group.parent, parent))) {
+        return baseGroups;
+      }
+      final List<xml.XmlElement> siblings = _svgImmediateImportableChildren(
+        parent,
+      ).where(_svgElementHasDrawableContent).toList(growable: false);
+      if (siblings.isEmpty) return baseGroups;
+
+      final LinkedHashSet<xml.XmlElement> unique =
+          LinkedHashSet<xml.XmlElement>.identity();
+      for (final xml.XmlElement sibling in siblings) {
+        if (sibling.name.local.toLowerCase() == 'g') {
+          unique.add(_unwrapUploadedSvgGroup(sibling));
+        } else {
+          unique.add(sibling);
+        }
+      }
+      if (unique.length <= 1) {
+        return baseGroups;
+      }
+      return unique.toList(growable: false);
+    }
+
+    List<_SvgLayerRenderCandidate> buildCandidatesFromElements(
+      List<xml.XmlElement> elements,
+    ) {
+      return List<_SvgLayerRenderCandidate>.generate(
+        elements.length,
+        (int index) {
+          final xml.XmlElement element = elements[index];
+          return _SvgLayerRenderCandidate(
+            element: element,
+            displayName: _svgLayerDisplayName(element, index + 1),
+            svgFragment: _buildIsolatedSvgElementFragment(
+              root: root,
+              element: element,
+            ),
+            workspaceBounds: _tryComputeSvgElementBounds(
+              element: element,
+              root: root,
+            ),
+          );
+        },
+      );
+    }
+
+    final List<xml.XmlElement> splitGroupsFromRoot =
+        _resolveUploadedSvgSplitGroups(root)
+            .where(_svgElementHasDrawableContent)
+            .toList(growable: false);
+    if (splitGroupsFromRoot.length >= 2) {
+      return buildCandidatesFromElements(
+        expandGroupsWithSiblingDrawables(splitGroupsFromRoot),
+      );
+    }
+
+    final List<xml.XmlElement> resolvedSeedElements =
+        _resolveUploadedSvgLayerElements(root: root)
+            .where(_svgElementHasDrawableContent)
+            .toList(growable: false);
+    if (resolvedSeedElements.isNotEmpty) {
+      final List<xml.XmlElement> groupSeeds = resolvedSeedElements
+          .where(
+            (element) =>
+                element.name.local.toLowerCase() == 'g' &&
+                _svgElementHasDrawableContent(element),
+          )
+          .toList(growable: false);
+      if (groupSeeds.length >= 2) {
+        return buildCandidatesFromElements(
+          expandGroupsWithSiblingDrawables(groupSeeds),
+        );
+      }
+      if (groupSeeds.length == 1) {
+        final xml.XmlElement groupRoot = groupSeeds.first;
+        final List<xml.XmlElement> childGroups =
+            _resolveUploadedSvgSplitGroups(groupRoot)
+                .map(_unwrapUploadedSvgGroup)
+                .where(_svgElementHasDrawableContent)
+                .toList(growable: false);
+        if (childGroups.length >= 2) {
+          return buildCandidatesFromElements(
+            expandGroupsWithSiblingDrawables(childGroups),
+          );
+        }
+        return buildCandidatesFromElements(<xml.XmlElement>[groupRoot]);
+      }
+      return buildCandidatesFromElements(resolvedSeedElements);
+    }
+
+    return <_SvgLayerRenderCandidate>[
+      _SvgLayerRenderCandidate(
+        element: root,
+        displayName: 'Artwork',
+        svgFragment: _buildSvgRootDrawableFragment(root),
+        workspaceBounds: _tryComputeSvgElementBounds(
+          element: root,
+          root: root,
+        ),
+      ),
+    ];
+  }
+
+  List<_SvgLayerRenderCandidate> _groupSvgCandidatesForPerformance({
+    required List<_SvgLayerRenderCandidate> candidates,
+  }) {
+    if (candidates.length <= _templateSvgSplitTargetRenderLayers) {
+      return candidates;
+    }
+    final int chunkSize = math.max(
+      2,
+      (candidates.length / _templateSvgSplitTargetRenderLayers).ceil(),
+    );
+    final List<_SvgLayerRenderCandidate> grouped = <_SvgLayerRenderCandidate>[];
+    int groupIndex = 1;
+    for (int start = 0; start < candidates.length; start += chunkSize) {
+      final int end = math.min(candidates.length, start + chunkSize);
+      final StringBuffer combinedFragments = StringBuffer();
+      Rect? combinedBounds;
+      bool allBoundsKnown = true;
+      for (int i = start; i < end; i++) {
+        combinedFragments.write(candidates[i].svgFragment);
+        if (candidates[i].workspaceBounds == null) {
+          allBoundsKnown = false;
+        } else if (allBoundsKnown) {
+          combinedBounds =
+              _combineBounds(combinedBounds, candidates[i].workspaceBounds);
+        }
+      }
+      final _SvgLayerRenderCandidate first = candidates[start];
+      grouped.add(
+        _SvgLayerRenderCandidate(
+          element: first.element,
+          displayName:
+              end - start == 1 ? first.displayName : 'Group $groupIndex',
+          svgFragment: combinedFragments.toString(),
+          workspaceBounds: allBoundsKnown ? combinedBounds : null,
+        ),
+      );
+      groupIndex++;
+    }
+    return grouped;
+  }
+
+  bool _isSvgWhiteFillValue(String rawValue) {
+    final String value = rawValue.trim().toLowerCase();
+    if (value.isEmpty || value == 'none' || value == 'transparent') {
+      return false;
+    }
+    if (value == 'white' ||
+        value == '#fff' ||
+        value == '#ffffff' ||
+        value == '#ffffffff') {
+      return true;
+    }
+    final Match? rgbMatch = RegExp(
+      r'rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})',
+    ).firstMatch(value);
+    if (rgbMatch != null) {
+      final int r = int.tryParse(rgbMatch.group(1) ?? '') ?? -1;
+      final int g = int.tryParse(rgbMatch.group(2) ?? '') ?? -1;
+      final int b = int.tryParse(rgbMatch.group(3) ?? '') ?? -1;
+      return r >= 250 && g >= 250 && b >= 250;
+    }
+    return false;
+  }
+
+  bool _isLikelySvgAutoBackgroundElement({
+    required xml.XmlElement element,
+    required _TrimmedRgbaImage trimmed,
+    required int totalCandidates,
+  }) {
+    if (totalCandidates <= 1) return false;
+    if (trimmed.sourceCoverageRatio < 0.985) return false;
+    final String fill = _svgStylePropertyValue(element, 'fill');
+    if (!_isSvgWhiteFillValue(fill)) return false;
+    final String stroke =
+        _svgStylePropertyValue(element, 'stroke').trim().toLowerCase();
+    if (stroke.isNotEmpty && stroke != 'none' && stroke != 'transparent') {
+      return false;
+    }
+    return true;
+  }
+
+  bool _isLikelySvgAutoBackgroundFromBounds({
+    required xml.XmlElement element,
+    required Rect? bounds,
+    required Size workspaceSize,
+    required int totalCandidates,
+  }) {
+    if (totalCandidates <= 1 || bounds == null || bounds.isEmpty) return false;
+    if (_svgWorkspaceCoverageRatio(
+          bounds: bounds,
+          workspaceSize: workspaceSize,
+        ) <
+        0.985) {
+      return false;
+    }
+    final String fill = _svgStylePropertyValue(element, 'fill');
+    if (!_isSvgWhiteFillValue(fill)) return false;
+    final String stroke =
+        _svgStylePropertyValue(element, 'stroke').trim().toLowerCase();
+    if (stroke.isNotEmpty && stroke != 'none' && stroke != 'transparent') {
+      return false;
+    }
+    return true;
+  }
+
+  bool _shouldSkipSvgAlphaTrim(_SvgLayerRenderCandidate candidate) {
+    if (candidate.workspaceBounds == null ||
+        candidate.workspaceBounds!.isEmpty) {
+      return false;
+    }
+    final String fragment = candidate.svgFragment.toLowerCase();
+    if (fragment.contains('<filter') ||
+        fragment.contains('filter=') ||
+        fragment.contains('<mask') ||
+        fragment.contains('mask=') ||
+        fragment.contains('<clippath') ||
+        fragment.contains('clip-path=') ||
+        fragment.contains('clip-path:')) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<ui.Image> _renderSvgStringToImage({
+    required String svgMarkup,
+    required int widthPx,
+    required int heightPx,
+  }) async {
+    final vg.PictureInfo pictureInfo = await vg.vg.loadPicture(
+      vg.SvgStringLoader(svgMarkup),
+      null,
+    );
+    try {
+      return await pictureInfo.picture.toImage(widthPx, heightPx);
+    } finally {
+      pictureInfo.picture.dispose();
+    }
+  }
+
+  ({int width, int height}) _resolveUploadedSvgCanvasRenderSize({
+    required int baseWidth,
+    required int baseHeight,
+    required Size workspaceSize,
+  }) {
+    int safeWidth = math.max(1, baseWidth);
+    int safeHeight = math.max(1, baseHeight);
+    final int baseLong = math.max(safeWidth, safeHeight);
+    if (baseLong <= 0) {
+      return (width: safeWidth, height: safeHeight);
+    }
+
+    final int workspaceLong = math.max(
+      1,
+      math.max(workspaceSize.width.round(), workspaceSize.height.round()),
+    );
+    int targetLong = math.max(
+      _uploadedSvgRasterTargetLongEdge,
+      (workspaceLong * 1.5).round(),
+    );
+    targetLong = targetLong.clamp(
+        _uploadedSvgRasterTargetLongEdge, _uploadedSvgRasterMaxLongEdge);
+    if (baseLong >= targetLong) {
+      targetLong = baseLong.clamp(1, _uploadedSvgRasterMaxLongEdge);
+    }
+
+    double scale = targetLong / baseLong;
+    if (!scale.isFinite || scale <= 0) {
+      scale = 1.0;
+    }
+    safeWidth = math.max(1, (safeWidth * scale).round());
+    safeHeight = math.max(1, (safeHeight * scale).round());
+
+    final int totalPixels = safeWidth * safeHeight;
+    if (totalPixels > _uploadedSvgRasterMaxTotalPixels) {
+      final double pixelRatio =
+          math.sqrt(_uploadedSvgRasterMaxTotalPixels / totalPixels);
+      safeWidth = math.max(1, (safeWidth * pixelRatio).round());
+      safeHeight = math.max(1, (safeHeight * pixelRatio).round());
+    }
+
+    final int maxLong = math.max(safeWidth, safeHeight);
+    if (maxLong > _uploadedSvgRasterMaxLongEdge) {
+      final double downRatio = _uploadedSvgRasterMaxLongEdge / maxLong;
+      safeWidth = math.max(1, (safeWidth * downRatio).round());
+      safeHeight = math.max(1, (safeHeight * downRatio).round());
+    }
+
+    return (width: safeWidth, height: safeHeight);
+  }
+
+  Future<_TrimmedRgbaImage?> _trimTransparentImage(ui.Image sourceImage) async {
+    final ByteData? data =
+        await sourceImage.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) {
+      return _TrimmedRgbaImage(
+        image: sourceImage,
+        centerInSource: Offset(
+          sourceImage.width / 2,
+          sourceImage.height / 2,
+        ),
+        sourceWidth: sourceImage.width,
+        sourceHeight: sourceImage.height,
+        minX: 0,
+        minY: 0,
+        maxX: math.max(0, sourceImage.width - 1),
+        maxY: math.max(0, sourceImage.height - 1),
+      );
+    }
+    final Uint8List rgba = data.buffer.asUint8List(0, data.lengthInBytes);
+    final int width = sourceImage.width;
+    final int height = sourceImage.height;
+    int minX = width;
+    int minY = height;
+    int maxX = -1;
+    int maxY = -1;
+    for (int y = 0; y < height; y++) {
+      final int rowOffset = y * width * 4;
+      for (int x = 0; x < width; x++) {
+        final int alpha = rgba[rowOffset + (x * 4) + 3];
+        if (alpha == 0) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+    if (maxX < minX || maxY < minY) {
+      sourceImage.dispose();
+      return null;
+    }
+    final Offset center = Offset(
+      (minX + maxX + 1) / 2,
+      (minY + maxY + 1) / 2,
+    );
+    if (minX == 0 && minY == 0 && maxX == width - 1 && maxY == height - 1) {
+      return _TrimmedRgbaImage(
+        image: sourceImage,
+        centerInSource: center,
+        sourceWidth: width,
+        sourceHeight: height,
+        minX: minX,
+        minY: minY,
+        maxX: maxX,
+        maxY: maxY,
+      );
+    }
+    final int croppedWidth = maxX - minX + 1;
+    final int croppedHeight = maxY - minY + 1;
+    final Uint8List cropped = Uint8List(croppedWidth * croppedHeight * 4);
+    for (int y = 0; y < croppedHeight; y++) {
+      final int sourceRow = (minY + y) * width * 4;
+      final int sourceStart = sourceRow + (minX * 4);
+      final int destStart = y * croppedWidth * 4;
+      cropped.setRange(
+        destStart,
+        destStart + (croppedWidth * 4),
+        rgba,
+        sourceStart,
+      );
+    }
+    final ui.Image croppedImage = await _decodeUiImageFromRgba(
+      cropped,
+      width: croppedWidth,
+      height: croppedHeight,
+    );
+    sourceImage.dispose();
+    return _TrimmedRgbaImage(
+      image: croppedImage,
+      centerInSource: center,
+      sourceWidth: width,
+      sourceHeight: height,
+      minX: minX,
+      minY: minY,
+      maxX: maxX,
+      maxY: maxY,
+    );
+  }
+
+  bool _isSvgTextNumericListAttribute(String attributeName) {
+    switch (attributeName.toLowerCase()) {
+      case 'x':
+      case 'y':
+      case 'dx':
+      case 'dy':
+      case 'rotate':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _isLikelySvgNumberList(String raw) {
+    final String value = raw.replaceAll('−', '-').trim();
+    if (value.isEmpty) return false;
+    if (value.contains(',')) return true;
+    final Iterable<Match> matches = RegExp(
+      r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    ).allMatches(value);
+    int count = 0;
+    for (final _ in matches) {
+      count++;
+      if (count > 1) return true;
+    }
+    return false;
+  }
+
+  String? _firstSvgNumberToken(String raw) {
+    final String value = raw.replaceAll('−', '-').trim();
+    final Match? match = RegExp(
+      r'[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?',
+    ).firstMatch(value);
+    final String? token = match?.group(0)?.trim();
+    if (token == null || token.isEmpty) return null;
+    final double? parsed = double.tryParse(token);
+    if (parsed == null || !parsed.isFinite) return null;
+    return token;
+  }
+
+  _SvgImportSanitizeResult _sanitizeSvgForFlutterImport(
+    String svgText, {
+    bool dropTextNodes = false,
+  }) {
+    xml.XmlDocument document;
+    try {
+      document = xml.XmlDocument.parse(svgText);
+    } catch (_) {
+      return _SvgImportSanitizeResult(
+        svgText: svgText,
+        changed: false,
+        removedTextNodes: false,
+      );
+    }
+
+    bool changed = false;
+    bool removedTextNodes = false;
+    final List<xml.XmlElement> textNodesToRemove = <xml.XmlElement>[];
+
+    for (final xml.XmlElement element
+        in document.descendants.whereType<xml.XmlElement>()) {
+      final String elementName = element.name.local.toLowerCase();
+      final bool isTextLikeElement = elementName == 'text' ||
+          elementName == 'tspan' ||
+          elementName == 'textpath' ||
+          elementName == 'tref';
+
+      if (dropTextNodes &&
+          (elementName == 'text' ||
+              elementName == 'textpath' ||
+              elementName == 'tref')) {
+        textNodesToRemove.add(element);
+        continue;
+      }
+
+      final List<xml.XmlAttribute> attributes =
+          List<xml.XmlAttribute>.from(element.attributes);
+      for (final xml.XmlAttribute attribute in attributes) {
+        final String attrLocal = attribute.name.local;
+        final String attrLower = attrLocal.toLowerCase();
+        final String attrPrefix = (attribute.name.prefix ?? '').toLowerCase();
+        final String namespace =
+            (attribute.name.namespaceUri ?? '').toLowerCase();
+        final String rawValue = attribute.value.trim();
+        if (rawValue.isEmpty) continue;
+
+        final bool editorMetadataAttr = attrPrefix == 'inkscape' ||
+            attrPrefix == 'sodipodi' ||
+            namespace.contains('inkscape.org') ||
+            namespace.contains('sodipodi.sourceforge.net');
+        final bool preserveLayerMetadata = attrPrefix == 'inkscape' &&
+            (attrLower == 'groupmode' || attrLower == 'label');
+        if (editorMetadataAttr && !preserveLayerMetadata) {
+          element.removeAttribute(
+            attrLocal,
+            namespace: attribute.name.namespaceUri,
+          );
+          changed = true;
+          continue;
+        }
+
+        if (isTextLikeElement &&
+            _isSvgTextNumericListAttribute(attrLower) &&
+            _isLikelySvgNumberList(rawValue)) {
+          final String? firstToken = _firstSvgNumberToken(rawValue);
+          if (firstToken == null) {
+            element.removeAttribute(
+              attrLocal,
+              namespace: attribute.name.namespaceUri,
+            );
+          } else {
+            element.setAttribute(
+              attrLocal,
+              firstToken,
+              namespace: attribute.name.namespaceUri,
+            );
+          }
+          changed = true;
+        }
+      }
+    }
+
+    if (textNodesToRemove.isNotEmpty) {
+      for (final xml.XmlElement textNode in textNodesToRemove.reversed) {
+        final xml.XmlNode? parent = textNode.parent;
+        if (parent == null) continue;
+        parent.children.remove(textNode);
+        changed = true;
+        removedTextNodes = true;
+      }
+    }
+
+    if (!changed) {
+      return _SvgImportSanitizeResult(
+        svgText: svgText,
+        changed: false,
+        removedTextNodes: false,
+      );
+    }
+
+    return _SvgImportSanitizeResult(
+      svgText: document.toXmlString(pretty: false),
+      changed: true,
+      removedTextNodes: removedTextNodes,
+    );
+  }
+
+  Future<_SvgTemplateImportResult> _decodeTemplateSvgToLayers({
+    required _TemplatesCatalogItem template,
+    required String svgText,
+    _SvgImportProgressReporter? onProgress,
+  }) async {
+    onProgress?.call('Analyzing SVG...', 0.12);
+    final String templateBaseTitle = (template.title ?? '').trim();
+    xml.XmlDocument document;
+    try {
+      document = xml.XmlDocument.parse(svgText);
+    } catch (_) {
+      throw const FormatException('Template SVG is invalid.');
+    }
+    final xml.XmlElement root = document.rootElement;
+    if (root.name.local.toLowerCase() != 'svg') {
+      throw const FormatException('Template file is not a valid SVG root.');
+    }
+    final Size workspaceSize = _resolveSvgWorkspaceSize(
+      root: root,
+      widthHint: template.width,
+      heightHint: template.height,
+    );
+    final ({int width, int height, bool downscaled}) renderSize =
+        _resolveTemplateRenderSize(workspaceSize);
+    final String rootAttributes = root.attributes
+        .map(
+          (attribute) =>
+              ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+        )
+        .join();
+    final String rootBaseAttributes = root.attributes
+        .where((attribute) {
+          final String local = attribute.name.local.toLowerCase();
+          return local != 'width' && local != 'height' && local != 'viewbox';
+        })
+        .map(
+          (attribute) =>
+              ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+        )
+        .join();
+    final Set<String> sharedResourceSet = <String>{};
+    final StringBuffer sharedResourceBuffer = StringBuffer();
+    for (final xml.XmlElement element
+        in root.descendants.whereType<xml.XmlElement>()) {
+      final String local = element.name.local.toLowerCase();
+      if (local != 'defs' && local != 'style') continue;
+      final String markup = element.toXmlString();
+      if (sharedResourceSet.add(markup)) {
+        sharedResourceBuffer.write(markup);
+      }
+    }
+    final String sharedResourceMarkup = sharedResourceBuffer.toString();
+    final List<_SvgLayerRenderCandidate> rawLayerCandidates =
+        _collectSvgLayerRenderCandidates(
+      root: root,
+    );
+    final List<_SvgLayerRenderCandidate> layerCandidates =
+        _groupSvgCandidatesForPerformance(
+      candidates: rawLayerCandidates,
+    );
+    final bool groupedForPerformance =
+        layerCandidates.length != rawLayerCandidates.length;
+    final int drawableNodeCount = layerCandidates.length;
+    onProgress?.call('Preparing layer rendering...', 0.22);
+
+    final List<_SvgLayerImportEntry> layers = <_SvgLayerImportEntry>[];
+    bool usedMergedFallback =
+        layerCandidates.length > _templateSvgImportMaxTopLevelLayers ||
+            svgText.length > _templateSvgSplitMaxSourceChars ||
+            drawableNodeCount > _templateSvgSplitMaxDrawableNodes;
+    if (!usedMergedFallback && layerCandidates.isNotEmpty) {
+      final int total = layerCandidates.length;
+      for (int i = 0; i < layerCandidates.length; i++) {
+        final _SvgLayerRenderCandidate candidate = layerCandidates[i];
+        if (i == 0 || i == total - 1 || i % 3 == 0) {
+          final double progress =
+              0.23 + (0.70 * ((i + 1) / math.max(1, total)));
+          onProgress?.call('Rendering layer ${i + 1}/$total...', progress);
+          await Future<void>.delayed(Duration.zero);
+        }
+        try {
+          final _SvgLayerRenderConfig renderConfig = _buildSvgLayerRenderConfig(
+            candidate: candidate,
+            rootAttributes: rootAttributes,
+            rootBaseAttributes: rootBaseAttributes,
+            sharedResourceMarkup: sharedResourceMarkup,
+            workspaceSize: workspaceSize,
+            renderWidth: renderSize.width,
+            renderHeight: renderSize.height,
+          );
+          if (_isLikelySvgAutoBackgroundFromBounds(
+            element: candidate.element,
+            bounds: candidate.workspaceBounds,
+            workspaceSize: workspaceSize,
+            totalCandidates: layerCandidates.length,
+          )) {
+            continue;
+          }
+          final ui.Image rendered = await _renderSvgStringToImage(
+            svgMarkup: renderConfig.svgMarkup,
+            widthPx: renderConfig.widthPx,
+            heightPx: renderConfig.heightPx,
+          );
+          if (_shouldSkipSvgAlphaTrim(candidate)) {
+            layers.add(
+              _SvgLayerImportEntry(
+                name: candidate.displayName,
+                image: rendered,
+                centerInRenderSpace: renderConfig.originInRenderSpace +
+                    Offset(
+                      renderConfig.widthPx / 2,
+                      renderConfig.heightPx / 2,
+                    ),
+              ),
+            );
+            continue;
+          }
+          final _TrimmedRgbaImage? trimmed =
+              await _trimTransparentImage(rendered);
+          if (trimmed == null) continue;
+          if (_isLikelySvgAutoBackgroundElement(
+            element: candidate.element,
+            trimmed: trimmed,
+            totalCandidates: layerCandidates.length,
+          )) {
+            trimmed.image.dispose();
+            continue;
+          }
+          layers.add(
+            _SvgLayerImportEntry(
+              name: candidate.displayName,
+              image: trimmed.image,
+              centerInRenderSpace:
+                  renderConfig.originInRenderSpace + trimmed.centerInSource,
+            ),
+          );
+        } catch (error) {
+          debugPrint(
+            'Template SVG layer split failed on layer ${i + 1}: $error',
+          );
+          continue;
+        }
+      }
+    }
+
+    if (layers.isEmpty) {
+      usedMergedFallback = true;
+      if (layers.isNotEmpty) {
+        for (final _SvgLayerImportEntry entry in layers) {
+          entry.image.dispose();
+        }
+        layers.clear();
+      }
+      onProgress?.call('Rendering fallback layer...', 0.90);
+      final ui.Image rendered = await _renderSvgStringToImage(
+        svgMarkup: root.toXmlString(),
+        widthPx: renderSize.width,
+        heightPx: renderSize.height,
+      );
+      final _TrimmedRgbaImage? trimmed = await _trimTransparentImage(rendered);
+      if (trimmed != null) {
+        layers.add(
+          _SvgLayerImportEntry(
+            name: templateBaseTitle.isEmpty
+                ? 'Template Layer'
+                : '$templateBaseTitle Layer',
+            image: trimmed.image,
+            centerInRenderSpace: trimmed.centerInSource,
+          ),
+        );
+      }
+    }
+
+    return _SvgTemplateImportResult(
+      title: templateBaseTitle.isEmpty ? 'Template' : templateBaseTitle,
+      workspaceSize: workspaceSize,
+      renderWidth: renderSize.width,
+      renderHeight: renderSize.height,
+      layers: layers,
+      mergedFallback: usedMergedFallback,
+      downscaledForStability: renderSize.downscaled,
+      groupedForPerformance: groupedForPerformance,
+    );
+  }
+
+  _EditorSnapshot _buildProjectSnapshotFromSvgTemplate(
+    _SvgTemplateImportResult imported,
+  ) {
+    int nextLayerId = 1;
+    final String backgroundLayerId = 'layer_${nextLayerId++}';
+    final List<EditorLayer> layers = <EditorLayer>[
+      EditorLayer(
+        id: backgroundLayerId,
+        name: 'Background',
+        type: EditorLayerType.solid,
+        isVisible: true,
+        isBackground: true,
+        solidColor: const Color(0x00000000),
+        solidSize: imported.workspaceSize,
+      ),
+    ];
+    final double ratioX = imported.workspaceSize.width / imported.renderWidth;
+    final double ratioY = imported.workspaceSize.height / imported.renderHeight;
+    final double layerScaleRatio = ((ratioX + ratioY) / 2)
+        .clamp(_joystickMinLayerScale, _joystickMaxLayerScale)
+        .toDouble();
+
+    for (final _SvgLayerImportEntry entry in imported.layers) {
+      final String id = 'layer_${nextLayerId++}';
+      final String name = _buildUniqueLayerNameForList(entry.name, layers);
+      final Offset position = Offset(
+        (entry.centerInRenderSpace.dx / imported.renderWidth) *
+            imported.workspaceSize.width,
+        (entry.centerInRenderSpace.dy / imported.renderHeight) *
+            imported.workspaceSize.height,
+      );
+      layers.add(
+        EditorLayer(
+          id: id,
+          name: name,
+          type: EditorLayerType.image,
+          isVisible: true,
+          isBackground: false,
+          image: entry.image,
+          solidSize: _imageSourceSize(entry.image),
+          position:
+              _clampSourcePositionToWorkspace(position, imported.workspaceSize),
+          layerScale: layerScaleRatio,
+          layerRotation: 0.0,
+        ),
+      );
+    }
+
+    final String selectedLayerId =
+        layers.isNotEmpty ? layers.last.id : backgroundLayerId;
+    return _EditorSnapshot(
+      layers: layers,
+      pencilStrokes: <_BrushStroke>[],
+      selectedLayerId: selectedLayerId,
+      activeTool: EditorTool.move,
+      isToolEnabled: false,
+      nextLayerId: nextLayerId,
+      isCloneSourceArmed: false,
+      isCloneBrushSelected: false,
+      isCloneEraseSelected: false,
+      textFontLocale: _textFontLocale,
+      marqueeMode: _marqueeMode,
+      marqueeSelection: null,
+    );
+  }
+
+  Future<void> _importTemplateFromCatalog(
+      _TemplatesCatalogItem template) async {
+    if (_isProjectSwitchOrCreateBlocked()) return;
+    if (_isTemplateImporting) {
+      _showExportMessage('Template import is already running.', isError: true);
+      return;
+    }
+    final String fileUrl = template.fileUrl.trim();
+    if (fileUrl.isEmpty) {
+      _showExportMessage('Template URL is empty.', isError: true);
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _isTemplateImporting = true;
+        _templateImportStatus = 'Downloading template...';
+        _templateImportProgress = 0.02;
+        _templateImportProgressUpdatedAtMs =
+            DateTime.now().millisecondsSinceEpoch;
+      });
+    }
+    void reportImportProgress(String label, double progress) {
+      _setTemplateImportProgress(label, progress);
+    }
+
+    try {
+      reportImportProgress('Downloading template...', 0.04);
+      final http.Response response = await http
+          .get(Uri.parse(fileUrl))
+          .timeout(const Duration(minutes: 2));
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw StateError(
+          'Failed to load template file (${response.statusCode}).',
+        );
+      }
+      reportImportProgress('Parsing template...', 0.10);
+      final String rawSvgText = utf8.decode(response.bodyBytes);
+      bool usedCompatibilityMode = false;
+      bool removedTextForCompatibility = false;
+      _SvgTemplateImportResult imported;
+      try {
+        imported = await _decodeTemplateSvgToLayers(
+          template: template,
+          svgText: rawSvgText,
+          onProgress: reportImportProgress,
+        );
+      } catch (firstError) {
+        debugPrint('Template SVG import first pass failed: $firstError');
+        reportImportProgress('Applying compatibility mode...', 0.14);
+        final _SvgImportSanitizeResult sanitized =
+            _sanitizeSvgForFlutterImport(rawSvgText);
+        if (!sanitized.changed) {
+          rethrow;
+        }
+        usedCompatibilityMode = true;
+        try {
+          imported = await _decodeTemplateSvgToLayers(
+            template: template,
+            svgText: sanitized.svgText,
+            onProgress: reportImportProgress,
+          );
+        } catch (secondError) {
+          debugPrint('Template SVG import compatibility pass failed: '
+              '$secondError');
+          reportImportProgress('Applying deep compatibility...', 0.17);
+          final _SvgImportSanitizeResult aggressive =
+              _sanitizeSvgForFlutterImport(
+            sanitized.svgText,
+            dropTextNodes: true,
+          );
+          if (!aggressive.changed) {
+            throw StateError(
+              'Template format is not supported by this SVG engine.',
+            );
+          }
+          removedTextForCompatibility = aggressive.removedTextNodes;
+          imported = await _decodeTemplateSvgToLayers(
+            template: template,
+            svgText: aggressive.svgText,
+            onProgress: reportImportProgress,
+          );
+        }
+      }
+      if (!mounted) return;
+      reportImportProgress('Finalizing project...', 0.96);
+      final _EditorSnapshot snapshot =
+          _buildProjectSnapshotFromSvgTemplate(imported);
+      final String projectId = _nextProjectSessionId();
+      final String projectName = _buildUniqueProjectName(imported.title);
+      final _EditorProjectSession session = _EditorProjectSession(
+        id: projectId,
+        name: projectName,
+        snapshot: snapshot,
+        undoStack: <_EditorSnapshot>[],
+        redoStack: <_EditorSnapshot>[],
+        updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      );
+
+      _persistActiveProjectSessionState();
+      setState(() {
+        _projectSessions.add(session);
+        _activeProjectSessionId = projectId;
+        _undoStack.clear();
+        _redoStack.clear();
+      });
+      _applySnapshot(snapshot);
+      _resetMoveJoystickControls();
+      _closeToolSettingsSidebarIfOpen();
+      final List<String> notes = <String>[];
+      if (imported.mergedFallback) {
+        notes.add('merged layers mode');
+      }
+      if (imported.downscaledForStability) {
+        notes.add('scaled for stability');
+      }
+      if (imported.groupedForPerformance) {
+        notes.add('performance grouped layers');
+      }
+      if (usedCompatibilityMode) {
+        notes.add(
+          removedTextForCompatibility
+              ? 'compatibility mode (text simplified)'
+              : 'compatibility mode',
+        );
+      }
+      if (notes.isEmpty) {
+        _showExportMessage('Template "$projectName" opened successfully.');
+      } else {
+        _showExportMessage(
+          'Template "$projectName" opened successfully (${notes.join(' + ')}).',
+        );
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTemplateImporting = false;
+          _templateImportProgress = 0.0;
+          _templateImportStatus = 'Opening template...';
+          _templateImportProgressUpdatedAtMs = 0;
+        });
+      }
+    }
+  }
+
+  Future<void> _openTemplatesBottomSheet() async {
+    bool sheetOpen = true;
+    bool isLoading = true;
+    String? loadError;
+    bool catalogRequested = false;
+    bool isOpeningTemplate = false;
+    List<_TemplatesCatalogItem> templates = <_TemplatesCatalogItem>[];
+
+    Future<void> loadCatalog(StateSetter setSheetState) async {
+      setSheetState(() {
+        catalogRequested = true;
+        isLoading = true;
+        loadError = null;
+      });
+      try {
+        final _TemplatesCatalogResponse response = await _fetchTemplatesCatalog(
+          limit: 240,
+        );
+        if (!sheetOpen || !mounted) return;
+        setSheetState(() {
+          templates = List<_TemplatesCatalogItem>.from(response.templates)
+            ..sort((a, b) {
+              final int sortCompare = a.sortOrder.compareTo(b.sortOrder);
+              if (sortCompare != 0) return sortCompare;
+              return (a.title ?? '').compareTo(b.title ?? '');
+            });
+          isLoading = false;
+          loadError = null;
+        });
+      } catch (error) {
+        if (!sheetOpen || !mounted) return;
+        setSheetState(() {
+          isLoading = false;
+          loadError = _normalizeOperationErrorMessage(error);
+        });
+      }
+    }
+
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: false,
+        isDismissible: true,
+        enableDrag: true,
+        barrierColor: Colors.transparent,
+        backgroundColor: _bottomSheetSurface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        ),
+        builder: (BuildContext sheetContext) {
+          return SafeArea(
+            top: false,
+            child: SizedBox(
+              height: MediaQuery.sizeOf(sheetContext).height * 0.72,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                child: StatefulBuilder(
+                  builder:
+                      (BuildContext sheetContext, StateSetter setSheetState) {
+                    if (!catalogRequested && isLoading) {
+                      unawaited(loadCatalog(setSheetState));
+                    }
+                    return Column(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF605E5E),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Templates',
+                            style: TextStyle(
+                              color: Color(0xFFF3F3F2),
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: Builder(
+                            builder: (_) {
+                              if (isLoading && templates.isEmpty) {
+                                return _buildElementsLoadingGrid(itemCount: 18);
+                              }
+                              if (templates.isEmpty) {
+                                return Center(
+                                  child: Text(
+                                    loadError == null
+                                        ? 'No templates yet.\nUpload SVG templates from Admin Panel.'
+                                        : 'Could not load templates now.',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF8D98A8),
+                                      fontSize: 11.8,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return GridView.builder(
+                                padding: const EdgeInsets.fromLTRB(1, 2, 1, 10),
+                                itemCount: templates.length,
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 8,
+                                  crossAxisSpacing: 8,
+                                  childAspectRatio: 0.78,
+                                ),
+                                itemBuilder: (BuildContext context, int index) {
+                                  final _TemplatesCatalogItem template =
+                                      templates[index];
+                                  final String title =
+                                      (template.title ?? '').trim();
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF18191D),
+                                      borderRadius: BorderRadius.circular(11),
+                                      border: Border.all(
+                                        color: const Color(0xFF605E5E),
+                                        width: 0.65,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Expanded(
+                                          child: Padding(
+                                            padding: const EdgeInsets.fromLTRB(
+                                              7,
+                                              7,
+                                              7,
+                                              3,
+                                            ),
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF21242A),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: vg.SvgPicture.network(
+                                                template.fileUrl,
+                                                fit: BoxFit.contain,
+                                                placeholderBuilder: (_) =>
+                                                    const _ElementsShimmerTile(
+                                                  radius: 7,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            7,
+                                            0,
+                                            7,
+                                            6,
+                                          ),
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            child: Text(
+                                              title.isEmpty
+                                                  ? 'Template'
+                                                  : title,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: const TextStyle(
+                                                color: Color(0xFFF0F3F7),
+                                                fontSize: 10.4,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                            7,
+                                            0,
+                                            7,
+                                            7,
+                                          ),
+                                          child: SizedBox(
+                                            width: double.infinity,
+                                            height: 25,
+                                            child: FilledButton(
+                                              style: FilledButton.styleFrom(
+                                                backgroundColor: kActiveAccent,
+                                                foregroundColor:
+                                                    kActiveAccentForeground,
+                                                padding: EdgeInsets.zero,
+                                                shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(7),
+                                                ),
+                                              ),
+                                              onPressed: isOpeningTemplate
+                                                  ? null
+                                                  : () {
+                                                      if (isOpeningTemplate)
+                                                        return;
+                                                      isOpeningTemplate = true;
+                                                      sheetOpen = false;
+                                                      Navigator.of(sheetContext)
+                                                          .pop();
+                                                      unawaited(
+                                                        _importTemplateFromCatalog(
+                                                          template,
+                                                        ),
+                                                      );
+                                                    },
+                                              child: const Text(
+                                                'Open',
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w800,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+        },
+      ).whenComplete(() {
+        sheetOpen = false;
+      });
+    } catch (error) {
+      _showExportMessage(_normalizeOperationErrorMessage(error), isError: true);
+    }
+  }
+
+  _UploadedSvgDocument _decodeUploadedSvgDocument({
+    required String svgText,
+    required String sourceLabel,
+  }) {
+    final _SvgImportSanitizeResult sanitized =
+        _sanitizeSvgForFlutterImport(svgText);
+    xml.XmlDocument document;
+    try {
+      document = xml.XmlDocument.parse(sanitized.svgText);
+    } catch (_) {
+      throw const FormatException('Uploaded SVG is invalid.');
+    }
+    final xml.XmlElement root = document.rootElement;
+    if (root.name.local.toLowerCase() != 'svg') {
+      throw const FormatException('Selected file is not a valid SVG.');
+    }
+
+    final Size workspaceSize = _resolveSvgWorkspaceSize(root: root);
+    final ({int width, int height, bool downscaled}) renderSize =
+        _resolveTemplateRenderSize(workspaceSize);
+
+    final String rootAttributes = root.attributes
+        .map(
+          (attribute) =>
+              ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+        )
+        .join();
+    final String rootBaseAttributes = root.attributes
+        .where((attribute) {
+          final String local = attribute.name.local.toLowerCase();
+          return local != 'width' && local != 'height' && local != 'viewbox';
+        })
+        .map(
+          (attribute) =>
+              ' ${attribute.name.qualified}="${_xmlEscapeAttributeValue(attribute.value)}"',
+        )
+        .join();
+
+    final Set<String> sharedResourceSet = <String>{};
+    final StringBuffer sharedResourceBuffer = StringBuffer();
+    for (final xml.XmlElement element
+        in root.descendants.whereType<xml.XmlElement>()) {
+      final String local = element.name.local.toLowerCase();
+      if (local != 'defs' && local != 'style') continue;
+      final String markup = element.toXmlString();
+      if (sharedResourceSet.add(markup)) {
+        sharedResourceBuffer.write(markup);
+      }
+    }
+    final String sharedResourceMarkup = sharedResourceBuffer.toString();
+
+    final List<_SvgLayerRenderCandidate> layerCandidates =
+        _collectUploadedSvgLayerRenderCandidates(root: root);
+    final List<_SvgLayerRenderCandidate> limitedCandidates =
+        List<_SvgLayerRenderCandidate>.from(layerCandidates, growable: false);
+
+    final List<_UploadedSvgElementItem> items = <_UploadedSvgElementItem>[];
+    for (final _SvgLayerRenderCandidate candidate in limitedCandidates) {
+      final _SvgLayerRenderConfig renderConfig = _buildSvgLayerRenderConfig(
+        candidate: candidate,
+        rootAttributes: rootAttributes,
+        rootBaseAttributes: rootBaseAttributes,
+        sharedResourceMarkup: sharedResourceMarkup,
+        workspaceSize: workspaceSize,
+        renderWidth: renderSize.width,
+        renderHeight: renderSize.height,
+      );
+      final String displayName = candidate.displayName.trim().isEmpty
+          ? 'Element ${items.length + 1}'
+          : candidate.displayName.trim();
+      final String title = displayName.length <= 44
+          ? displayName
+          : '${displayName.substring(0, 44)}...';
+      final int seed = ++_uploadedSvgElementsSeed;
+      final String id =
+          'uploaded_svg_${DateTime.now().millisecondsSinceEpoch}_$seed';
+      items.add(
+        _UploadedSvgElementItem(
+          id: id,
+          title: title,
+          svgMarkup: renderConfig.svgMarkup,
+          renderWidth: renderConfig.widthPx,
+          renderHeight: renderConfig.heightPx,
+          sourceLabel: sourceLabel,
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      throw StateError('No drawable SVG elements were found.');
+    }
+    String title = sourceLabel.trim();
+    if (title.isEmpty) {
+      title = 'Uploaded SVG';
+    } else {
+      final int dot = title.lastIndexOf('.');
+      if (dot > 0) {
+        title = title.substring(0, dot).trim();
+      }
+      if (title.isEmpty) {
+        title = sourceLabel.trim();
+      }
+    }
+    if (title.length > 44) {
+      title = '${title.substring(0, 44)}...';
+    }
+
+    final int documentSeed = ++_uploadedSvgDocumentsSeed;
+    final String documentId =
+        'uploaded_svg_document_${DateTime.now().millisecondsSinceEpoch}_$documentSeed';
+    return _UploadedSvgDocument(
+      id: documentId,
+      title: title,
+      sourceLabel: sourceLabel,
+      previewSvgMarkup:
+          '<svg$rootAttributes>${_buildSvgRootDrawableFragment(root)}</svg>',
+      elements: items,
+    );
+  }
+
+  Future<void> _insertUploadedSvgElementAtCanvasCenter(
+    _UploadedSvgElementItem item,
+  ) async {
+    if (!mounted) return;
+    final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
+    if (workspace == null) {
+      throw StateError('Create or upload a workspace image first.');
+    }
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      throw StateError('Create or upload a workspace image first.');
+    }
+    final vg.PictureInfo pictureInfo = await vg.vg.loadPicture(
+      vg.SvgStringLoader(item.svgMarkup),
+      null,
+    );
+    if (!mounted) {
+      pictureInfo.picture.dispose();
+      return;
+    }
+    final Size sourceSize = _sanitizeVectorSourceSize(
+      preferred: Size(
+        item.renderWidth.toDouble(),
+        item.renderHeight.toDouble(),
+      ),
+      fallbackSize: pictureInfo.size,
+    );
+    final Offset centeredPosition = Offset(
+      workspaceSize.width / 2,
+      workspaceSize.height / 2,
+    );
+    final double initialScale = _elementInitialLayerScaleForSourceSize(
+      sourceSize: sourceSize,
+      workspaceSize: workspaceSize,
+    );
+    final String layerNamePrefix = _buildVectorLayerName(item.title);
+    _pushUndoSnapshot();
+    setState(() {
+      _addOverlayVectorLayer(
+        picture: pictureInfo.picture,
+        svgMarkup: item.svgMarkup,
+        vectorSourceSize: sourceSize,
+        workspaceSize: workspaceSize,
+        position: centeredPosition,
+        initialLayerScaleOverride: initialScale,
+        layerNamePrefix: layerNamePrefix,
+        isCatalogElement: true,
+        elementAssetId: item.id,
+        elementMimeType: 'image/svg+xml',
+        elementFileUrl: 'local://uploaded-svg/${item.id}',
+      );
+      _isToolEnabled = false;
+      _resetMoveJoystickControls();
+      _pendingElementPlacement = null;
+      _pendingElementPlacementPointerId = null;
+      _pendingElementPlacementGlobalPosition = null;
+      _pendingElementPlacementPointerDownGlobalPosition = null;
+      _pendingElementPlacementQueuedDropWorkspacePoint = null;
+      _pendingElementPlacementPositionNotifier.value = null;
+    });
+    _showExportMessage('Uploaded SVG element added as vector layer.');
+  }
+
   Uri _elementsCatalogUri({
     String? categorySlug,
     int limit = 120,
@@ -29735,8 +37022,7 @@ Hard requirements:
     if (!mounted) return;
     final EditorLayer? workspace = _workspaceLayerForEdit(_layers);
     if (workspace == null) {
-      final _LoadedElementAsset loaded =
-          await _loadElementAsset(selectedAsset.fileUrl);
+      final _LoadedElementAsset loaded = await _loadElementAsset(selectedAsset);
       if (!mounted) return;
       _pushUndoSnapshot();
       setState(() {
@@ -29808,8 +37094,7 @@ Hard requirements:
         workspaceSize.height <= 0) {
       throw StateError('Create or upload a workspace image first.');
     }
-    final _LoadedElementAsset loaded =
-        await _loadElementAsset(selectedAsset.fileUrl);
+    final _LoadedElementAsset loaded = await _loadElementAsset(selectedAsset);
     if (!mounted) return;
     final Offset centeredPosition = Offset(
       workspaceSize.width / 2,
@@ -29857,6 +37142,8 @@ Hard requirements:
     bool isLoadingCatalog = true;
     bool catalogRequested = false;
     String? loadError;
+    bool isUploadingLocalSvg = false;
+    String? selectedUploadedSvgDocumentId;
 
     Future<void> loadCatalog(StateSetter setSheetState) async {
       setSheetState(() {
@@ -29880,10 +37167,14 @@ Hard requirements:
                 .putIfAbsent(item.categorySlug, () => <_ElementsAssetItem>[])
                 .add(item);
           }
-          if (selectedCategorySlug == null ||
-              !categories.any((entry) => entry.slug == selectedCategorySlug)) {
-            selectedCategorySlug =
-                categories.isEmpty ? null : categories.first.slug;
+          final String? currentCategorySlug = selectedCategorySlug?.trim();
+          final bool hasKnownSelection =
+              currentCategorySlug == _kUploadedElementsCategorySlug ||
+                  categories.any((entry) => entry.slug == currentCategorySlug);
+          if (!hasKnownSelection) {
+            selectedCategorySlug = categories.isEmpty
+                ? _kUploadedElementsCategorySlug
+                : categories.first.slug;
           }
           isLoadingCatalog = false;
           loadError = null;
@@ -29929,6 +37220,86 @@ Hard requirements:
       }
     }
 
+    Future<void> importUploadedSvgElements(StateSetter setSheetState) async {
+      if (isUploadingLocalSvg) return;
+      setSheetState(() {
+        isUploadingLocalSvg = true;
+        loadError = null;
+      });
+      try {
+        final FilePickerResult? result = await FilePicker.platform.pickFiles(
+          type: FileType.any,
+          allowMultiple: false,
+          withData: true,
+          dialogTitle: 'Select SVG file from Files',
+        );
+        if (result == null || result.files.isEmpty) return;
+        final PlatformFile picked = result.files.first;
+        final String pickedName = picked.name.trim().toLowerCase();
+        final String pickedExtension =
+            (picked.extension ?? '').trim().toLowerCase();
+        final String pickedPath = (picked.path ?? '').trim().toLowerCase();
+        final bool isSvgFile = pickedExtension == 'svg' ||
+            pickedName.endsWith('.svg') ||
+            pickedPath.endsWith('.svg');
+        if (!isSvgFile) {
+          throw const FormatException(
+            'Please select an SVG file from Files.',
+          );
+        }
+        Uint8List? bytes = picked.bytes;
+        final String? path = picked.path;
+        if ((bytes == null || bytes.isEmpty) &&
+            path != null &&
+            path.isNotEmpty) {
+          bytes = await File(path).readAsBytes();
+        }
+        if (bytes == null || bytes.isEmpty) {
+          throw const FormatException('Could not read selected SVG file.');
+        }
+        final String sourceName =
+            picked.name.trim().isEmpty ? 'Uploaded SVG' : picked.name.trim();
+        final String svgText = utf8.decode(bytes, allowMalformed: true);
+        final _UploadedSvgDocument extractedDocument =
+            _decodeUploadedSvgDocument(
+          svgText: svgText,
+          sourceLabel: sourceName,
+        );
+        if (!mounted || !sheetOpen) return;
+        setState(() {
+          _uploadedSvgDocuments.insert(0, extractedDocument);
+          if (_uploadedSvgDocuments.length > 120) {
+            _uploadedSvgDocuments.removeRange(
+                120, _uploadedSvgDocuments.length);
+          }
+        });
+        setSheetState(() {
+          selectedCategorySlug = _kUploadedElementsCategorySlug;
+          selectedUploadedSvgDocumentId = null;
+        });
+        final bool flattenedToSingleArtwork =
+            extractedDocument.elements.length == 1 &&
+                extractedDocument.elements.first.title.trim().toLowerCase() ==
+                    'artwork';
+        _showExportMessage(
+          flattenedToSingleArtwork
+              ? 'Uploaded SVG parsed as one artwork card (no split groups were detected).'
+              : 'Uploaded SVG parsed: ${extractedDocument.elements.length} element${extractedDocument.elements.length == 1 ? '' : 's'} ready.',
+        );
+      } catch (error) {
+        if (!mounted || !sheetOpen) return;
+        setSheetState(() {
+          loadError = _normalizeOperationErrorMessage(error);
+        });
+      } finally {
+        if (mounted && sheetOpen) {
+          setSheetState(() {
+            isUploadingLocalSvg = false;
+          });
+        }
+      }
+    }
+
     try {
       await showModalBottomSheet<void>(
         context: context,
@@ -29959,15 +37330,46 @@ Hard requirements:
 
                     final String activeCategory =
                         (selectedCategorySlug ?? '').trim();
+                    final bool isUploadedCategory =
+                        activeCategory == _kUploadedElementsCategorySlug;
+                    final List<_ElementsCategory> displayCategories =
+                        <_ElementsCategory>[
+                      _kUploadedElementsCategory,
+                      ...categories.where(
+                        (entry) => entry.slug != _kUploadedElementsCategorySlug,
+                      ),
+                    ];
                     final bool isCategoryLoading = activeCategory.isNotEmpty &&
                         loadingCategories.contains(activeCategory);
                     final List<_ElementsAssetItem> visibleAssets =
-                        activeCategory.isEmpty
+                        activeCategory.isEmpty || isUploadedCategory
                             ? const <_ElementsAssetItem>[]
                             : (assetsByCategory[activeCategory] ??
                                 const <_ElementsAssetItem>[]);
+                    final List<_UploadedSvgDocument> visibleUploadedDocuments =
+                        isUploadedCategory
+                            ? _uploadedSvgDocuments
+                            : const <_UploadedSvgDocument>[];
+                    _UploadedSvgDocument? selectedUploadedDocument;
+                    if (isUploadedCategory &&
+                        selectedUploadedSvgDocumentId != null) {
+                      for (final _UploadedSvgDocument document
+                          in visibleUploadedDocuments) {
+                        if (document.id == selectedUploadedSvgDocumentId) {
+                          selectedUploadedDocument = document;
+                          break;
+                        }
+                      }
+                    }
+                    final bool isUploadedDocumentView =
+                        selectedUploadedDocument != null;
+                    final List<_UploadedSvgElementItem> visibleUploadedAssets =
+                        isUploadedDocumentView
+                            ? selectedUploadedDocument.elements
+                            : const <_UploadedSvgElementItem>[];
 
                     if (activeCategory.isNotEmpty &&
+                        !isUploadedCategory &&
                         !assetsByCategory.containsKey(activeCategory) &&
                         !isCategoryLoading &&
                         !isLoadingCatalog) {
@@ -29986,64 +37388,184 @@ Hard requirements:
                           ),
                         ),
                         const SizedBox(height: 10),
-                        SizedBox(
-                          height: 34,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: categories.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 7),
-                            itemBuilder: (BuildContext context, int index) {
-                              final _ElementsCategory category =
-                                  categories[index];
-                              final bool selected =
-                                  category.slug == activeCategory;
-                              return InkWell(
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 34,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: displayCategories.length,
+                                  separatorBuilder: (_, __) =>
+                                      const SizedBox(width: 7),
+                                  itemBuilder:
+                                      (BuildContext context, int index) {
+                                    final _ElementsCategory category =
+                                        displayCategories[index];
+                                    final bool selected =
+                                        category.slug == activeCategory;
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(9),
+                                      onTap: () {
+                                        setSheetState(() {
+                                          selectedCategorySlug = category.slug;
+                                          if (category.slug !=
+                                              _kUploadedElementsCategorySlug) {
+                                            selectedUploadedSvgDocumentId =
+                                                null;
+                                          }
+                                        });
+                                        if (category.slug !=
+                                            _kUploadedElementsCategorySlug) {
+                                          unawaited(
+                                            loadCategoryAssets(
+                                              category.slug,
+                                              setSheetState,
+                                            ),
+                                          );
+                                        }
+                                      },
+                                      child: AnimatedContainer(
+                                        duration:
+                                            const Duration(milliseconds: 140),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 7,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? kActiveAccent
+                                              : const Color(0xFF1E1F22),
+                                          borderRadius:
+                                              BorderRadius.circular(9),
+                                          border: Border.all(
+                                            color: selected
+                                                ? Colors.transparent
+                                                : const Color(0xFF605E5E),
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Text(
+                                            category.name,
+                                            style: TextStyle(
+                                              color: selected
+                                                  ? kActiveAccentForeground
+                                                  : const Color(0xFFD4D4D3),
+                                              fontSize: 11.2,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            SizedBox(
+                              height: 34,
+                              child: InkWell(
                                 borderRadius: BorderRadius.circular(9),
-                                onTap: () {
-                                  setSheetState(() {
-                                    selectedCategorySlug = category.slug;
-                                  });
-                                  unawaited(
-                                    loadCategoryAssets(
-                                        category.slug, setSheetState),
-                                  );
-                                },
+                                onTap: isUploadingLocalSvg
+                                    ? null
+                                    : () => importUploadedSvgElements(
+                                          setSheetState,
+                                        ),
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 140),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 7,
-                                  ),
                                   decoration: BoxDecoration(
-                                    color: selected
-                                        ? kActiveAccent
+                                    color: isUploadingLocalSvg
+                                        ? const Color(0xFF2B2E35)
                                         : const Color(0xFF1E1F22),
                                     borderRadius: BorderRadius.circular(9),
                                     border: Border.all(
-                                      color: selected
-                                          ? Colors.transparent
-                                          : const Color(0xFF605E5E),
+                                      color: const Color(0xFF605E5E),
                                     ),
                                   ),
-                                  child: Center(
-                                    child: Text(
-                                      category.name,
-                                      style: TextStyle(
-                                        color: selected
-                                            ? kActiveAccentForeground
-                                            : const Color(0xFFD4D4D3),
-                                        fontSize: 11.2,
-                                        fontWeight: FontWeight.w700,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        isUploadingLocalSvg
+                                            ? Icons.hourglass_top_rounded
+                                            : Icons.upload_rounded,
+                                        size: 15,
+                                        color: const Color(0xFFD4D4D3),
                                       ),
-                                    ),
+                                      const SizedBox(width: 5),
+                                      const Text(
+                                        'Upload',
+                                        style: TextStyle(
+                                          color: Color(0xFFD4D4D3),
+                                          fontSize: 10.8,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(height: 8),
+                        if (isUploadedCategory && isUploadedDocumentView) ...[
+                          Row(
+                            children: [
+                              InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () {
+                                  setSheetState(() {
+                                    selectedUploadedSvgDocumentId = null;
+                                  });
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                    vertical: 3,
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.arrow_back_ios_new_rounded,
+                                        size: 14,
+                                        color: Color(0xFFD4D4D3),
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Back',
+                                        style: TextStyle(
+                                          color: Color(0xFFD4D4D3),
+                                          fontSize: 10.8,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  selectedUploadedDocument.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Color(0xFFD4D4D3),
+                                    fontSize: 11.1,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                        ],
                         Expanded(
                           child: Builder(
                             builder: (_) {
@@ -30059,11 +37581,45 @@ Hard requirements:
                                   ),
                                 );
                               }
-                              if ((isLoadingCatalog || isCategoryLoading) &&
+                              if (!isUploadedCategory &&
+                                  (isLoadingCatalog || isCategoryLoading) &&
                                   visibleAssets.isEmpty) {
                                 return _buildElementsLoadingGrid();
                               }
-                              if (visibleAssets.isEmpty) {
+                              if (isUploadedCategory &&
+                                  !isUploadedDocumentView &&
+                                  visibleUploadedDocuments.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No uploaded SVG files yet.\nTap Upload above.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF8D98A8),
+                                      fontSize: 11.6,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (isUploadedCategory &&
+                                  isUploadedDocumentView &&
+                                  visibleUploadedAssets.isEmpty) {
+                                return const Center(
+                                  child: Text(
+                                    'No elements found in this SVG file.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF8D98A8),
+                                      fontSize: 11.6,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                );
+                              }
+                              if (!isUploadedCategory &&
+                                  visibleAssets.isEmpty) {
                                 final bool hasLoadIssue = loadError != null &&
                                     loadError!.trim().isNotEmpty;
                                 return Center(
@@ -30084,17 +37640,33 @@ Hard requirements:
 
                               return GridView.builder(
                                 padding: const EdgeInsets.fromLTRB(1, 2, 1, 10),
-                                itemCount: visibleAssets.length,
+                                itemCount: isUploadedCategory
+                                    ? (isUploadedDocumentView
+                                        ? visibleUploadedAssets.length
+                                        : visibleUploadedDocuments.length)
+                                    : visibleAssets.length,
                                 gridDelegate:
                                     const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 4,
-                                  mainAxisSpacing: 6,
-                                  crossAxisSpacing: 6,
+                                  crossAxisCount: 3,
+                                  mainAxisSpacing: 8,
+                                  crossAxisSpacing: 8,
                                   childAspectRatio: 0.78,
                                 ),
                                 itemBuilder: (BuildContext context, int index) {
-                                  final _ElementsAssetItem item =
-                                      visibleAssets[index];
+                                  final _ElementsAssetItem? item =
+                                      isUploadedCategory
+                                          ? null
+                                          : visibleAssets[index];
+                                  final _UploadedSvgDocument? uploadedDocument =
+                                      isUploadedCategory &&
+                                              !isUploadedDocumentView
+                                          ? visibleUploadedDocuments[index]
+                                          : null;
+                                  final _UploadedSvgElementItem? uploadedItem =
+                                      isUploadedCategory &&
+                                              isUploadedDocumentView
+                                          ? visibleUploadedAssets[index]
+                                          : null;
                                   return Container(
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF18191D),
@@ -30114,25 +37686,55 @@ Hard requirements:
                                               7,
                                               3,
                                             ),
-                                            child: Image.network(
-                                              item.fileUrl,
-                                              fit: BoxFit.contain,
-                                              filterQuality: FilterQuality.high,
-                                              loadingBuilder:
-                                                  (context, child, progress) {
-                                                if (progress == null) {
-                                                  return child;
-                                                }
-                                                return const _ElementsShimmerTile(
-                                                  radius: 7,
-                                                );
-                                              },
-                                              errorBuilder: (_, __, ___) =>
-                                                  const Icon(
-                                                Icons
-                                                    .image_not_supported_outlined,
-                                                color: Color(0xFF7B8594),
-                                                size: 18,
+                                            child: Container(
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF21242A),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              alignment: Alignment.center,
+                                              child: ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: isUploadedCategory
+                                                    ? vg.SvgPicture.string(
+                                                        isUploadedDocumentView
+                                                            ? uploadedItem!
+                                                                .svgMarkup
+                                                            : uploadedDocument!
+                                                                .previewSvgMarkup,
+                                                        fit: BoxFit.contain,
+                                                        placeholderBuilder: (_) =>
+                                                            const _ElementsShimmerTile(
+                                                          radius: 7,
+                                                        ),
+                                                      )
+                                                    : Image.network(
+                                                        item!.fileUrl,
+                                                        fit: BoxFit.contain,
+                                                        filterQuality:
+                                                            FilterQuality.high,
+                                                        loadingBuilder:
+                                                            (context, child,
+                                                                progress) {
+                                                          if (progress ==
+                                                              null) {
+                                                            return child;
+                                                          }
+                                                          return const _ElementsShimmerTile(
+                                                            radius: 7,
+                                                          );
+                                                        },
+                                                        errorBuilder:
+                                                            (_, __, ___) =>
+                                                                const Icon(
+                                                          Icons
+                                                              .image_not_supported_outlined,
+                                                          color:
+                                                              Color(0xFF7B8594),
+                                                          size: 18,
+                                                        ),
+                                                      ),
                                               ),
                                             ),
                                           ),
@@ -30144,51 +37746,119 @@ Hard requirements:
                                             7,
                                             7,
                                           ),
-                                          child: SizedBox(
-                                            width: double.infinity,
-                                            height: 24,
-                                            child: FilledButton(
-                                              style: FilledButton.styleFrom(
-                                                backgroundColor: kActiveAccent,
-                                                foregroundColor:
-                                                    kActiveAccentForeground,
-                                                padding: EdgeInsets.zero,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(7),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              if (isUploadedCategory &&
+                                                  !isUploadedDocumentView)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                    bottom: 5,
+                                                  ),
+                                                  child: Text(
+                                                    uploadedDocument!.title,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    textAlign: TextAlign.center,
+                                                    style: const TextStyle(
+                                                      color: Color(0xFFD4D4D3),
+                                                      fontSize: 9.6,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                    ),
+                                                  ),
                                                 ),
-                                              ),
-                                              onPressed: () {
-                                                if (didSelectElement ||
-                                                    !mounted) {
-                                                  return;
-                                                }
-                                                didSelectElement = true;
-                                                sheetOpen = false;
-                                                Navigator.of(sheetContext)
-                                                    .pop();
-                                                unawaited(
-                                                  _insertElementAtCanvasCenter(
-                                                          item)
-                                                      .catchError(
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 24,
+                                                child: FilledButton(
+                                                  style: FilledButton.styleFrom(
+                                                    backgroundColor:
+                                                        kActiveAccent,
+                                                    foregroundColor:
+                                                        kActiveAccentForeground,
+                                                    padding: EdgeInsets.zero,
+                                                    shape:
+                                                        RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        7,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  onPressed: () {
+                                                    if (!mounted) {
+                                                      return;
+                                                    }
+                                                    if (isUploadedCategory &&
+                                                        !isUploadedDocumentView) {
+                                                      setSheetState(() {
+                                                        selectedUploadedSvgDocumentId =
+                                                            uploadedDocument!
+                                                                .id;
+                                                      });
+                                                      return;
+                                                    }
+                                                    if (didSelectElement)
+                                                      return;
+                                                    didSelectElement = true;
+                                                    sheetOpen = false;
+                                                    Navigator.of(sheetContext)
+                                                        .pop();
+                                                    if (isUploadedCategory) {
+                                                      unawaited(
+                                                        _insertUploadedSvgElementAtCanvasCenter(
+                                                          uploadedItem!,
+                                                        ).catchError(
                                                           (Object error) {
-                                                    if (!mounted) return;
-                                                    _showExportMessage(
-                                                      _normalizeOperationErrorMessage(
-                                                          error),
-                                                      isError: true,
-                                                    );
-                                                  }),
-                                                );
-                                              },
-                                              child: const Text(
-                                                'Add',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w800,
+                                                            if (!mounted) {
+                                                              return;
+                                                            }
+                                                            _showExportMessage(
+                                                              _normalizeOperationErrorMessage(
+                                                                error,
+                                                              ),
+                                                              isError: true,
+                                                            );
+                                                          },
+                                                        ),
+                                                      );
+                                                    } else {
+                                                      unawaited(
+                                                        _insertElementAtCanvasCenter(
+                                                          item!,
+                                                        ).catchError(
+                                                          (Object error) {
+                                                            if (!mounted) {
+                                                              return;
+                                                            }
+                                                            _showExportMessage(
+                                                              _normalizeOperationErrorMessage(
+                                                                error,
+                                                              ),
+                                                              isError: true,
+                                                            );
+                                                          },
+                                                        ),
+                                                      );
+                                                    }
+                                                  },
+                                                  child: Text(
+                                                    isUploadedCategory &&
+                                                            !isUploadedDocumentView
+                                                        ? 'Open'
+                                                        : 'Add',
+                                                    style: const TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w800,
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                            ],
                                           ),
                                         ),
                                       ],
@@ -30220,10 +37890,10 @@ Hard requirements:
       padding: const EdgeInsets.fromLTRB(1, 2, 1, 10),
       itemCount: itemCount,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 6,
-        crossAxisSpacing: 6,
-        childAspectRatio: 1.0,
+        crossAxisCount: 3,
+        mainAxisSpacing: 8,
+        crossAxisSpacing: 8,
+        childAspectRatio: 0.78,
       ),
       itemBuilder: (BuildContext context, int index) {
         return Container(
@@ -30235,9 +37905,36 @@ Hard requirements:
               width: 0.65,
             ),
           ),
-          child: const Padding(
-            padding: EdgeInsets.all(7),
-            child: _ElementsShimmerTile(radius: 7),
+          child: Column(
+            children: [
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(7, 7, 7, 3),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Color(0xFF21242A),
+                      borderRadius: BorderRadius.all(Radius.circular(8)),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.all(2),
+                      child: _ElementsShimmerTile(radius: 7),
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(7, 0, 7, 7),
+                child: Container(
+                  width: double.infinity,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF272A31),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: const _ElementsShimmerTile(radius: 7),
+                ),
+              ),
+            ],
           ),
         );
       },
@@ -30491,8 +38188,35 @@ Hard requirements:
   }
 
   Future<void> _openLayersBottomSheet() async {
-    final Set<String> mergeSelection = <String>{};
-    bool mergeSelectionMode = false;
+    final bool useDesignPathfinder = _isFusionDesignWorkspace;
+    final Set<String> mergeSelection = useDesignPathfinder
+        ? Set<String>.from(_effectiveDesignPathfinderSelectionIds())
+        : <String>{};
+    bool mergeSelectionMode =
+        useDesignPathfinder ? _isDesignPathfinderSelectionMode : false;
+    void syncDesignSelectionState() {
+      if (!useDesignPathfinder) return;
+      final Set<String> filtered =
+          _filteredDesignPathfinderSelection(mergeSelection);
+      final String? topLayerId = _designPathfinderTopLayerId(filtered);
+      setState(() {
+        _designPathfinderSelectionIds
+          ..clear()
+          ..addAll(filtered);
+        _isDesignPathfinderSelectionMode =
+            mergeSelectionMode && _designPathfinderSelectionIds.isNotEmpty;
+        if (_designPathfinderSelectionIds.length >= 2) {
+          _isDesignPathfinderSelectionMode = true;
+        }
+        if (topLayerId != null &&
+            (_selectedLayerId == null ||
+                _isDesignPathfinderSelectionMode ||
+                !_designPathfinderSelectionIds.contains(_selectedLayerId))) {
+          _selectedLayerId = topLayerId;
+        }
+      });
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -30519,7 +38243,10 @@ Hard requirements:
                   }
                   final bool canMergeSelection = mergeSelectionMode &&
                       mergeSelection.length >= 2 &&
-                      !_isLayersMergeInProgress;
+                      (useDesignPathfinder
+                          ? !_isDesignPathfinderProcessing
+                          : !_isLayersMergeInProgress);
+                  final bool canPasteClipboard = _canPasteProjectClipboardNow();
                   return Column(
                     children: [
                       Container(
@@ -30570,12 +38297,32 @@ Hard requirements:
                                 ),
                                 const SizedBox(width: 8),
                                 _HistorySheetActionButton(
+                                  icon: Icons.content_paste_rounded,
+                                  enabled: canPasteClipboard,
+                                  onTap: () {
+                                    if (!canPasteClipboard) return;
+                                    _pasteProjectClipboardIntoActiveProject();
+                                    setSheetState(() {});
+                                  },
+                                ),
+                                const SizedBox(width: 8),
+                                _HistorySheetActionButton(
                                   icon: Icons.merge_type_rounded,
                                   enabled: canMergeSelection,
                                   onTap: () async {
                                     if (!canMergeSelection) return;
                                     final Set<String> targetIds =
                                         Set<String>.from(mergeSelection);
+                                    if (useDesignPathfinder) {
+                                      syncDesignSelectionState();
+                                      if (context.mounted) {
+                                        Navigator.of(context).pop();
+                                      }
+                                      _openDesignPathfinderFromSelection(
+                                        targetIds,
+                                      );
+                                      return;
+                                    }
                                     await _mergeLayersByIds(targetIds);
                                     mergeSelection.clear();
                                     mergeSelectionMode = false;
@@ -30682,11 +38429,26 @@ Hard requirements:
                                       if (mergeSelection.isEmpty) {
                                         mergeSelectionMode = false;
                                       }
+                                      syncDesignSelectionState();
                                     } else {
                                       _onLayerSelected(layer.id);
                                     }
                                     setSheetState(() {});
                                   },
+                                  onDoubleTap: useDesignPathfinder &&
+                                          mergeSelectionMode &&
+                                          mergeSelection.contains(layer.id) &&
+                                          mergeSelection.length >= 2
+                                      ? () {
+                                          final Set<String> targetIds =
+                                              Set<String>.from(mergeSelection);
+                                          syncDesignSelectionState();
+                                          Navigator.of(context).pop();
+                                          _openDesignPathfinderFromSelection(
+                                            targetIds,
+                                          );
+                                        }
+                                      : null,
                                   onLongPress: () {
                                     mergeSelectionMode = true;
                                     if (mergeSelection.contains(layer.id)) {
@@ -30697,6 +38459,7 @@ Hard requirements:
                                     if (mergeSelection.isEmpty) {
                                       mergeSelectionMode = false;
                                     }
+                                    syncDesignSelectionState();
                                     setSheetState(() {});
                                   },
                                   onToggleVisibility: () {
@@ -30706,12 +38469,20 @@ Hard requirements:
                                     if (mergeSelection.isEmpty) {
                                       mergeSelectionMode = false;
                                     }
+                                    syncDesignSelectionState();
                                     setSheetState(() {});
                                   },
                                   onDuplicate: () {
                                     _duplicateLayer(layer.id);
                                     setSheetState(() {});
                                   },
+                                  onCopyToProject: layer.isBackground
+                                      ? null
+                                      : () {
+                                          _copyLayerToProjectClipboard(
+                                              layer.id);
+                                          setSheetState(() {});
+                                        },
                                   onDelete: () {
                                     _deleteLayer(layer.id);
                                     setSheetState(() {});
@@ -30804,9 +38575,14 @@ Hard requirements:
         _expandToolConfig = null;
       }
       if (!nextLayers[index].isVisible &&
-          _pngEffectExpandedLayerId == layerId) {
-        _pngEffectExpandedLayerId = null;
+          _pngEffectColorStripLayerId == layerId) {
+        _pngEffectColorStripLayerId = null;
       }
+      if (!nextLayers[index].isVisible &&
+          _vectorEffectColorStripLayerId == layerId) {
+        _vectorEffectColorStripLayerId = null;
+      }
+      _syncDesignPathfinderSelectionAfterLayersMutation();
     });
   }
 
@@ -30853,6 +38629,9 @@ Hard requirements:
     final int index = _layers.indexWhere((layer) => layer.id == layerId);
     if (index < 0) return;
     final EditorLayer target = _layers[index];
+    if (_isFusionDesignWorkspace) {
+      _invalidateDesignGuideCacheForLayer(layerId);
+    }
     _pushUndoSnapshot();
     setState(() {
       final List<EditorLayer> nextLayers = List<EditorLayer>.from(_layers);
@@ -30881,14 +38660,21 @@ Hard requirements:
       if (_expandToolConfig != null && _expandToolConfig!.layerId == layerId) {
         _expandToolConfig = null;
       }
-      if (_pngEffectExpandedLayerId == layerId) {
-        _pngEffectExpandedLayerId = null;
+      if (_pngEffectColorStripLayerId == layerId) {
+        _pngEffectColorStripLayerId = null;
+      }
+      if (_vectorEffectColorStripLayerId == layerId) {
+        _vectorEffectColorStripLayerId = null;
       }
       if (target.isBackground) {
         // Removing workspace should leave no visual residue on canvas.
         _pencilStrokes = <_BrushStroke>[];
       }
+      _syncDesignPathfinderSelectionAfterLayersMutation();
     });
+    if (_isFusionDesignWorkspace) {
+      _scheduleDesignGuidePreparationForSelection(force: true);
+    }
   }
 
   Future<ui.Image> _renderMergedLayersImage({
@@ -31157,10 +38943,11 @@ Hard requirements:
               onTap: _openVectorGeneratorBottomSheet,
             ),
           ),
-          const Expanded(
+          Expanded(
             child: _NavItem(
               icon: Icons.dashboard_customize_rounded,
               label: 'Templates',
+              onTap: _openTemplatesBottomSheet,
             ),
           ),
           Expanded(
@@ -31617,6 +39404,7 @@ Hard requirements:
     required double max,
     required String valueText,
     required ValueChanged<double> onChanged,
+    ValueChanged<double>? onChangeEnd,
     required double uiScale,
   }) {
     final double clampedScale = uiScale.clamp(0.65, 1.0).toDouble();
@@ -31944,7 +39732,7 @@ Hard requirements:
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 250),
                   reverseDuration: const Duration(milliseconds: 180),
-                  switchInCurve: const Cubic(0.18, 0.9, 0.24, 1.08),
+                  switchInCurve: Curves.easeOutCubic,
                   switchOutCurve: Curves.easeInCubic,
                   layoutBuilder: (currentChild, previousChildren) {
                     return Stack(
@@ -32003,6 +39791,16 @@ Hard requirements:
                                 compact: true,
                                 showHeader: false,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textOpacity: value,
+                                    recordHistory: false,
+                                  );
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textOpacity: value,
@@ -32025,6 +39823,16 @@ Hard requirements:
                                 compact: true,
                                 showHeader: false,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textBend: value,
+                                    recordHistory: false,
+                                  );
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textBend: value,
@@ -32046,6 +39854,16 @@ Hard requirements:
                                 compact: true,
                                 showHeader: false,
                                 onChanged: (value) {
+                                  _queueThrottledTextLayerUpdate(
+                                    selectedTextLayer.id,
+                                    textStrokeWidth: value,
+                                    recordHistory: false,
+                                  );
+                                },
+                                onChangeEnd: (value) {
+                                  _drainThrottledTextLayerUpdates(
+                                    layerId: selectedTextLayer.id,
+                                  );
                                   _updateTextLayer(
                                     selectedTextLayer.id,
                                     textStrokeWidth: value,
@@ -32100,6 +39918,17 @@ Hard requirements:
                                           '${selectedShadowOpacity.toStringAsFixed(0)}%',
                                       uiScale: shadowUiScale,
                                       onChanged: (value) {
+                                        _queueThrottledTextLayerUpdate(
+                                          selectedTextLayer.id,
+                                          textShadowOpacity: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                      onChangeEnd: (value) {
+                                        _drainThrottledTextLayerUpdates(
+                                          layerId: selectedTextLayer.id,
+                                        );
                                         _updateTextLayer(
                                           selectedTextLayer.id,
                                           textShadowOpacity: value,
@@ -32118,6 +39947,17 @@ Hard requirements:
                                           selectedShadowBlur.toStringAsFixed(1),
                                       uiScale: shadowUiScale,
                                       onChanged: (value) {
+                                        _queueThrottledTextLayerUpdate(
+                                          selectedTextLayer.id,
+                                          textShadowBlur: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                      onChangeEnd: (value) {
+                                        _drainThrottledTextLayerUpdates(
+                                          layerId: selectedTextLayer.id,
+                                        );
                                         _updateTextLayer(
                                           selectedTextLayer.id,
                                           textShadowBlur: value,
@@ -32138,6 +39978,17 @@ Hard requirements:
                                       ),
                                       uiScale: shadowUiScale,
                                       onChanged: (value) {
+                                        _queueThrottledTextLayerUpdate(
+                                          selectedTextLayer.id,
+                                          textShadowOffsetY: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                      onChangeEnd: (value) {
+                                        _drainThrottledTextLayerUpdates(
+                                          layerId: selectedTextLayer.id,
+                                        );
                                         _updateTextLayer(
                                           selectedTextLayer.id,
                                           textShadowOffsetY: value,
@@ -32158,6 +40009,17 @@ Hard requirements:
                                       ),
                                       uiScale: shadowUiScale,
                                       onChanged: (value) {
+                                        _queueThrottledTextLayerUpdate(
+                                          selectedTextLayer.id,
+                                          textShadowOffsetX: value,
+                                          textShadowSpread: 0,
+                                          recordHistory: false,
+                                        );
+                                      },
+                                      onChangeEnd: (value) {
+                                        _drainThrottledTextLayerUpdates(
+                                          layerId: selectedTextLayer.id,
+                                        );
                                         _updateTextLayer(
                                           selectedTextLayer.id,
                                           textShadowOffsetX: value,
@@ -33780,6 +41642,7 @@ class _SettingsSliderTile extends StatelessWidget {
     required this.max,
     required this.valueText,
     required this.onChanged,
+    this.onChangeEnd,
     this.scale = 1.0,
     this.showHeader = true,
     this.compact = false,
@@ -33791,6 +41654,7 @@ class _SettingsSliderTile extends StatelessWidget {
   final double max;
   final String valueText;
   final ValueChanged<double> onChanged;
+  final ValueChanged<double>? onChangeEnd;
   final double scale;
   final bool showHeader;
   final bool compact;
@@ -33878,6 +41742,7 @@ class _SettingsSliderTile extends StatelessWidget {
                   min: min,
                   max: max,
                   onChanged: onChanged,
+                  onChangeEnd: onChangeEnd,
                 ),
               ),
             ),
@@ -33941,9 +41806,11 @@ class _LayerRow extends StatelessWidget {
     this.mergeSelected = false,
     required this.reorderHandle,
     required this.onTap,
+    this.onDoubleTap,
     required this.onLongPress,
     required this.onToggleVisibility,
     required this.onDuplicate,
+    required this.onCopyToProject,
     required this.onDelete,
   });
 
@@ -33952,9 +41819,11 @@ class _LayerRow extends StatelessWidget {
   final bool mergeSelected;
   final Widget reorderHandle;
   final VoidCallback onTap;
+  final VoidCallback? onDoubleTap;
   final VoidCallback onLongPress;
   final VoidCallback onToggleVisibility;
   final VoidCallback onDuplicate;
+  final VoidCallback? onCopyToProject;
   final VoidCallback onDelete;
 
   @override
@@ -33999,6 +41868,7 @@ class _LayerRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: InkWell(
         onTap: onTap,
+        onDoubleTap: onDoubleTap,
         onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(11),
         child: Row(
@@ -34081,6 +41951,11 @@ class _LayerRow extends StatelessWidget {
               onPressed: onDuplicate,
               icon: Icons.content_copy_rounded,
               color: const Color(0xFFD4D4D3),
+            ),
+            _buildLayerActionButton(
+              onPressed: onCopyToProject,
+              icon: Icons.file_copy_outlined,
+              color: const Color(0xFFE8EDF6),
             ),
             _buildLayerActionButton(
               onPressed: onDelete,
@@ -34307,6 +42182,72 @@ class _RotationSnapResult {
   final List<_SmartGuideSegment> guides;
 }
 
+class _DesignGuideSegmentUv {
+  const _DesignGuideSegmentUv({
+    required this.startUv,
+    required this.endUv,
+    required this.weight,
+  });
+
+  final Offset startUv;
+  final Offset endUv;
+  final double weight;
+}
+
+class _DesignGuideLayerCache {
+  const _DesignGuideLayerCache({
+    required this.layerId,
+    required this.fingerprint,
+    required this.sampleSize,
+    required this.segments,
+    required this.anchorPointsUv,
+    required this.generatedAtMs,
+  });
+
+  final String layerId;
+  final int fingerprint;
+  final Size sampleSize;
+  final List<_DesignGuideSegmentUv> segments;
+  final List<Offset> anchorPointsUv;
+  final int generatedAtMs;
+
+  bool get isEmpty => segments.isEmpty && anchorPointsUv.isEmpty;
+}
+
+class _DesignGuideHit {
+  const _DesignGuideHit({
+    required this.snappedScenePoint,
+    required this.distanceScene,
+    required this.guideWeight,
+  });
+
+  final Offset snappedScenePoint;
+  final double distanceScene;
+  final double guideWeight;
+}
+
+class _DesignGuideSceneSegment {
+  const _DesignGuideSceneSegment({
+    required this.startScene,
+    required this.endScene,
+    required this.weight,
+  });
+
+  final Offset startScene;
+  final Offset endScene;
+  final double weight;
+}
+
+class _DesignGuideSampleImage {
+  const _DesignGuideSampleImage({
+    required this.image,
+    required this.ownsImage,
+  });
+
+  final ui.Image image;
+  final bool ownsImage;
+}
+
 class _InlineTextEditorLayout {
   const _InlineTextEditorLayout({
     required this.layer,
@@ -34403,6 +42344,8 @@ class _SkiaEditorCanvas extends StatefulWidget {
     required this.onTextInlineEditStarted,
     required this.onTextInlineChanged,
     required this.onTextInlineEditFinished,
+    required this.enableDesignGuideEngine,
+    this.designGuideLayerCache,
     this.showUpscaleMagicEffect = false,
     this.upscaleMagicLayerId,
   });
@@ -34460,6 +42403,8 @@ class _SkiaEditorCanvas extends StatefulWidget {
   final ValueChanged<String> onTextInlineEditStarted;
   final void Function(String layerId, String value) onTextInlineChanged;
   final ValueChanged<String> onTextInlineEditFinished;
+  final bool enableDesignGuideEngine;
+  final _DesignGuideLayerCache? designGuideLayerCache;
   final bool showUpscaleMagicEffect;
   final String? upscaleMagicLayerId;
 
@@ -34557,6 +42502,12 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
   bool _cloneHandledByScaleGesture = false;
   _SnapSession? _snapSession;
   List<_SmartGuideSegment> _smartGuideSegments = const <_SmartGuideSegment>[];
+  List<_DesignGuideSceneSegment> _designGuideSceneSegments =
+      const <_DesignGuideSceneSegment>[];
+  List<Offset> _designGuideAnchorPointsScene = const <Offset>[];
+  String? _designGuideResolvedLayerId;
+  int _designGuideResolvedFingerprint = -1;
+  int _designGuideProjectionHash = 0;
   Timer? _smartGuideAutoHideTimer;
   int _panSettleAnimationToken = 0;
   final TextEditingController _inlineTextController = TextEditingController();
@@ -34590,6 +42541,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     _inlineTextController.addListener(_onInlineTextChanged);
     _inlineTextFocusNode.addListener(_onInlineTextFocusChanged);
     _syncVisualEffectTicker();
+    _refreshDesignGuideProjection(force: true);
   }
 
   bool get _isExpandToolActive {
@@ -34637,6 +42589,231 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     _repaintCanvas();
   }
 
+  void _clearDesignGuideProjection() {
+    if (_designGuideSceneSegments.isEmpty &&
+        _designGuideAnchorPointsScene.isEmpty &&
+        _designGuideResolvedLayerId == null &&
+        _designGuideResolvedFingerprint == -1 &&
+        _designGuideProjectionHash == 0) {
+      return;
+    }
+    _designGuideSceneSegments = const <_DesignGuideSceneSegment>[];
+    _designGuideAnchorPointsScene = const <Offset>[];
+    _designGuideResolvedLayerId = null;
+    _designGuideResolvedFingerprint = -1;
+    _designGuideProjectionHash = 0;
+  }
+
+  int _mixDesignGuideHash(int seed, int value) {
+    int next = seed ^ value;
+    next = (next * 0x1F1F1F1F) & 0x7fffffff;
+    return next;
+  }
+
+  int _packDesignGuideDouble(double value) {
+    if (!value.isFinite) return 0;
+    return (value * 100).round();
+  }
+
+  Offset _designGuideUvToScene(
+    Offset uv,
+    _TransformLayerSceneData data,
+  ) {
+    final Offset local = Offset(
+      (uv.dx - 0.5) * data.width,
+      (uv.dy - 0.5) * data.height,
+    );
+    return data.center + _rotateVector(local, data.rotation);
+  }
+
+  void _refreshDesignGuideProjection({bool force = false}) {
+    if (!widget.enableDesignGuideEngine) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    final _DesignGuideLayerCache? cache = widget.designGuideLayerCache;
+    if (cache == null || cache.isEmpty) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    if (_lastCanvasSize.width <= 0 || _lastCanvasSize.height <= 0) {
+      return;
+    }
+    final EditorLayer? workspace = _backgroundLayer(widget.layers);
+    if (workspace == null) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    final Size? workspaceSize = _workspaceSourceSize(workspace);
+    if (workspaceSize == null ||
+        workspaceSize.width <= 0 ||
+        workspaceSize.height <= 0) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    final Rect artboard = _computeArtboardRect(
+      canvasSize: _lastCanvasSize,
+      workspaceSize: workspaceSize,
+    );
+    final EditorLayer? selectedLayer = _layerById(widget.selectedLayerId);
+    if (selectedLayer == null ||
+        !selectedLayer.isVisible ||
+        selectedLayer.id != cache.layerId) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    final _TransformLayerSceneData? selectedData =
+        _buildSelectedTransformLayerData(
+      selectedLayer: selectedLayer,
+      artboard: artboard,
+      workspaceSize: workspaceSize,
+    );
+    if (selectedData == null) {
+      _clearDesignGuideProjection();
+      return;
+    }
+    int projectionHash = 17;
+    projectionHash = _mixDesignGuideHash(projectionHash, cache.fingerprint);
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(selectedData.center.dx));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(selectedData.center.dy));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(selectedData.width));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(selectedData.height));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(selectedData.rotation));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(artboard.left));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(artboard.top));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(artboard.width));
+    projectionHash = _mixDesignGuideHash(
+        projectionHash, _packDesignGuideDouble(artboard.height));
+
+    if (!force &&
+        _designGuideResolvedLayerId == cache.layerId &&
+        _designGuideResolvedFingerprint == cache.fingerprint &&
+        _designGuideProjectionHash == projectionHash) {
+      return;
+    }
+
+    final List<_DesignGuideSceneSegment> sceneSegments =
+        <_DesignGuideSceneSegment>[];
+    for (final _DesignGuideSegmentUv segment in cache.segments) {
+      final Offset startScene =
+          _designGuideUvToScene(segment.startUv, selectedData);
+      final Offset endScene =
+          _designGuideUvToScene(segment.endUv, selectedData);
+      sceneSegments.add(
+        _DesignGuideSceneSegment(
+          startScene: startScene,
+          endScene: endScene,
+          weight: segment.weight,
+        ),
+      );
+    }
+
+    final List<Offset> sceneAnchors = cache.anchorPointsUv
+        .map((point) => _designGuideUvToScene(point, selectedData))
+        .toList(growable: false);
+
+    _designGuideSceneSegments = List<_DesignGuideSceneSegment>.unmodifiable(
+      sceneSegments,
+    );
+    _designGuideAnchorPointsScene = List<Offset>.unmodifiable(sceneAnchors);
+    _designGuideResolvedLayerId = cache.layerId;
+    _designGuideResolvedFingerprint = cache.fingerprint;
+    _designGuideProjectionHash = projectionHash;
+  }
+
+  Offset _closestPointOnSceneSegment(
+    Offset point,
+    Offset start,
+    Offset end,
+  ) {
+    final Offset segment = end - start;
+    final double lengthSq =
+        (segment.dx * segment.dx) + (segment.dy * segment.dy);
+    if (lengthSq <= 0.0000001) {
+      return start;
+    }
+    final Offset toPoint = point - start;
+    final double t =
+        ((toPoint.dx * segment.dx) + (toPoint.dy * segment.dy)) / lengthSq;
+    final double clamped = t.clamp(0.0, 1.0).toDouble();
+    return Offset(
+      start.dx + (segment.dx * clamped),
+      start.dy + (segment.dy * clamped),
+    );
+  }
+
+  _DesignGuideHit? nearestDesignGuideHit(
+    Offset scenePoint, {
+    double maxDistanceScene = 16,
+  }) {
+    _refreshDesignGuideProjection();
+    if (_designGuideSceneSegments.isEmpty &&
+        _designGuideAnchorPointsScene.isEmpty) {
+      return null;
+    }
+    final double maxDistance = maxDistanceScene.clamp(0.8, 128).toDouble();
+    final double maxDistanceSq = maxDistance * maxDistance;
+    double bestDistanceSq = maxDistanceSq;
+    Offset? bestPoint;
+    double bestWeight = 0.0;
+
+    for (final _DesignGuideSceneSegment segment in _designGuideSceneSegments) {
+      final Offset candidate = _closestPointOnSceneSegment(
+        scenePoint,
+        segment.startScene,
+        segment.endScene,
+      );
+      final double dx = candidate.dx - scenePoint.dx;
+      final double dy = candidate.dy - scenePoint.dy;
+      final double distanceSq = (dx * dx) + (dy * dy);
+      if (distanceSq > bestDistanceSq) continue;
+      bestDistanceSq = distanceSq;
+      bestPoint = candidate;
+      bestWeight = segment.weight;
+    }
+
+    for (final Offset anchor in _designGuideAnchorPointsScene) {
+      final double dx = anchor.dx - scenePoint.dx;
+      final double dy = anchor.dy - scenePoint.dy;
+      final double distanceSq = (dx * dx) + (dy * dy);
+      if (distanceSq > bestDistanceSq) continue;
+      bestDistanceSq = distanceSq;
+      bestPoint = anchor;
+      bestWeight = 1.0;
+    }
+
+    if (bestPoint == null) return null;
+    return _DesignGuideHit(
+      snappedScenePoint: bestPoint,
+      distanceScene: math.sqrt(bestDistanceSq),
+      guideWeight: bestWeight,
+    );
+  }
+
+  Offset? snapScenePointToDesignGuide(
+    Offset scenePoint, {
+    double maxDistanceScene = 16,
+  }) {
+    final _DesignGuideHit? hit = nearestDesignGuideHit(
+      scenePoint,
+      maxDistanceScene: maxDistanceScene,
+    );
+    return hit?.snappedScenePoint;
+  }
+
+  List<Offset> designGuideAnchorPointsScene() {
+    _refreshDesignGuideProjection();
+    return List<Offset>.unmodifiable(_designGuideAnchorPointsScene);
+  }
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
@@ -34646,6 +42823,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           constraints.maxHeight,
         );
         _lastCanvasSize = canvasSize;
+        _refreshDesignGuideProjection();
         if (_isExpandToolActive && !_expandViewportPrepared) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -35263,6 +43441,7 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     } else if (wasExpandToolActive && !isExpandToolActive) {
       _preserveViewportOnNextWorkspaceResize = false;
     }
+    _refreshDesignGuideProjection(force: true);
   }
 
   void _repaintCanvas() {
@@ -38758,13 +46937,17 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       session: session,
       thresholdScene: xThreshold,
     );
+    final bool xCenterSnap = xChoice.isSnapped &&
+        (xChoice.target - session.artboard.center.dx).abs() <= 0.0001;
     final double xSoftDelta = xChoice.isSnapped
-        ? _softSnapDelta(
-            rawDelta: xChoice.delta,
-            snapDistance: xChoice.delta.abs(),
-            threshold: xThreshold,
-            sticky: wasXActive,
-          )
+        ? (xCenterSnap
+            ? xChoice.delta
+            : _softSnapDelta(
+                rawDelta: xChoice.delta,
+                snapDistance: xChoice.delta.abs(),
+                threshold: xThreshold,
+                sticky: wasXActive,
+              ))
         : 0;
     final Rect afterX = rawRect.shift(Offset(xSoftDelta, 0));
     final _AxisSnapChoice yChoice = _bestYAxisSnap(
@@ -38772,13 +46955,17 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
       session: session,
       thresholdScene: yThreshold,
     );
+    final bool yCenterSnap = yChoice.isSnapped &&
+        (yChoice.target - session.artboard.center.dy).abs() <= 0.0001;
     final double ySoftDelta = yChoice.isSnapped
-        ? _softSnapDelta(
-            rawDelta: yChoice.delta,
-            snapDistance: yChoice.delta.abs(),
-            threshold: yThreshold,
-            sticky: wasYActive,
-          )
+        ? (yCenterSnap
+            ? yChoice.delta
+            : _softSnapDelta(
+                rawDelta: yChoice.delta,
+                snapDistance: yChoice.delta.abs(),
+                threshold: yThreshold,
+                sticky: wasYActive,
+              ))
         : 0;
     _moveSnapXActive = xChoice.isSnapped;
     _moveSnapYActive = yChoice.isSnapped;
@@ -38845,6 +47032,22 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     required _SnapSession session,
     required double thresholdScene,
   }) {
+    final double centerDelta = session.artboard.center.dx - rect.center.dx;
+    final double centerThreshold = thresholdScene * 1.45;
+    if (centerDelta.abs() <= centerThreshold) {
+      return _AxisSnapChoice(
+        delta: centerDelta,
+        target: session.artboard.center.dx,
+        anchor: rect.center.dx,
+        guides: <_SmartGuideSegment>[
+          _SmartGuideSegment(
+            start: Offset(session.artboard.center.dx, session.artboard.top),
+            end: Offset(session.artboard.center.dx, session.artboard.bottom),
+            emphasized: true,
+          ),
+        ],
+      );
+    }
     const _AxisSnapChoice none = _AxisSnapChoice(
       delta: 0,
       target: 0,
@@ -38892,6 +47095,22 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
     required _SnapSession session,
     required double thresholdScene,
   }) {
+    final double centerDelta = session.artboard.center.dy - rect.center.dy;
+    final double centerThreshold = thresholdScene * 1.45;
+    if (centerDelta.abs() <= centerThreshold) {
+      return _AxisSnapChoice(
+        delta: centerDelta,
+        target: session.artboard.center.dy,
+        anchor: rect.center.dy,
+        guides: <_SmartGuideSegment>[
+          _SmartGuideSegment(
+            start: Offset(session.artboard.left, session.artboard.center.dy),
+            end: Offset(session.artboard.right, session.artboard.center.dy),
+            emphasized: true,
+          ),
+        ],
+      );
+    }
     const _AxisSnapChoice none = _AxisSnapChoice(
       delta: 0,
       target: 0,
@@ -39427,6 +47646,17 @@ class _SkiaEditorCanvasState extends State<_SkiaEditorCanvas>
           moveHandleDistance: _bottomMoveHandleDistance,
         );
       case EditorLayerType.vector:
+        if (selectedLayer.isBackground || selectedLayer.vectorPicture == null) {
+          return null;
+        }
+        return _buildVectorLayerSceneData(
+          layer: selectedLayer,
+          picture: selectedLayer.vectorPicture!,
+          artboard: artboard,
+          workspaceSize: workspaceSize,
+          rotateHandleDistance: _topRotateHandleDistance,
+          moveHandleDistance: _bottomMoveHandleDistance,
+        );
       case EditorLayerType.mask:
       case EditorLayerType.solid:
         return null;
@@ -41232,6 +49462,110 @@ class _TextLayerSceneData extends _TransformLayerSceneData {
   final _BentTextLayout? bentShadowLayout;
 }
 
+class _TextLayerLayoutCacheEntry {
+  const _TextLayerLayoutCacheEntry({
+    required this.fillPainter,
+    required this.bentGeometry,
+    required this.bentFillLayout,
+    required this.width,
+    required this.height,
+  });
+
+  final TextPainter fillPainter;
+  final _BentTextGeometry? bentGeometry;
+  final _BentTextLayout? bentFillLayout;
+  final double width;
+  final double height;
+}
+
+class _TextLayerEffectCacheEntry {
+  const _TextLayerEffectCacheEntry({
+    required this.painter,
+    this.bentLayout,
+  });
+
+  final TextPainter painter;
+  final _BentTextLayout? bentLayout;
+}
+
+const int _kTextLayerLayoutCacheMaxEntries = 48;
+const int _kTextLayerEffectCacheMaxEntries = 72;
+final LinkedHashMap<String, _TextLayerLayoutCacheEntry> _textLayerLayoutCache =
+    LinkedHashMap<String, _TextLayerLayoutCacheEntry>();
+final LinkedHashMap<String, _TextLayerEffectCacheEntry>
+    _textLayerStrokeEffectCache =
+    LinkedHashMap<String, _TextLayerEffectCacheEntry>();
+final LinkedHashMap<String, _TextLayerEffectCacheEntry>
+    _textLayerShadowEffectCache =
+    LinkedHashMap<String, _TextLayerEffectCacheEntry>();
+
+String _textLayoutCacheNumber(
+  double value, {
+  int fractionDigits = 3,
+}) {
+  if (!value.isFinite) return 'nan';
+  return value.toStringAsFixed(fractionDigits);
+}
+
+String _buildTextLayerLayoutCacheKey({
+  required String text,
+  required TextDirection direction,
+  required String? family,
+  required int weight,
+  required double fontSize,
+  required double maxWidth,
+  required Color fillColor,
+  required double textBend,
+  required bool runtimeReady,
+}) {
+  return <String>[
+    direction == TextDirection.rtl ? 'rtl' : 'ltr',
+    family?.trim() ?? '',
+    '$weight',
+    runtimeReady ? '1' : '0',
+    _textLayoutCacheNumber(fontSize, fractionDigits: 2),
+    _textLayoutCacheNumber(maxWidth, fractionDigits: 2),
+    _textLayoutCacheNumber(textBend, fractionDigits: 2),
+    fillColor.value.toRadixString(16),
+    text,
+  ].join('|');
+}
+
+void _storeTextLayerLayoutCacheEntry(
+  String key,
+  _TextLayerLayoutCacheEntry entry,
+) {
+  _textLayerLayoutCache[key] = entry;
+  while (_textLayerLayoutCache.length > _kTextLayerLayoutCacheMaxEntries) {
+    _textLayerLayoutCache.remove(_textLayerLayoutCache.keys.first);
+  }
+}
+
+void _storeTextLayerEffectCacheEntry(
+  LinkedHashMap<String, _TextLayerEffectCacheEntry> cache,
+  String key,
+  _TextLayerEffectCacheEntry entry,
+) {
+  cache[key] = entry;
+  while (cache.length > _kTextLayerEffectCacheMaxEntries) {
+    cache.remove(cache.keys.first);
+  }
+}
+
+String _buildTextLayerEffectCacheKey({
+  required String baseLayoutKey,
+  required String effectKind,
+  required Color color,
+  required double amount,
+}) {
+  return <String>[
+    baseLayoutKey,
+    effectKind,
+    color.value.toRadixString(16),
+    _textLayoutCacheNumber(amount, fractionDigits: 1),
+  ].join('|');
+}
+
 class _BentTextGlyph {
   const _BentTextGlyph({
     required this.painter,
@@ -41295,6 +49629,23 @@ class _ImageLayerSceneData extends _TransformLayerSceneData {
   final _OverlayCutShapeType? overlayShapeType;
 }
 
+class _VectorLayerSceneData extends _TransformLayerSceneData {
+  const _VectorLayerSceneData({
+    required super.layerId,
+    required super.center,
+    required super.width,
+    required super.height,
+    required super.rotation,
+    required super.rotateHandleOffset,
+    required super.moveHandleOffset,
+    required this.picture,
+    required this.sourceSize,
+  });
+
+  final ui.Picture picture;
+  final Size sourceSize;
+}
+
 EditorLayer? _workspaceLayerForEdit(List<EditorLayer> layers) {
   for (final EditorLayer layer in layers) {
     if (layer.isBackground && _workspaceSourceSize(layer) != null) {
@@ -41312,9 +49663,18 @@ _TextLayerSceneData? _buildTextLayerSceneData({
   double moveHandleDistance = 28,
 }) {
   if (layer.type != EditorLayerType.text) return null;
+  if (workspaceSize.width <= 0 ||
+      workspaceSize.height <= 0 ||
+      artboard.width <= 0 ||
+      artboard.height <= 0) {
+    return null;
+  }
   final String text = layer.textValue ?? 'Write your text here';
   final bool isArabicText = _containsArabicCharacters(text);
   final double unitScale = artboard.width / workspaceSize.width;
+  if (!unitScale.isFinite || unitScale <= 0) {
+    return null;
+  }
   final Offset sourcePos = layer.position ??
       Offset(workspaceSize.width / 2, workspaceSize.height / 2);
   final Offset center = artboard.topLeft +
@@ -41326,7 +49686,7 @@ _TextLayerSceneData? _buildTextLayerSceneData({
       ((layer.textFontSize ?? 92) * unitScale * layer.layerScale).clamp(8, 500);
   final double strokeWidth =
       ((layer.textStrokeWidth ?? 0) * unitScale * layer.layerScale)
-          .clamp(0, 60);
+          .clamp(0, 24);
   final Color strokeColor = layer.textStrokeColor ?? const Color(0xFFFFFFFF);
   final double shadowOpacity = ((layer.textShadowOpacity ?? 0) / 100).clamp(
     0.0,
@@ -41350,10 +49710,10 @@ _TextLayerSceneData? _buildTextLayerSceneData({
   final TextDirection direction =
       isArabicText ? TextDirection.rtl : TextDirection.ltr;
   final String? family = layer.textFontFamily;
-  final Color fillColor = (layer.textColor ?? const Color(0xFF1F2937))
-      .withOpacity(
-          ((layer.textColor ?? const Color(0xFF1F2937)).opacity * textOpacity)
-              .clamp(0.0, 1.0));
+  final bool runtimeReady = family != null &&
+      family.trim().isNotEmpty &&
+      _googleFontRuntimeReadyFamilies.contains(family.trim());
+  final Color fillColor = layer.textColor ?? const Color(0xFF1F2937);
   final TextStyle baseStyle = _fontAwareTextStyle(
     family: family,
     color: fillColor,
@@ -41361,90 +49721,193 @@ _TextLayerSceneData? _buildTextLayerSceneData({
     fontWeight: fontWeight,
     height: 1.05,
   );
-
-  final TextPainter fillPainter = TextPainter(
-    textDirection: direction,
-    maxLines: 3,
-    text: TextSpan(
-      text: text,
-      style: baseStyle,
-    ),
-  )..layout(maxWidth: artboard.width * 0.92);
-
-  final _BentTextGeometry? bentGeometry = _buildBentTextGeometry(
-    text: text,
-    style: baseStyle,
-    direction: direction,
-    bendValue: textBend,
-    preferWordLevel: isArabicText,
-  );
-  _BentTextLayout? bentFillLayout;
-  if (bentGeometry != null) {
-    bentFillLayout = _buildBentTextLayoutFromGeometry(
-      geometry: bentGeometry,
-      style: baseStyle,
-      direction: direction,
-    );
+  if (!fontSize.isFinite ||
+      !strokeWidth.isFinite ||
+      !shadowBlur.isFinite ||
+      !shadowSpread.isFinite ||
+      !shadowOffset.dx.isFinite ||
+      !shadowOffset.dy.isFinite ||
+      !center.dx.isFinite ||
+      !center.dy.isFinite) {
+    return null;
   }
-  TextPainter? strokePainter;
-  _BentTextLayout? bentStrokeLayout;
-  if (strokeWidth > 0.001) {
-    final Paint strokePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = strokeWidth
-      ..strokeJoin = StrokeJoin.round
-      ..strokeCap = StrokeCap.round
-      ..strokeMiterLimit = 1.0
-      ..color = strokeColor
-      ..isAntiAlias = true;
-    strokePainter = TextPainter(
+  final double maxLayoutWidth =
+      (artboard.width * 0.92).clamp(1.0, 4096.0).toDouble();
+  final String layoutCacheKey = _buildTextLayerLayoutCacheKey(
+    text: text,
+    direction: direction,
+    family: family,
+    weight: layer.textFontWeight ?? 400,
+    fontSize: fontSize,
+    maxWidth: maxLayoutWidth,
+    fillColor: fillColor,
+    textBend: textBend,
+    runtimeReady: runtimeReady,
+  );
+  TextPainter fillPainter;
+  _BentTextGeometry? bentGeometry;
+  _BentTextLayout? bentFillLayout;
+  double layoutWidth;
+  double layoutHeight;
+  final _TextLayerLayoutCacheEntry? cachedEntry =
+      _textLayerLayoutCache.remove(layoutCacheKey);
+  if (cachedEntry != null) {
+    _storeTextLayerLayoutCacheEntry(layoutCacheKey, cachedEntry);
+    fillPainter = cachedEntry.fillPainter;
+    bentGeometry = cachedEntry.bentGeometry;
+    bentFillLayout = cachedEntry.bentFillLayout;
+    layoutWidth = cachedEntry.width;
+    layoutHeight = cachedEntry.height;
+  } else {
+    fillPainter = TextPainter(
       textDirection: direction,
       maxLines: 3,
       text: TextSpan(
         text: text,
-        style: baseStyle.copyWith(foreground: strokePaint, color: null),
+        style: baseStyle,
       ),
-    )..layout(maxWidth: artboard.width * 0.92);
+    )..layout(maxWidth: maxLayoutWidth);
+
+    bentGeometry = _buildBentTextGeometry(
+      text: text,
+      style: baseStyle,
+      direction: direction,
+      bendValue: textBend,
+      preferWordLevel: isArabicText,
+    );
     if (bentGeometry != null) {
-      bentStrokeLayout = _buildBentTextLayoutFromGeometry(
+      bentFillLayout = _buildBentTextLayoutFromGeometry(
         geometry: bentGeometry,
-        style: baseStyle.copyWith(foreground: strokePaint, color: null),
+        style: baseStyle,
         direction: direction,
       );
     }
+    layoutWidth = bentFillLayout?.width ?? fillPainter.width;
+    layoutHeight = bentFillLayout?.height ?? fillPainter.height;
+
+    final _TextLayerLayoutCacheEntry computedEntry = _TextLayerLayoutCacheEntry(
+      fillPainter: fillPainter,
+      bentGeometry: bentGeometry,
+      bentFillLayout: bentFillLayout,
+      width: layoutWidth,
+      height: layoutHeight,
+    );
+    _storeTextLayerLayoutCacheEntry(layoutCacheKey, computedEntry);
   }
+
+  TextPainter? strokePainter;
+  _BentTextLayout? bentStrokeLayout;
+  if (strokeWidth > 0.15) {
+    final String strokeCacheKey = _buildTextLayerEffectCacheKey(
+      baseLayoutKey: layoutCacheKey,
+      effectKind: 'stroke',
+      color: strokeColor,
+      amount: strokeWidth,
+    );
+    final _TextLayerEffectCacheEntry? cachedStrokeEntry =
+        _textLayerStrokeEffectCache.remove(strokeCacheKey);
+    if (cachedStrokeEntry != null) {
+      _storeTextLayerEffectCacheEntry(
+        _textLayerStrokeEffectCache,
+        strokeCacheKey,
+        cachedStrokeEntry,
+      );
+      strokePainter = cachedStrokeEntry.painter;
+      bentStrokeLayout = cachedStrokeEntry.bentLayout;
+    } else {
+      final Paint strokePaint = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeJoin = StrokeJoin.round
+        ..strokeCap = StrokeCap.round
+        ..strokeMiterLimit = 1.0
+        ..color = strokeColor
+        ..isAntiAlias = true;
+      final TextStyle strokeStyle =
+          baseStyle.copyWith(foreground: strokePaint, color: null);
+      strokePainter = TextPainter(
+        textDirection: direction,
+        maxLines: 3,
+        text: TextSpan(
+          text: text,
+          style: strokeStyle,
+        ),
+      )..layout(maxWidth: maxLayoutWidth);
+      if (bentGeometry != null) {
+        bentStrokeLayout = _buildBentTextLayoutFromGeometry(
+          geometry: bentGeometry,
+          style: strokeStyle,
+          direction: direction,
+        );
+      }
+      _storeTextLayerEffectCacheEntry(
+        _textLayerStrokeEffectCache,
+        strokeCacheKey,
+        _TextLayerEffectCacheEntry(
+          painter: strokePainter,
+          bentLayout: bentStrokeLayout,
+        ),
+      );
+    }
+  }
+
   TextPainter? shadowPainter;
   _BentTextLayout? bentShadowLayout;
   if (shadowOpacity > 0.001) {
-    final Paint shadowPaint = Paint()
-      ..style = PaintingStyle.fill
-      ..color = shadowColor
-      ..isAntiAlias = true;
-    if (shadowBlur > 0.001) {
-      shadowPaint.maskFilter = MaskFilter.blur(
-        BlurStyle.normal,
-        shadowBlur / 3.2,
+    final String shadowCacheKey = _buildTextLayerEffectCacheKey(
+      baseLayoutKey: layoutCacheKey,
+      effectKind: 'shadow',
+      color: shadowColor,
+      amount: shadowBlur,
+    );
+    final _TextLayerEffectCacheEntry? cachedShadowEntry =
+        _textLayerShadowEffectCache.remove(shadowCacheKey);
+    if (cachedShadowEntry != null) {
+      _storeTextLayerEffectCacheEntry(
+        _textLayerShadowEffectCache,
+        shadowCacheKey,
+        cachedShadowEntry,
       );
-    }
-    shadowPainter = TextPainter(
-      textDirection: direction,
-      maxLines: 3,
-      text: TextSpan(
-        text: text,
-        style: baseStyle.copyWith(foreground: shadowPaint, color: null),
-      ),
-    )..layout(maxWidth: artboard.width * 0.92);
-    if (bentGeometry != null) {
-      bentShadowLayout = _buildBentTextLayoutFromGeometry(
-        geometry: bentGeometry,
-        style: baseStyle.copyWith(foreground: shadowPaint, color: null),
-        direction: direction,
+      shadowPainter = cachedShadowEntry.painter;
+      bentShadowLayout = cachedShadowEntry.bentLayout;
+    } else {
+      final Paint shadowPaint = Paint()
+        ..style = PaintingStyle.fill
+        ..color = shadowColor
+        ..isAntiAlias = true;
+      if (shadowBlur > 0.001) {
+        shadowPaint.maskFilter = MaskFilter.blur(
+          BlurStyle.normal,
+          shadowBlur / 3.2,
+        );
+      }
+      final TextStyle shadowStyle =
+          baseStyle.copyWith(foreground: shadowPaint, color: null);
+      shadowPainter = TextPainter(
+        textDirection: direction,
+        maxLines: 3,
+        text: TextSpan(
+          text: text,
+          style: shadowStyle,
+        ),
+      )..layout(maxWidth: maxLayoutWidth);
+      if (bentGeometry != null) {
+        bentShadowLayout = _buildBentTextLayoutFromGeometry(
+          geometry: bentGeometry,
+          style: shadowStyle,
+          direction: direction,
+        );
+      }
+      _storeTextLayerEffectCacheEntry(
+        _textLayerShadowEffectCache,
+        shadowCacheKey,
+        _TextLayerEffectCacheEntry(
+          painter: shadowPainter,
+          bentLayout: bentShadowLayout,
+        ),
       );
     }
   }
-
-  final double layoutWidth = bentFillLayout?.width ?? fillPainter.width;
-  final double layoutHeight = bentFillLayout?.height ?? fillPainter.height;
 
   return _TextLayerSceneData(
     layerId: layer.id,
@@ -41597,7 +50060,7 @@ void _drawBentTextLayout(
   double spread = 0,
 }) {
   final bool applySpread = spread > 0.01;
-  final int ringSteps = applySpread ? math.max(24, (spread * 14).round()) : 0;
+  final int ringSteps = applySpread ? _textShadowSpreadRingSteps(spread) : 0;
   for (final _BentTextGlyph glyph in layout.glyphs) {
     final Offset center = glyph.center + extraOffset;
     canvas.save();
@@ -41626,6 +50089,12 @@ void _drawBentTextLayout(
       canvas.restore();
     }
   }
+}
+
+int _textShadowSpreadRingSteps(double spread) {
+  if (spread <= 0.01) return 0;
+  final int adaptive = (10 + (spread * 5.5)).round();
+  return adaptive.clamp(10, 64);
 }
 
 _ImageLayerSceneData? _buildImageLayerSceneData({
@@ -41683,6 +50152,101 @@ _ImageLayerSceneData? _buildImageLayerSceneData({
     shadowBlurSigma: shadowBlurSigma,
     overlayShapeType: _overlayCutShapeTypeFromKey(layer.overlayShapeTypeKey),
   );
+}
+
+bool _isValidVectorSourceSize(Size? size) {
+  if (size == null) return false;
+  if (!size.width.isFinite || !size.height.isFinite) return false;
+  return size.width > 0.01 && size.height > 0.01;
+}
+
+Size _sanitizeVectorSourceSize({
+  Size? preferred,
+  Size? fallbackSize,
+}) {
+  if (_isValidVectorSourceSize(preferred)) {
+    return preferred!;
+  }
+  if (_isValidVectorSourceSize(fallbackSize)) {
+    return fallbackSize!;
+  }
+  return const Size(1024, 1024);
+}
+
+_VectorLayerSceneData? _buildVectorLayerSceneData({
+  required EditorLayer layer,
+  required ui.Picture picture,
+  required Rect artboard,
+  required Size workspaceSize,
+  double rotateHandleDistance = 28,
+  double moveHandleDistance = 28,
+}) {
+  if (layer.type != EditorLayerType.vector) return null;
+  final double unitScale = artboard.width / workspaceSize.width;
+  final Size logicalSize = _sanitizeVectorSourceSize(
+    preferred: layer.vectorSourceSize,
+    fallbackSize: layer.solidSize,
+  );
+  final Offset sourcePos = layer.isBackground
+      ? Offset(workspaceSize.width / 2, workspaceSize.height / 2)
+      : (layer.position ??
+          Offset(workspaceSize.width / 2, workspaceSize.height / 2));
+  final Offset center = artboard.topLeft +
+      Offset(sourcePos.dx * unitScale, sourcePos.dy * unitScale);
+  final double drawWidth = logicalSize.width * unitScale * layer.layerScale;
+  final double drawHeight = logicalSize.height * unitScale * layer.layerScale;
+  return _VectorLayerSceneData(
+    layerId: layer.id,
+    center: center,
+    width: drawWidth,
+    height: drawHeight,
+    rotation: layer.layerRotation,
+    rotateHandleOffset: rotateHandleDistance,
+    moveHandleOffset: moveHandleDistance,
+    picture: picture,
+    sourceSize: logicalSize,
+  );
+}
+
+void _drawVectorLayer({
+  required Canvas canvas,
+  required EditorLayer layer,
+  required _VectorLayerSceneData data,
+}) {
+  final Rect destinationRect = Rect.fromCenter(
+    center: Offset.zero,
+    width: data.width,
+    height: data.height,
+  );
+  final Rect sourceRect = Rect.fromLTWH(
+    0,
+    0,
+    data.sourceSize.width,
+    data.sourceSize.height,
+  );
+  final double sourceWidth = math.max(0.0001, sourceRect.width);
+  final double sourceHeight = math.max(0.0001, sourceRect.height);
+  final double scaleX = destinationRect.width / sourceWidth;
+  final double scaleY = destinationRect.height / sourceHeight;
+  final List<double>? vectorFillMatrix = _buildVectorFillColorMatrix(layer);
+
+  canvas.save();
+  canvas.translate(data.center.dx, data.center.dy);
+  canvas.rotate(data.rotation);
+  canvas.clipRect(destinationRect);
+  canvas.translate(destinationRect.left, destinationRect.top);
+  canvas.scale(scaleX, scaleY);
+  if (vectorFillMatrix != null) {
+    final Paint colorFilterPaint = Paint()
+      ..colorFilter = ColorFilter.matrix(vectorFillMatrix)
+      ..isAntiAlias = true;
+    canvas.saveLayer(sourceRect, colorFilterPaint);
+  }
+  canvas.drawPicture(data.picture);
+  if (vectorFillMatrix != null) {
+    canvas.restore();
+  }
+  canvas.restore();
 }
 
 void _drawImageLayerShadow({
@@ -41920,68 +50484,64 @@ bool _isEditorLayerCatalogPngElement(EditorLayer layer) {
   return !layer.isCatalogElement;
 }
 
-bool _isPngColorEffectActive(EditorLayer layer) {
-  if (!_isEditorLayerCatalogPngElement(layer)) return false;
-  if (!layer.imagePngEffectEnabled) return false;
-  return layer.imagePngEffectStrength > 0.001;
+bool _isEditorLayerCatalogVectorElement(EditorLayer layer) {
+  if (layer.type != EditorLayerType.image &&
+      layer.type != EditorLayerType.vector) {
+    return false;
+  }
+  if (layer.isBackground) return false;
+  if (!layer.isCatalogElement) return false;
+  if (layer.type == EditorLayerType.image && layer.image == null) return false;
+  if (layer.type == EditorLayerType.vector &&
+      layer.vectorPicture == null &&
+      (layer.vectorSvgMarkup ?? '').trim().isEmpty) {
+    return false;
+  }
+  final String mimeType = (layer.elementMimeType ?? '').trim().toLowerCase();
+  if (mimeType == 'image/svg+xml' ||
+      mimeType.endsWith('/svg+xml') ||
+      mimeType == 'svg' ||
+      mimeType == 'svg+xml') {
+    return true;
+  }
+  if (mimeType.isNotEmpty) return false;
+  final String lowerUrl = (layer.elementFileUrl ?? '').trim().toLowerCase();
+  if (lowerUrl.endsWith('.svg') || lowerUrl.contains('.svg?')) return true;
+  return lowerUrl.startsWith('local://uploaded-svg/');
 }
 
-List<double>? _buildPngColorEffectMatrix(EditorLayer layer) {
-  if (!_isPngColorEffectActive(layer)) return null;
-
-  final Color tint = layer.imagePngEffectColor.withAlpha(255);
-  final double tintR = tint.red / 255.0;
-  final double tintG = tint.green / 255.0;
-  final double tintB = tint.blue / 255.0;
-  final double strength = (layer.imagePngEffectStrength / 100).clamp(0.0, 1.0);
-  final double details = (layer.imagePngEffectDetails / 100).clamp(0.0, 1.0);
-  final double threshold =
-      (layer.imagePngEffectThreshold / 100).clamp(-1.0, 1.0).toDouble();
-  final double contrast = (1 + (threshold * 2.2)).clamp(0.05, 3.2);
-  final double bias = (1 - contrast) * 128.0;
-  const double lumR = 0.2126;
-  const double lumG = 0.7152;
-  const double lumB = 0.0722;
-
-  List<double> tintMatrixForChannel(double tintChannel) {
-    final double lumScale = details * tintChannel * contrast;
-    final double alphaScale = (1 - details) * tintChannel;
-    final double channelBias = details * tintChannel * bias;
-    return <double>[
-      lumR * lumScale,
-      lumG * lumScale,
-      lumB * lumScale,
-      alphaScale,
-      channelBias,
-    ];
-  }
-
-  final List<double> rRow = tintMatrixForChannel(tintR);
-  final List<double> gRow = tintMatrixForChannel(tintG);
-  final List<double> bRow = tintMatrixForChannel(tintB);
+List<double> _buildAlphaTintColorMatrix(
+  Color tint, {
+  double strength = 1.0,
+}) {
+  final Color color = tint.withAlpha(255);
+  final double tintR = color.red / 255.0;
+  final double tintG = color.green / 255.0;
+  final double tintB = color.blue / 255.0;
+  final double mix = strength.clamp(0.0, 1.0).toDouble();
   final List<double> tintMatrix = <double>[
-    rRow[0],
-    rRow[1],
-    rRow[2],
-    rRow[3],
-    rRow[4],
-    gRow[0],
-    gRow[1],
-    gRow[2],
-    gRow[3],
-    gRow[4],
-    bRow[0],
-    bRow[1],
-    bRow[2],
-    bRow[3],
-    bRow[4],
+    0,
+    0,
+    0,
+    tintR,
+    0,
+    0,
+    0,
+    0,
+    tintG,
+    0,
+    0,
+    0,
+    0,
+    tintB,
+    0,
     0,
     0,
     0,
     1,
     0,
   ];
-  if (strength >= 0.999) {
+  if (mix >= 0.999) {
     return tintMatrix;
   }
   final List<double> identity = <double>[
@@ -42008,9 +50568,35 @@ List<double>? _buildPngColorEffectMatrix(EditorLayer layer) {
   ];
   final List<double> mixed = List<double>.filled(20, 0);
   for (int i = 0; i < 20; i++) {
-    mixed[i] = (identity[i] * (1 - strength)) + (tintMatrix[i] * strength);
+    mixed[i] = (identity[i] * (1 - mix)) + (tintMatrix[i] * mix);
   }
   return mixed;
+}
+
+bool _isPngColorEffectActive(EditorLayer layer) {
+  if (!_isEditorLayerCatalogPngElement(layer)) return false;
+  if (!layer.imagePngEffectEnabled) return false;
+  return layer.imagePngEffectStrength > 0.001;
+}
+
+List<double>? _buildPngColorEffectMatrix(EditorLayer layer) {
+  if (!_isPngColorEffectActive(layer)) return null;
+  final double strength = (layer.imagePngEffectStrength / 100).clamp(0.0, 1.0);
+  // Keep recolor stable and clean by tinting directly from alpha.
+  return _buildAlphaTintColorMatrix(
+    layer.imagePngEffectColor,
+    strength: strength,
+  );
+}
+
+bool _isVectorFillEffectActive(EditorLayer layer) {
+  if (!_isEditorLayerCatalogVectorElement(layer)) return false;
+  return layer.imageVectorFillEnabled;
+}
+
+List<double>? _buildVectorFillColorMatrix(EditorLayer layer) {
+  if (!_isVectorFillEffectActive(layer)) return null;
+  return _buildAlphaTintColorMatrix(layer.imageVectorFillColor, strength: 1.0);
 }
 
 List<double>? _buildImageAdjustmentMatrix(EditorLayer layer) {
@@ -42275,6 +50861,7 @@ Paint _buildImageLayerPaint(EditorLayer layer,
     amountFactor: blurAmountFactor,
   );
   final List<double>? pngColorMatrix = _buildPngColorEffectMatrix(layer);
+  final List<double>? vectorFillMatrix = _buildVectorFillColorMatrix(layer);
   List<double>? finalMatrix = adjustMatrix;
   if (blurToneMatrix != null) {
     finalMatrix = finalMatrix == null
@@ -42285,6 +50872,11 @@ Paint _buildImageLayerPaint(EditorLayer layer,
     finalMatrix = finalMatrix == null
         ? pngColorMatrix
         : _multiplyColorMatrices(pngColorMatrix, finalMatrix);
+  }
+  if (vectorFillMatrix != null) {
+    finalMatrix = finalMatrix == null
+        ? vectorFillMatrix
+        : _multiplyColorMatrices(vectorFillMatrix, finalMatrix);
   }
   if (finalMatrix != null) {
     paint.colorFilter = ColorFilter.matrix(finalMatrix);
@@ -42491,8 +51083,12 @@ class _SkiaCanvasPainter extends CustomPainter {
           artboard.height,
           scale,
         );
-        final FilterQuality imageFilterQuality =
-            identical(drawImage, workspaceImage)
+        final bool workspaceUsesRealtimeRecolor =
+            _isPngColorEffectActive(workspace) ||
+                _isVectorFillEffectActive(workspace);
+        final FilterQuality imageFilterQuality = workspaceUsesRealtimeRecolor
+            ? FilterQuality.medium
+            : identical(drawImage, workspaceImage)
                 ? FilterQuality.high
                 : FilterQuality.medium;
         final Rect sourceRect = Rect.fromLTWH(
@@ -42860,8 +51456,11 @@ class _SkiaCanvasPainter extends CustomPainter {
               data.height,
               scale,
             );
-            final FilterQuality imageFilterQuality =
-                identical(drawImage, sourceImage)
+            final bool usesRealtimeRecolor = _isPngColorEffectActive(layer) ||
+                _isVectorFillEffectActive(layer);
+            final FilterQuality imageFilterQuality = usesRealtimeRecolor
+                ? FilterQuality.medium
+                : identical(drawImage, sourceImage)
                     ? FilterQuality.high
                     : FilterQuality.medium;
             final Rect sourceRect = Rect.fromLTWH(
@@ -42922,6 +51521,7 @@ class _SkiaCanvasPainter extends CustomPainter {
           final _BentTextLayout? bentFillLayout = data.bentFillLayout;
           final _BentTextLayout? bentStrokeLayout = data.bentStrokeLayout;
           final _BentTextLayout? bentShadowLayout = data.bentShadowLayout;
+          final double fillOpacity = data.textOpacity.clamp(0.0, 1.0);
           final bool usesBentRendering =
               bentFillLayout != null && data.textBend.abs() >= 0.5;
           if (usesBentRendering) {
@@ -42936,7 +51536,22 @@ class _SkiaCanvasPainter extends CustomPainter {
             if (bentStrokeLayout != null) {
               _drawBentTextLayout(canvas, bentStrokeLayout);
             }
-            _drawBentTextLayout(canvas, bentFillLayout);
+            if (fillOpacity > 0.001) {
+              if (fillOpacity < 0.999) {
+                canvas.saveLayer(
+                  Rect.fromCenter(
+                    center: Offset.zero,
+                    width: data.width * 1.35,
+                    height: data.height * 1.35,
+                  ),
+                  Paint()..color = Colors.white.withOpacity(fillOpacity),
+                );
+                _drawBentTextLayout(canvas, bentFillLayout);
+                canvas.restore();
+              } else {
+                _drawBentTextLayout(canvas, bentFillLayout);
+              }
+            }
           } else {
             final Offset textTopLeft =
                 Offset(-data.width / 2, -data.height / 2);
@@ -42946,7 +51561,7 @@ class _SkiaCanvasPainter extends CustomPainter {
               shadowPainter.paint(canvas, shadowOrigin);
               final double spread = data.shadowSpread;
               if (spread > 0.01) {
-                final int ringSteps = math.max(24, (spread * 14).round());
+                final int ringSteps = _textShadowSpreadRingSteps(spread);
                 for (int i = 0; i < ringSteps; i++) {
                   final double angle = (2 * math.pi * i) / ringSteps;
                   final Offset spreadOffset = Offset(
@@ -42958,7 +51573,23 @@ class _SkiaCanvasPainter extends CustomPainter {
               }
             }
             data.strokePainter?.paint(canvas, textTopLeft);
-            data.fillPainter.paint(canvas, textTopLeft);
+            if (fillOpacity > 0.001) {
+              if (fillOpacity < 0.999) {
+                canvas.saveLayer(
+                  Rect.fromLTWH(
+                    textTopLeft.dx,
+                    textTopLeft.dy,
+                    data.width,
+                    data.height,
+                  ),
+                  Paint()..color = Colors.white.withOpacity(fillOpacity),
+                );
+                data.fillPainter.paint(canvas, textTopLeft);
+                canvas.restore();
+              } else {
+                data.fillPainter.paint(canvas, textTopLeft);
+              }
+            }
           }
           canvas.restore();
           if (selectedLayerId == layer.id) {
@@ -42966,6 +51597,25 @@ class _SkiaCanvasPainter extends CustomPainter {
           }
           break;
         case EditorLayerType.vector:
+          final ui.Picture? picture = layer.vectorPicture;
+          if (picture == null) break;
+          final _VectorLayerSceneData? data = _buildVectorLayerSceneData(
+            layer: layer,
+            picture: picture,
+            artboard: artboard,
+            workspaceSize: workspaceSize,
+            rotateHandleDistance: rotateHandleDistance,
+            moveHandleDistance: moveHandleDistance,
+          );
+          if (data == null) break;
+          _drawVectorLayer(
+            canvas: canvas,
+            layer: layer,
+            data: data,
+          );
+          if (selectedLayerId == layer.id) {
+            selectedData = data;
+          }
           break;
         case EditorLayerType.mask:
           break;
@@ -45878,6 +54528,172 @@ Uint8List _encodeJpgFromRgbaForExportIsolate({
     numChannels: 4,
   );
   return Uint8List.fromList(img.encodeJpg(decoded, quality: quality));
+}
+
+Map<String, Object> _extractDesignGuideGraphFromRgba({
+  required Uint8List rgba,
+  required int width,
+  required int height,
+  required int maxSegments,
+  required int maxAnchors,
+}) {
+  if (width < 3 || height < 3 || rgba.length < width * height * 4) {
+    return <String, Object>{
+      'segments': <Map<String, double>>[],
+      'anchors': <Map<String, double>>[],
+    };
+  }
+
+  final int pixelCount = width * height;
+  final Uint8List luminance = Uint8List(pixelCount);
+  int rgbaIndex = 0;
+  for (int i = 0; i < pixelCount; i++) {
+    final int r = rgba[rgbaIndex];
+    final int g = rgba[rgbaIndex + 1];
+    final int b = rgba[rgbaIndex + 2];
+    luminance[i] = ((r * 299) + (g * 587) + (b * 114)) ~/ 1000;
+    rgbaIndex += 4;
+  }
+
+  final Uint16List gradient = Uint16List(pixelCount);
+  int gradientSum = 0;
+  int gradientCount = 0;
+  int gradientMax = 0;
+  for (int y = 1; y < height - 1; y++) {
+    final int rowStart = y * width;
+    for (int x = 1; x < width - 1; x++) {
+      final int index = rowStart + x;
+      final int gx = luminance[index + 1] - luminance[index - 1];
+      final int gy = luminance[index + width] - luminance[index - width];
+      final int magnitude = gx.abs() + gy.abs();
+      gradient[index] = magnitude;
+      gradientSum += magnitude;
+      gradientCount++;
+      if (magnitude > gradientMax) {
+        gradientMax = magnitude;
+      }
+    }
+  }
+
+  if (gradientCount == 0) {
+    return <String, Object>{
+      'segments': <Map<String, double>>[],
+      'anchors': <Map<String, double>>[],
+    };
+  }
+
+  final double averageGradient = gradientSum / gradientCount;
+  final int threshold = math
+      .max(
+        18,
+        math.max(
+          (averageGradient * 1.85).round(),
+          (gradientMax * 0.16).round(),
+        ),
+      )
+      .clamp(18, 255);
+
+  final Uint8List edge = Uint8List(pixelCount);
+  for (int i = 0; i < pixelCount; i++) {
+    edge[i] = gradient[i] >= threshold ? 1 : 0;
+  }
+
+  final List<Map<String, double>> segments = <Map<String, double>>[];
+  final List<Map<String, double>> anchors = <Map<String, double>>[];
+  final Set<int> anchorCells = <int>{};
+
+  void tryAddAnchor(double x, double y) {
+    if (anchors.length >= maxAnchors) return;
+    final int cellX = ((x * 64) / width).floor().clamp(0, 63).toInt();
+    final int cellY = ((y * 64) / height).floor().clamp(0, 63).toInt();
+    final int key = (cellY * 128) + cellX;
+    if (!anchorCells.add(key)) return;
+    anchors.add(<String, double>{
+      'x': ((x + 0.5) / width).clamp(0.0, 1.0).toDouble(),
+      'y': ((y + 0.5) / height).clamp(0.0, 1.0).toDouble(),
+    });
+  }
+
+  final int minRunX = (width / 84).round().clamp(4, 24);
+  final int minRunY = (height / 84).round().clamp(4, 24);
+  final int rowStep = math.max(1, height ~/ 170);
+  final int colStep = math.max(1, width ~/ 170);
+
+  for (int y = 1;
+      y < height - 1 && segments.length < maxSegments;
+      y += rowStep) {
+    final int rowStart = y * width;
+    int x = 1;
+    while (x < width - 1 && segments.length < maxSegments) {
+      final int index = rowStart + x;
+      if (edge[index] == 0) {
+        x++;
+        continue;
+      }
+      final int start = x;
+      int strengthSum = 0;
+      int sampleCount = 0;
+      while (x < width - 1 && edge[rowStart + x] != 0) {
+        strengthSum += gradient[rowStart + x];
+        sampleCount++;
+        x++;
+      }
+      final int end = x - 1;
+      final int runLength = (end - start) + 1;
+      if (runLength < minRunX) continue;
+      final double weight = ((strengthSum / math.max(1, sampleCount)) / 255.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      segments.add(<String, double>{
+        'sx': ((start + 0.5) / width).clamp(0.0, 1.0).toDouble(),
+        'sy': ((y + 0.5) / height).clamp(0.0, 1.0).toDouble(),
+        'ex': ((end + 0.5) / width).clamp(0.0, 1.0).toDouble(),
+        'ey': ((y + 0.5) / height).clamp(0.0, 1.0).toDouble(),
+        'weight': weight,
+      });
+      tryAddAnchor((start + end) / 2, y.toDouble());
+    }
+  }
+
+  for (int x = 1;
+      x < width - 1 && segments.length < maxSegments;
+      x += colStep) {
+    int y = 1;
+    while (y < height - 1 && segments.length < maxSegments) {
+      final int index = (y * width) + x;
+      if (edge[index] == 0) {
+        y++;
+        continue;
+      }
+      final int start = y;
+      int strengthSum = 0;
+      int sampleCount = 0;
+      while (y < height - 1 && edge[(y * width) + x] != 0) {
+        strengthSum += gradient[(y * width) + x];
+        sampleCount++;
+        y++;
+      }
+      final int end = y - 1;
+      final int runLength = (end - start) + 1;
+      if (runLength < minRunY) continue;
+      final double weight = ((strengthSum / math.max(1, sampleCount)) / 255.0)
+          .clamp(0.0, 1.0)
+          .toDouble();
+      segments.add(<String, double>{
+        'sx': ((x + 0.5) / width).clamp(0.0, 1.0).toDouble(),
+        'sy': ((start + 0.5) / height).clamp(0.0, 1.0).toDouble(),
+        'ex': ((x + 0.5) / width).clamp(0.0, 1.0).toDouble(),
+        'ey': ((end + 0.5) / height).clamp(0.0, 1.0).toDouble(),
+        'weight': weight,
+      });
+      tryAddAnchor(x.toDouble(), (start + end) / 2);
+    }
+  }
+
+  return <String, Object>{
+    'segments': segments,
+    'anchors': anchors,
+  };
 }
 
 class _TopToolsSnapPhysics extends ScrollPhysics {

@@ -52,6 +52,13 @@ This folder contains the WonderPic backend foundation for:
     - `upsert_font`
     - `list_admin`
 
+- `templates-catalog`
+  - `GET` public listing for editor Templates tab.
+  - `POST` admin actions (requires `x-admin-token`):
+    - `upload` template file (SVG) into storage bucket `templates`
+    - `delete` by template id
+    - `upsert_template`
+
 ## Required secrets
 
 Set these in Supabase project secrets:
@@ -82,6 +89,7 @@ supabase functions deploy credits-commit
 supabase functions deploy credits-refund
 supabase functions deploy elements-catalog
 supabase functions deploy fonts-catalog
+supabase functions deploy templates-catalog
 ```
 
 ## Invoke examples

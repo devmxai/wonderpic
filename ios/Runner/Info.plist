@@ -59,9 +59,9 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Allow Wonderpic to access your photo library for editing images.</string>
+	<string>Allow Wonderpic to access your photo and video library for Fusion Photo and Fusion Cut imports.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Allow Wonderpic to save edited images to your photo library.</string>
+	<string>Allow Wonderpic to save generated and edited media to your photo library.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Allow Wonderpic to capture your voice for dictation and voice clone samples.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

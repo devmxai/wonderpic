@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wonderpic/fusion_cut/fusion_cut_engine.dart';
 
 class WonderPicVideoEditingScreen extends StatefulWidget {
   const WonderPicVideoEditingScreen({super.key});
@@ -14,62 +16,10 @@ class WonderPicVideoEditingScreen extends StatefulWidget {
       _WonderPicVideoEditingScreenState();
 }
 
-enum _VideoEditTool {
-  add,
-  move,
-  crop,
-  text,
-  erase,
-  draw,
-  clone,
-  shape,
-  grid,
-}
-
 enum _TimelineDragMode {
   none,
   scrub,
   moveSelection,
-}
-
-class _VideoToolAction {
-  const _VideoToolAction({
-    required this.id,
-    required this.icon,
-  });
-
-  final _VideoEditTool id;
-  final IconData icon;
-}
-
-class _TimelineClip {
-  _TimelineClip({
-    required this.id,
-    required this.label,
-    required this.startSecond,
-    required this.durationSecond,
-    required this.color,
-  });
-
-  final String id;
-  final String label;
-  double startSecond;
-  final double durationSecond;
-  final Color color;
-}
-
-class _TimelineTrack {
-  _TimelineTrack({
-    required this.id,
-    required this.name,
-    required this.icon,
-    required this.clips,
-  });
-
-  final String id;
-  final String name;
-  final IconData icon;
-  final List<_TimelineClip> clips;
 }
 
 enum _AddLayerAction {
@@ -85,7 +35,6 @@ class _WonderPicVideoEditingScreenState
   static const Color _pageBg = Color(0xFF242833);
   static const Color _panelBg = Color(0xFF191D26);
   static const Color _panelBorder = Color(0xFF2C3241);
-  static const Color _toolIdleBg = Color(0xFF161A22);
   static const Color _textMain = Color(0xFFF3F4F6);
   static const Color _textSub = Color(0xFFA5ACB8);
   static const Color _accent = Color(0xFFE6F24A);
@@ -100,148 +49,23 @@ class _WonderPicVideoEditingScreenState
   static const double _trackRowHeight = 38.0;
   static const double _clipTopInset = 4.0;
   static const double _timelineScrubSensitivity = 1.0;
+  static const double _timelineSnapToleranceSecond = 0.16;
+  static const Duration _scrubSeekDebounceDelay = Duration(milliseconds: 48);
 
-  final List<_VideoToolAction> _tools = const <_VideoToolAction>[
-    _VideoToolAction(
-      id: _VideoEditTool.add,
-      icon: Icons.add_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.move,
-      icon: Icons.open_with_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.crop,
-      icon: Icons.crop_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.text,
-      icon: Icons.text_fields_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.erase,
-      icon: Icons.auto_fix_off_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.draw,
-      icon: Icons.edit_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.clone,
-      icon: Icons.copy_all_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.shape,
-      icon: Icons.crop_square_rounded,
-    ),
-    _VideoToolAction(
-      id: _VideoEditTool.grid,
-      icon: Icons.grid_view_rounded,
-    ),
-  ];
-
-  final List<_TimelineTrack> _tracks = <_TimelineTrack>[
-    _TimelineTrack(
-      id: 'video',
-      name: 'Video',
-      icon: Icons.videocam_rounded,
-      clips: <_TimelineClip>[
-        _TimelineClip(
-          id: 'video_main',
-          label: 'Main Clip',
-          startSecond: 0,
-          durationSecond: 15,
-          color: const Color(0xFF4F8CFF),
-        ),
-        _TimelineClip(
-          id: 'video_broll',
-          label: 'B-Roll',
-          startSecond: 16,
-          durationSecond: 11,
-          color: const Color(0xFF6AA8FF),
-        ),
-      ],
-    ),
-    _TimelineTrack(
-      id: 'sound',
-      name: 'Sound',
-      icon: Icons.graphic_eq_rounded,
-      clips: <_TimelineClip>[
-        _TimelineClip(
-          id: 'sound_ambient',
-          label: 'Ambient',
-          startSecond: 0,
-          durationSecond: 30,
-          color: const Color(0xFF44D1C8),
-        ),
-      ],
-    ),
-    _TimelineTrack(
-      id: 'text',
-      name: 'Text',
-      icon: Icons.text_fields_rounded,
-      clips: <_TimelineClip>[
-        _TimelineClip(
-          id: 'text_title',
-          label: 'Title',
-          startSecond: 2,
-          durationSecond: 7,
-          color: const Color(0xFFBF7AFF),
-        ),
-        _TimelineClip(
-          id: 'text_lower_third',
-          label: 'Lower Third',
-          startSecond: 17,
-          durationSecond: 9,
-          color: const Color(0xFFD092FF),
-        ),
-      ],
-    ),
-    _TimelineTrack(
-      id: 'overlay',
-      name: 'Overlay',
-      icon: Icons.layers_rounded,
-      clips: <_TimelineClip>[
-        _TimelineClip(
-          id: 'overlay_logo',
-          label: 'Logo',
-          startSecond: 1,
-          durationSecond: 28,
-          color: const Color(0xFFFF9A50),
-        ),
-      ],
-    ),
-    _TimelineTrack(
-      id: 'adjustment',
-      name: 'Adjustment',
-      icon: Icons.tune_rounded,
-      clips: <_TimelineClip>[],
-    ),
-  ];
-
-  _VideoEditTool _activeTool = _VideoEditTool.move;
+  late final FusionCutSessionController _session;
   _TimelineDragMode _dragMode = _TimelineDragMode.none;
   int? _dragTrackIndex;
-  final List<String> _selectedClipIds = <String>[];
   bool _isTimelineScaleGesture = false;
-  double _timelineZoom = 1.0;
   double _scaleGestureStartZoom = 1.0;
-  final Map<String, double> _selectionDragBaseStarts = <String, double>{};
-  double _selectionDragRequestedDelta = 0.0;
-  double _selectionGroupMinDelta = 0.0;
-  double _selectionGroupMaxDelta = 0.0;
   VideoPlayerController? _videoController;
   bool _isLoadingVideo = false;
   bool _isPlaying = false;
   String? _videoPath;
-  int _clipSeed = 0;
   int _videoLoadToken = 0;
   int _lastRenderedPositionMs = -1000;
   bool _seekInFlight = false;
   double? _pendingSeekSecond;
-  bool _hasClearedMockTimeline = false;
-
-  double _timelineCenterSecond = 0.0;
+  Timer? _scrubSeekDebounce;
 
   double get _timelineSeconds {
     double value = _defaultTimelineSeconds;
@@ -253,19 +77,16 @@ class _WonderPicVideoEditingScreenState
         value = videoSeconds;
       }
     }
-    for (final _TimelineTrack track in _tracks) {
-      for (final _TimelineClip clip in track.clips) {
-        value = math.max(value, clip.startSecond + clip.durationSecond);
-      }
-    }
-    return value;
+    return math.max(value, _session.timelineSeconds);
   }
 
-  double get _pixelsPerSecond => _timelineBasePixelsPerSecond * _timelineZoom;
+  double get _pixelsPerSecond =>
+      _timelineBasePixelsPerSecond * _session.timelineZoom;
   double get _timelineCanvasWidth => _timelineSeconds * _pixelsPerSecond;
 
   double _timelineContentOffsetPx(double laneViewportWidth) {
-    return (laneViewportWidth / 2) - (_timelineCenterSecond * _pixelsPerSecond);
+    return (laneViewportWidth / 2) -
+        (_session.timelineCenterSecond * _pixelsPerSecond);
   }
 
   double _timeFromLaneDx({
@@ -277,17 +98,28 @@ class _WonderPicVideoEditingScreenState
   }
 
   @override
+  void initState() {
+    super.initState();
+    _session = FusionCutSessionController.mockProject();
+    _session.addListener(_onSessionChanged);
+  }
+
+  void _onSessionChanged() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  @override
   void dispose() {
+    _scrubSeekDebounce?.cancel();
+    _session.removeListener(_onSessionChanged);
+    _session.dispose();
     final VideoPlayerController? controller = _videoController;
     if (controller != null) {
       controller.removeListener(_onVideoControllerTick);
       controller.dispose();
     }
     super.dispose();
-  }
-
-  _TimelineTrack _trackById(String trackId) {
-    return _tracks.firstWhere((_) => _.id == trackId);
   }
 
   double _clampTimelineSecond(double seconds) {
@@ -309,12 +141,15 @@ class _WonderPicVideoEditingScreenState
     final int positionMs = value.position.inMilliseconds.clamp(0, durationMs);
     final bool playingNow = value.isPlaying;
     final bool shouldRefreshPosition =
-        (positionMs - _lastRenderedPositionMs).abs() >= 16;
+        (positionMs - _lastRenderedPositionMs).abs() >= 33;
     if (!shouldRefreshPosition && playingNow == _isPlaying) return;
     _lastRenderedPositionMs = positionMs;
     final double second = positionMs / 1000.0;
+    _session.setTimelineCenterSecond(
+      _clampTimelineSecond(second),
+      notify: false,
+    );
     setState(() {
-      _timelineCenterSecond = _clampTimelineSecond(second);
       _isPlaying = playingNow;
     });
   }
@@ -353,13 +188,20 @@ class _WonderPicVideoEditingScreenState
       }
       nextController.setLooping(false);
       nextController.addListener(_onVideoControllerTick);
+      final Size videoSize = nextController.value.size;
+      _session.registerPrimaryVideoSource(
+        path: path,
+        durationSecond: nextController.value.duration.inMilliseconds / 1000.0,
+        width: videoSize.width.round(),
+        height: videoSize.height.round(),
+      );
       setState(() {
         _videoController = nextController;
-        _timelineCenterSecond = 0.0;
         _isLoadingVideo = false;
         _isPlaying = false;
         _lastRenderedPositionMs = -1000;
       });
+      _session.setTimelineCenterSecond(0.0);
       await _queueVideoSeek(0.0);
     } catch (_) {
       if (mounted) {
@@ -386,14 +228,14 @@ class _WonderPicVideoEditingScreenState
       return;
     }
     final double startSecond =
-        _timelineCenterSecond >= (_timelineSeconds - 0.05)
+        _session.timelineCenterSecond >= (_timelineSeconds - 0.05)
             ? 0.0
-            : _timelineCenterSecond;
+            : _session.timelineCenterSecond;
     await controller.seekTo(_durationFromSecond(startSecond));
     await controller.play();
+    _session.setTimelineCenterSecond(_clampTimelineSecond(startSecond));
     if (mounted) {
       setState(() {
-        _timelineCenterSecond = _clampTimelineSecond(startSecond);
         _isPlaying = true;
       });
     }
@@ -437,18 +279,8 @@ class _WonderPicVideoEditingScreenState
     return normalized.substring(index + 1);
   }
 
-  String _newClipId(String prefix) {
-    _clipSeed += 1;
-    return '${prefix}_$_clipSeed';
-  }
-
   void _clearMockTimelineIfNeeded() {
-    if (_hasClearedMockTimeline) return;
-    for (final _TimelineTrack track in _tracks) {
-      track.clips.clear();
-    }
-    _selectedClipIds.clear();
-    _hasClearedMockTimeline = true;
+    _session.clearTemplateTimelineIfNeeded();
   }
 
   void _addClipToTrack({
@@ -457,50 +289,42 @@ class _WonderPicVideoEditingScreenState
     required Color color,
     required double durationSecond,
   }) {
-    final _TimelineTrack track = _trackById(trackId);
-    final double clampedDuration = math.max(0.25, durationSecond);
-    final double maxStart = math.max(0.0, _timelineSeconds - clampedDuration);
-    final double startSecond = _timelineCenterSecond.clamp(0.0, maxStart);
-    track.clips.add(
-      _TimelineClip(
-        id: _newClipId(trackId),
-        label: label,
-        startSecond: startSecond.toDouble(),
-        durationSecond: clampedDuration,
-        color: color,
+    _session.addClipToTrack(
+      trackType: FusionCutTrackType.values.firstWhere(
+        (FusionCutTrackType item) => item.id == trackId,
       ),
-    );
-    track.clips.sort(
-      (_TimelineClip a, _TimelineClip b) =>
-          a.startSecond.compareTo(b.startSecond),
+      label: label,
+      color: color,
+      durationSecond: durationSecond,
+      startSecond: _session.timelineCenterSecond,
     );
   }
 
   Future<void> _handleAddLayerAction(_AddLayerAction action) async {
     switch (action) {
       case _AddLayerAction.video:
+        String? path;
         final FilePickerResult? result = await FilePicker.platform.pickFiles(
           type: FileType.video,
           allowMultiple: false,
         );
-        if (result == null || result.files.isEmpty) return;
-        final String? path = result.files.single.path;
+        if (result != null && result.files.isNotEmpty) {
+          path = result.files.single.path;
+        }
         if (path == null || path.isEmpty) return;
         await _loadVideoFile(path);
         if (!mounted) return;
-        setState(() {
-          _clearMockTimelineIfNeeded();
-          final double videoDuration =
-              _videoController != null && _videoController!.value.isInitialized
-                  ? _videoController!.value.duration.inMilliseconds / 1000.0
-                  : 10.0;
-          _addClipToTrack(
-            trackId: 'video',
-            label: _basename(path),
-            color: const Color(0xFF4F8CFF),
-            durationSecond: math.max(1.0, videoDuration),
-          );
-        });
+        _clearMockTimelineIfNeeded();
+        final double videoDuration =
+            _videoController != null && _videoController!.value.isInitialized
+                ? _videoController!.value.duration.inMilliseconds / 1000.0
+                : 10.0;
+        _addClipToTrack(
+          trackId: 'video',
+          label: _basename(path),
+          color: const Color(0xFF4F8CFF),
+          durationSecond: math.max(1.0, videoDuration),
+        );
         return;
       case _AddLayerAction.image:
         final FilePickerResult? imageResult =
@@ -512,51 +336,43 @@ class _WonderPicVideoEditingScreenState
         final String? imagePath = imageResult.files.single.path;
         if (imagePath == null || imagePath.isEmpty) return;
         if (!mounted) return;
-        setState(() {
-          _clearMockTimelineIfNeeded();
-          _addClipToTrack(
-            trackId: 'overlay',
-            label: _basename(imagePath),
-            color: const Color(0xFFFF9A50),
-            durationSecond: 5.0,
-          );
-        });
+        _clearMockTimelineIfNeeded();
+        _addClipToTrack(
+          trackId: 'overlay',
+          label: _basename(imagePath),
+          color: const Color(0xFFFF9A50),
+          durationSecond: 5.0,
+        );
         return;
       case _AddLayerAction.text:
         if (!mounted) return;
-        setState(() {
-          _clearMockTimelineIfNeeded();
-          _addClipToTrack(
-            trackId: 'text',
-            label: 'Text',
-            color: const Color(0xFFBF7AFF),
-            durationSecond: 4.0,
-          );
-        });
+        _clearMockTimelineIfNeeded();
+        _addClipToTrack(
+          trackId: 'text',
+          label: 'Text',
+          color: const Color(0xFFBF7AFF),
+          durationSecond: 4.0,
+        );
         return;
       case _AddLayerAction.overlay:
         if (!mounted) return;
-        setState(() {
-          _clearMockTimelineIfNeeded();
-          _addClipToTrack(
-            trackId: 'overlay',
-            label: 'Overlay',
-            color: const Color(0xFFFF9A50),
-            durationSecond: 4.5,
-          );
-        });
+        _clearMockTimelineIfNeeded();
+        _addClipToTrack(
+          trackId: 'overlay',
+          label: 'Overlay',
+          color: const Color(0xFFFF9A50),
+          durationSecond: 4.5,
+        );
         return;
       case _AddLayerAction.adjustment:
         if (!mounted) return;
-        setState(() {
-          _clearMockTimelineIfNeeded();
-          _addClipToTrack(
-            trackId: 'adjustment',
-            label: 'Adjustment',
-            color: const Color(0xFF7AA4FF),
-            durationSecond: 6.0,
-          );
-        });
+        _clearMockTimelineIfNeeded();
+        _addClipToTrack(
+          trackId: 'adjustment',
+          label: 'Adjustment',
+          color: const Color(0xFF7AA4FF),
+          durationSecond: 6.0,
+        );
         return;
     }
   }
@@ -566,15 +382,15 @@ class _WonderPicVideoEditingScreenState
     required double localDx,
     required double laneViewportWidth,
   }) {
-    if (trackIndex < 0 || trackIndex >= _tracks.length) return null;
-    final List<_TimelineClip> clips = _tracks[trackIndex].clips;
+    if (trackIndex < 0 || trackIndex >= _session.tracks.length) return null;
+    final List<FusionCutTimelineClip> clips = _session.tracks[trackIndex].clips;
     if (clips.isEmpty) return null;
     final double touchSecond = _timeFromLaneDx(
       localDx: localDx,
       laneViewportWidth: laneViewportWidth,
     );
     for (int i = clips.length - 1; i >= 0; i--) {
-      final _TimelineClip clip = clips[i];
+      final FusionCutTimelineClip clip = clips[i];
       final double start = clip.startSecond;
       final double end = clip.startSecond + clip.durationSecond;
       if (touchSecond >= start && touchSecond <= end) {
@@ -584,58 +400,39 @@ class _WonderPicVideoEditingScreenState
     return null;
   }
 
-  _TimelineClip? _findClipById(String clipId) {
-    for (final _TimelineTrack track in _tracks) {
-      for (final _TimelineClip clip in track.clips) {
-        if (clip.id == clipId) return clip;
-      }
-    }
-    return null;
+  bool _isClipSelected(FusionCutTimelineClip clip) {
+    return _session.isClipSelected(clip);
   }
 
-  bool _isClipSelected(_TimelineClip clip) {
-    return _selectedClipIds.contains(clip.id);
+  void _toggleClipSelection(FusionCutTimelineClip clip) {
+    _session.toggleClipSelection(clip);
   }
 
-  List<_TimelineClip> _selectedClips() {
-    final List<_TimelineClip> selected = <_TimelineClip>[];
-    for (final String clipId in _selectedClipIds) {
-      final _TimelineClip? clip = _findClipById(clipId);
-      if (clip != null) {
-        selected.add(clip);
-      }
-    }
-    return selected;
-  }
-
-  void _toggleClipSelection(_TimelineClip clip) {
-    if (_selectedClipIds.contains(clip.id)) {
-      _selectedClipIds.remove(clip.id);
-      return;
-    }
-    if (_selectedClipIds.length >= 2) {
-      _selectedClipIds.removeAt(0);
-    }
-    _selectedClipIds.add(clip.id);
+  void _selectOnlyClip(FusionCutTimelineClip clip) {
+    _session.selectOnlyClip(clip);
   }
 
   void _prepareSelectionDragState() {
-    _selectionDragBaseStarts.clear();
-    _selectionDragRequestedDelta = 0.0;
-    _selectionGroupMinDelta = 0.0;
-    _selectionGroupMaxDelta = 0.0;
-    final List<_TimelineClip> selected = _selectedClips();
-    if (selected.isEmpty) return;
+    _session.beginSelectionDrag();
+  }
 
-    double minStart = double.infinity;
-    double maxEnd = -double.infinity;
-    for (final _TimelineClip clip in selected) {
-      _selectionDragBaseStarts[clip.id] = clip.startSecond;
-      minStart = math.min(minStart, clip.startSecond);
-      maxEnd = math.max(maxEnd, clip.startSecond + clip.durationSecond);
+  void _onTrackTapDown({
+    required int trackIndex,
+    required double localDx,
+    required double laneViewportWidth,
+  }) {
+    final int? clipIndex = _clipIndexAtPosition(
+      trackIndex: trackIndex,
+      localDx: localDx,
+      laneViewportWidth: laneViewportWidth,
+    );
+    if (clipIndex == null) {
+      _session.clearSelection();
+      return;
     }
-    _selectionGroupMinDelta = -minStart;
-    _selectionGroupMaxDelta = _timelineSeconds - maxEnd;
+    final FusionCutTimelineClip clip =
+        _session.tracks[trackIndex].clips[clipIndex];
+    _selectOnlyClip(clip);
   }
 
   void _onTrackDoubleTapDown({
@@ -649,8 +446,12 @@ class _WonderPicVideoEditingScreenState
       laneViewportWidth: laneViewportWidth,
     );
     setState(() {
-      if (clipIndex == null) return;
-      final _TimelineClip clip = _tracks[trackIndex].clips[clipIndex];
+      if (clipIndex == null) {
+        _session.clearSelection();
+        return;
+      }
+      final FusionCutTimelineClip clip =
+          _session.tracks[trackIndex].clips[clipIndex];
       _toggleClipSelection(clip);
     });
   }
@@ -664,7 +465,7 @@ class _WonderPicVideoEditingScreenState
     if (pointerCount > 1) {
       setState(() {
         _isTimelineScaleGesture = true;
-        _scaleGestureStartZoom = _timelineZoom;
+        _scaleGestureStartZoom = _session.timelineZoom;
         _dragMode = _TimelineDragMode.none;
         _dragTrackIndex = null;
       });
@@ -681,22 +482,20 @@ class _WonderPicVideoEditingScreenState
       _isTimelineScaleGesture = false;
       _dragTrackIndex = trackIndex;
       if (clipIndex != null) {
-        final _TimelineClip touchedClip = _tracks[trackIndex].clips[clipIndex];
+        final FusionCutTimelineClip touchedClip =
+            _session.tracks[trackIndex].clips[clipIndex];
         if (_isClipSelected(touchedClip)) {
           willScrub = false;
           _dragMode = _TimelineDragMode.moveSelection;
-          _selectionDragRequestedDelta = 0.0;
           _prepareSelectionDragState();
           return;
         }
       }
       _dragMode = _TimelineDragMode.scrub;
-      _selectionDragBaseStarts.clear();
-      _selectionDragRequestedDelta = 0.0;
     });
     if (willScrub) {
       await _pausePlaybackForScrub();
-      await _queueVideoSeek(_timelineCenterSecond);
+      await _queueVideoSeek(_session.timelineCenterSecond);
     }
   }
 
@@ -704,17 +503,17 @@ class _WonderPicVideoEditingScreenState
     if (details.pointerCount > 1 || _isTimelineScaleGesture) {
       if (!_isTimelineScaleGesture) {
         _isTimelineScaleGesture = true;
-        _scaleGestureStartZoom = _timelineZoom;
+        _scaleGestureStartZoom = _session.timelineZoom;
         _dragMode = _TimelineDragMode.none;
         _dragTrackIndex = null;
       }
       final double nextZoom = (_scaleGestureStartZoom * details.scale)
           .clamp(_timelineMinZoom, _timelineMaxZoom)
           .toDouble();
-      if ((nextZoom - _timelineZoom).abs() > 0.0001) {
+      if ((nextZoom - _session.timelineZoom).abs() > 0.0001) {
         setState(() {
           _isTimelineScaleGesture = true;
-          _timelineZoom = nextZoom;
+          _session.setTimelineZoom(nextZoom, notify: false);
         });
       }
       return;
@@ -729,35 +528,21 @@ class _WonderPicVideoEditingScreenState
     if (_dragMode == _TimelineDragMode.scrub) {
       final double deltaSeconds =
           (deltaDx / _pixelsPerSecond) * _timelineScrubSensitivity;
-      final double nextCenter =
-          (_timelineCenterSecond - deltaSeconds).clamp(0.0, _timelineSeconds);
-      setState(() {
-        _timelineCenterSecond = nextCenter.toDouble();
-      });
-      unawaited(_queueVideoSeek(nextCenter));
+      final double nextCenter = (_session.timelineCenterSecond - deltaSeconds)
+          .clamp(0.0, _timelineSeconds);
+      _session.setTimelineCenterSecond(nextCenter.toDouble(), notify: false);
+      setState(() {});
+      _scheduleScrubSeek(nextCenter.toDouble());
       return;
     }
 
     if (_dragMode != _TimelineDragMode.moveSelection) return;
-    if (_selectedClipIds.isEmpty) {
+    if (_session.selectedClipIds.isEmpty) {
       _dragMode = _TimelineDragMode.scrub;
       return;
     }
 
-    final double deltaSeconds = deltaDx / _pixelsPerSecond;
-    _selectionDragRequestedDelta += deltaSeconds;
-    final double effectiveDelta = _selectionDragRequestedDelta
-        .clamp(_selectionGroupMinDelta, _selectionGroupMaxDelta)
-        .toDouble();
-    setState(() {
-      for (final String clipId in _selectedClipIds) {
-        final _TimelineClip? clip = _findClipById(clipId);
-        if (clip == null) continue;
-        final double? baseStart = _selectionDragBaseStarts[clipId];
-        if (baseStart == null) continue;
-        clip.startSecond = baseStart + effectiveDelta;
-      }
-    });
+    _session.applySelectionDragDelta(deltaDx / _pixelsPerSecond);
   }
 
   void _onTrackScaleEnd() {
@@ -773,6 +558,7 @@ class _WonderPicVideoEditingScreenState
   }
 
   void _onTrackPanEnd() {
+    _scrubSeekDebounce?.cancel();
     if (_dragMode == _TimelineDragMode.none &&
         _dragTrackIndex == null &&
         !_isTimelineScaleGesture) {
@@ -780,13 +566,10 @@ class _WonderPicVideoEditingScreenState
     }
     setState(() {
       _isTimelineScaleGesture = false;
-      _scaleGestureStartZoom = _timelineZoom;
+      _scaleGestureStartZoom = _session.timelineZoom;
       _dragMode = _TimelineDragMode.none;
       _dragTrackIndex = null;
-      _selectionDragBaseStarts.clear();
-      _selectionDragRequestedDelta = 0.0;
-      _selectionGroupMinDelta = 0.0;
-      _selectionGroupMaxDelta = 0.0;
+      _session.endSelectionDrag();
     });
   }
 
@@ -921,6 +704,302 @@ class _WonderPicVideoEditingScreenState
     );
   }
 
+  void _showSurfaceMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _scheduleScrubSeek(double second) {
+    _scrubSeekDebounce?.cancel();
+    _scrubSeekDebounce = Timer(_scrubSeekDebounceDelay, () {
+      unawaited(_queueVideoSeek(second));
+    });
+  }
+
+  Future<File> _writeExportDraftManifest(FusionCutExportDraft draft) async {
+    final String safeName = draft.projectName
+        .trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '')
+        .toLowerCase();
+    final String fileName =
+        '${safeName.isEmpty ? 'fusion_cut_project' : safeName}_phase1_export.json';
+    final File file = File('${Directory.systemTemp.path}/$fileName');
+    await file.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(draft.toJson()),
+    );
+    return file;
+  }
+
+  Future<void> _openExportSheet() async {
+    FusionCutExportPreset selectedPreset = FusionCutExportPreset.standard1080p;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            final FusionCutExportDraft draft = _session.buildExportDraft(
+              preset: selectedPreset,
+            );
+            final FusionCutProjectSummary summary = draft.summary;
+            return Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              decoration: BoxDecoration(
+                color: _panelBg,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+                border: Border.all(color: _panelBorder, width: 1),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 34,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3A4151),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Phase 1 Export Draft',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'This is the first engine hook for Fusion Cut: project snapshot, timeline summary, and export preset manifest.',
+                      style: TextStyle(
+                        color: _textSub,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    _buildExportInfoRow('Project', summary.projectName),
+                    _buildExportInfoRow(
+                      'Duration',
+                      _formatTimelineTime(summary.durationSecond),
+                    ),
+                    _buildExportInfoRow(
+                      'Timeline',
+                      '${summary.trackCount} tracks • ${summary.clipCount} clips',
+                    ),
+                    _buildExportInfoRow(
+                      'Sources',
+                      '${summary.mediaSourceCount} media items',
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Preset',
+                      style: TextStyle(
+                        color: _textMain,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: FusionCutExportPreset.presets
+                          .map((FusionCutExportPreset preset) {
+                        final bool selected = preset.id == selectedPreset.id;
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            setSheetState(() {
+                              selectedPreset = preset;
+                            });
+                          },
+                          child: Ink(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color:
+                                  selected ? _accent : const Color(0xFF202634),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: selected
+                                    ? _accent
+                                    : const Color(0xFF343B4B),
+                                width: 1,
+                              ),
+                            ),
+                            child: Text(
+                              preset.label,
+                              style: TextStyle(
+                                color: selected
+                                    ? const Color(0xFF121317)
+                                    : _textMain,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _textMain,
+                              side: const BorderSide(color: Color(0xFF394255)),
+                              minimumSize: const Size.fromHeight(44),
+                            ),
+                            child: const Text('Close'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final File file =
+                                  await _writeExportDraftManifest(draft);
+                              if (!mounted) return;
+                              Navigator.of(context).pop();
+                              _showSurfaceMessage(
+                                'Export draft ready: ${file.path}',
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _accent,
+                              foregroundColor: const Color(0xFF121317),
+                              minimumSize: const Size.fromHeight(44),
+                            ),
+                            child: const Text(
+                              'Prepare Draft',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildExportInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 72,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _textSub,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: _textMain,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleSplitSelection() async {
+    unawaited(_pausePlaybackForScrub());
+    final bool success =
+        _session.splitPrimarySelectionAt(_session.timelineCenterSecond);
+    if (!success) {
+      _showSurfaceMessage(
+        'Select one clip, then place the playhead inside it to split.',
+      );
+    }
+  }
+
+  Future<void> _handleTrimStartSelection() async {
+    unawaited(_pausePlaybackForScrub());
+    final bool success =
+        _session.trimPrimarySelectionStartTo(_session.timelineCenterSecond);
+    if (!success) {
+      _showSurfaceMessage(
+        'Select one clip, then move the playhead forward to trim the start.',
+      );
+    }
+  }
+
+  Future<void> _handleTrimEndSelection() async {
+    unawaited(_pausePlaybackForScrub());
+    final bool success =
+        _session.trimPrimarySelectionEndTo(_session.timelineCenterSecond);
+    if (!success) {
+      _showSurfaceMessage(
+        'Select one clip, then place the playhead before its end to trim out.',
+      );
+    }
+  }
+
+  void _handleDeleteSelection() {
+    final bool success = _session.deleteSelectedClips();
+    if (!success) {
+      _showSurfaceMessage('Select at least one clip to delete.');
+    }
+  }
+
+  void _handleRippleDeleteSelection() {
+    final bool success = _session.rippleDeleteSelectedClips();
+    if (!success) {
+      _showSurfaceMessage('Select at least one clip to ripple delete.');
+    }
+  }
+
+  void _handleUndo() {
+    if (!_session.canUndo) return;
+    _session.undo();
+  }
+
+  void _handleRedo() {
+    if (!_session.canRedo) return;
+    _session.redo();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -951,55 +1030,52 @@ class _WonderPicVideoEditingScreenState
   }
 
   Widget _buildTopToolStrip() {
+    final bool singleClip = _session.selectedClipCount == 1;
     return SizedBox(
-      height: 56,
-      child: ListView.separated(
+      height: 46,
+      child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
-        itemCount: _tools.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (BuildContext context, int index) {
-          final _VideoToolAction tool = _tools[index];
-          final bool selected = tool.id == _activeTool;
-          return Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(20),
-              onTap: () {
-                if (tool.id == _VideoEditTool.add) {
-                  final double sheetHeight =
-                      (MediaQuery.of(context).size.height * 0.27)
-                          .clamp(190.0, 300.0)
-                          .toDouble();
-                  _openAddLayerSheet(sheetHeight);
-                  return;
-                }
-                setState(() {
-                  _activeTool = tool.id;
-                });
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 130),
-                curve: Curves.easeOut,
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: selected ? _accent : _toolIdleBg,
-                  border: Border.all(
-                    color: selected ? _accent : const Color(0xFF222734),
-                    width: 1.1,
-                  ),
-                ),
-                child: Icon(
-                  tool.icon,
-                  size: 19,
-                  color: selected ? const Color(0xFF121317) : _textMain,
-                ),
-              ),
-            ),
-          );
-        },
+        children: [
+          _buildTopActionCircle(
+            icon: Icons.content_cut_rounded,
+            tooltip: 'Split',
+            enabled: singleClip,
+            onTap: () {
+              unawaited(_handleSplitSelection());
+            },
+          ),
+          _buildTopActionCircle(
+            icon: Icons.first_page_rounded,
+            tooltip: 'Trim In',
+            enabled: singleClip,
+            onTap: () {
+              unawaited(_handleTrimStartSelection());
+            },
+          ),
+          _buildTopActionCircle(
+            icon: Icons.last_page_rounded,
+            tooltip: 'Trim Out',
+            enabled: singleClip,
+            onTap: () {
+              unawaited(_handleTrimEndSelection());
+            },
+          ),
+          _buildTopActionCircle(
+            icon: Icons.delete_outline_rounded,
+            tooltip: 'Delete',
+            enabled: _session.hasSelection,
+            danger: true,
+            onTap: _handleDeleteSelection,
+          ),
+          _buildTopActionCircle(
+            icon: Icons.keyboard_double_arrow_left_rounded,
+            tooltip: 'Ripple Delete',
+            enabled: _session.hasSelection,
+            danger: true,
+            onTap: _handleRippleDeleteSelection,
+          ),
+        ],
       ),
     );
   }
@@ -1116,15 +1192,44 @@ class _WonderPicVideoEditingScreenState
                   Positioned(
                     left: 12,
                     bottom: 12,
-                    child: Text(
-                      '${_formatTimelineTime(_timelineCenterSecond)} / ${_formatTimelineTime(_timelineSeconds)}',
-                      style: const TextStyle(
-                        color: _textMain,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
+                    child: _session.hasTimelineContent
+                        ? Text(
+                            '${_formatTimelineTime(_session.timelineCenterSecond)} / ${_formatTimelineTime(_timelineSeconds)}',
+                            style: const TextStyle(
+                              color: _textMain,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                  if (_session.hasTimelineContent)
+                    Positioned(
+                      right: 12,
+                      top: 12,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xC3212634),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: const Color(0xFF3B4357),
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          'Snap ${(_timelineSnapToleranceSecond * 1000).round()}ms',
+                          style: const TextStyle(
+                            color: _textSub,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
                   Positioned(
                     right: 12,
                     bottom: 12,
@@ -1193,13 +1298,13 @@ class _WonderPicVideoEditingScreenState
                             Expanded(
                               child: ListView.separated(
                                 padding: EdgeInsets.zero,
-                                itemCount: _tracks.length,
+                                itemCount: _session.tracks.length,
                                 separatorBuilder: (_, __) =>
                                     const SizedBox(height: 4),
                                 itemBuilder: (BuildContext context, int index) {
                                   return _buildTrackRow(
                                     trackIndex: index,
-                                    track: _tracks[index],
+                                    track: _session.tracks[index],
                                     laneViewportWidth: laneViewportWidth,
                                   );
                                 },
@@ -1207,17 +1312,18 @@ class _WonderPicVideoEditingScreenState
                             ),
                           ],
                         ),
-                        Positioned(
-                          left: playheadLeft,
-                          top: 0,
-                          bottom: 0,
-                          child: IgnorePointer(
-                            child: Container(
-                              width: 2,
-                              color: _accent,
+                        if (_session.hasTimelineContent)
+                          Positioned(
+                            left: playheadLeft,
+                            top: 0,
+                            bottom: 0,
+                            child: IgnorePointer(
+                              child: Container(
+                                width: 2,
+                                color: _accent,
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     );
                   },
@@ -1260,9 +1366,23 @@ class _WonderPicVideoEditingScreenState
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildTimelineActionButton(Icons.undo_rounded),
+                _buildTimelineActionButton(
+                  Icons.ios_share_rounded,
+                  highlighted: true,
+                  onTap: () {
+                    unawaited(_openExportSheet());
+                  },
+                ),
                 const SizedBox(width: 6),
-                _buildTimelineActionButton(Icons.redo_rounded),
+                _buildTimelineActionButton(
+                  Icons.undo_rounded,
+                  onTap: _session.canUndo ? _handleUndo : null,
+                ),
+                const SizedBox(width: 6),
+                _buildTimelineActionButton(
+                  Icons.redo_rounded,
+                  onTap: _session.canRedo ? _handleRedo : null,
+                ),
               ],
             ),
           ),
@@ -1343,6 +1463,18 @@ class _WonderPicVideoEditingScreenState
     bool circular = false,
     VoidCallback? onTap,
   }) {
+    final bool enabled = onTap != null;
+    final Color fillColor = highlighted
+        ? (enabled ? _accent : _accent.withOpacity(0.35))
+        : const Color(0xFF202634);
+    final Color borderColor = highlighted
+        ? (enabled ? _accent : _accent.withOpacity(0.35))
+        : const Color(0xFF343B4B);
+    final Color iconColor = highlighted
+        ? (enabled
+            ? const Color(0xFF121317)
+            : const Color(0xFF121317).withOpacity(0.45))
+        : (enabled ? _textMain : _textSub.withOpacity(0.45));
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1352,18 +1484,62 @@ class _WonderPicVideoEditingScreenState
           width: 24,
           height: 24,
           decoration: BoxDecoration(
-            color: highlighted ? _accent : const Color(0xFF202634),
+            color: fillColor,
             shape: circular ? BoxShape.circle : BoxShape.rectangle,
             borderRadius: circular ? null : BorderRadius.circular(6),
             border: Border.all(
-              color: highlighted ? _accent : const Color(0xFF343B4B),
+              color: borderColor,
               width: 1,
             ),
           ),
           child: Icon(
             icon,
             size: 14,
-            color: highlighted ? const Color(0xFF121317) : _textMain,
+            color: iconColor,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopActionCircle({
+    required IconData icon,
+    required String tooltip,
+    required bool enabled,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    final Color activeBg =
+        danger ? const Color(0xFF3A222A) : const Color(0xFF161A22);
+    final Color activeBorder =
+        danger ? const Color(0xFF7A4450) : const Color(0xFF2C3341);
+    final Color activeText = danger ? const Color(0xFFFFCED4) : _textMain;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Tooltip(
+        message: tooltip,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: enabled ? onTap : null,
+            child: Ink(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: enabled ? activeBg : const Color(0xFF11151D),
+                border: Border.all(
+                  color: enabled ? activeBorder : const Color(0xFF212734),
+                  width: 1,
+                ),
+              ),
+              child: Icon(
+                icon,
+                size: 18,
+                color: enabled ? activeText : _textSub.withOpacity(0.45),
+              ),
+            ),
           ),
         ),
       ),
@@ -1372,7 +1548,7 @@ class _WonderPicVideoEditingScreenState
 
   Widget _buildTrackRow({
     required int trackIndex,
-    required _TimelineTrack track,
+    required FusionCutTimelineTrack track,
     required double laneViewportWidth,
   }) {
     final double contentOffsetPx = _timelineContentOffsetPx(laneViewportWidth);
@@ -1385,7 +1561,7 @@ class _WonderPicVideoEditingScreenState
             height: double.infinity,
             child: Center(
               child: Tooltip(
-                message: track.name,
+                message: track.label,
                 child: Container(
                   width: 30,
                   height: 30,
@@ -1397,7 +1573,7 @@ class _WonderPicVideoEditingScreenState
                       width: 1,
                     ),
                   ),
-                  child: Icon(track.icon, size: 14, color: _textSub),
+                  child: Icon(track.type.icon, size: 14, color: _textSub),
                 ),
               ),
             ),
@@ -1409,6 +1585,13 @@ class _WonderPicVideoEditingScreenState
               borderRadius: BorderRadius.circular(7),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
+                onTapDown: (TapDownDetails details) {
+                  _onTrackTapDown(
+                    trackIndex: trackIndex,
+                    localDx: details.localPosition.dx,
+                    laneViewportWidth: laneViewportWidth,
+                  );
+                },
                 onDoubleTapDown: (TapDownDetails details) {
                   _onTrackDoubleTapDown(
                     trackIndex: trackIndex,
@@ -1478,7 +1661,7 @@ class _WonderPicVideoEditingScreenState
   }
 
   Widget _buildClipWidget(
-    _TimelineClip clip, {
+    FusionCutTimelineClip clip, {
     required bool isSelected,
   }) {
     final double width = math.max(44, clip.durationSecond * _pixelsPerSecond);

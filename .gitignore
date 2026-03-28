@@ -45,3 +45,8 @@ app.*.map.json
 # Local backend secrets
 .supabase_admin_token.local
 supabase/.env
+APIkeys.md
+.gradle-jdk17/
+.gradle-jdk17-v2/
+supabase/.temp/
+supabase/supabase/

@@ -61,6 +61,13 @@ android {
             signingConfig signingConfigs.debug
         }
     }
+
+    lintOptions {
+        // Prevent release lint task from failing due upstream Kotlin metadata
+        // mismatch in transitive plugin dependencies.
+        checkReleaseBuilds false
+        abortOnError false
+    }
 }
 
 flutter {
